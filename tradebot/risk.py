@@ -49,7 +49,7 @@ class RiskManager:
         target: +1 long, 0 flat, -1 short. Sizing allocates
         ``max_position_pct`` of equity at ``price``.
         """
-        if target == 0 or price <= 0 or equity <= 0:
+        if target == 0 or not math.isfinite(price) or price <= 0 or equity <= 0:
             return 0.0
         budget = equity * self.config.max_position_pct
         raw = budget / price
@@ -64,7 +64,7 @@ class RiskManager:
         ``current_gross`` is the absolute market value of *other* positions
         already held (excluding the one being adjusted).
         """
-        if desired_qty == 0:
+        if desired_qty == 0 or not math.isfinite(price) or price <= 0:
             return 0.0
         cap = equity * self.config.max_gross_exposure
         room = cap - current_gross

@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from tradebot.risk import RiskConfig, RiskManager
@@ -51,3 +53,14 @@ def test_daily_loss_circuit_breaker():
 def test_riskconfig_validates_bounds():
     with pytest.raises(ValueError):
         RiskConfig(max_position_pct=1.5)
+
+
+@pytest.mark.parametrize("bad_price", [float("nan"), float("inf"), 0.0, -5.0])
+def test_sizing_rejects_bad_prices(bad_price):
+    # Non-finite or non-positive prices (bad market data) must never reach
+    # math.floor() — they size to zero instead of raising. Guards live/dry-run.
+    r = rm(max_position_pct=0.10, max_gross_exposure=1.0, allow_fractional=False)
+    q = r.target_qty(1, equity=10_000, price=bad_price)
+    assert q == 0.0 and math.isfinite(q)
+    c = r.clamp_to_exposure(50, price=bad_price, equity=10_000, current_gross=0)
+    assert c == 0.0 and math.isfinite(c)

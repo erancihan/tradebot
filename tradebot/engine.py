@@ -82,6 +82,19 @@ class Engine:
         price = float(bars["close"].iloc[-1])
 
         current = self.broker.position(symbol).qty
+
+        # Bad/missing market data (NaN/inf/non-positive) must never reach sizing —
+        # mirror the backtester, which skips such bars, so live == backtest here.
+        if not math.isfinite(price) or price <= 0:
+            log.warning("%s: no valid price (%r); holding %.4f shares", symbol, price, current)
+            return RebalanceAction(
+                symbol=symbol,
+                target=target,
+                current_qty=current,
+                desired_qty=current,
+                order_qty=0.0,
+            )
+
         desired = self.risk.target_qty(target, equity, price)
         delta = desired - current
 
