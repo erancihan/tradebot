@@ -535,9 +535,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-v", "--verbose", action="store_true", help="debug logging")
     sub = p.add_subparsers(dest="command", required=True)
 
+    # Derive the choices from the registry so new strategies are reachable
+    # without editing the CLI (keeps the demo command in sync with the package).
+    from .strategies import STRATEGIES
+    strategy_names = sorted(STRATEGIES)
+
     d = sub.add_parser("demo", help="offline backtest on synthetic data (no creds)")
-    d.add_argument("--strategy", default="sma_crossover",
-                   choices=["sma_crossover", "rsi_reversion"])
+    d.add_argument("--strategy", default="sma_crossover", choices=strategy_names)
     d.add_argument("--seed", type=int, default=42)
     d.set_defaults(func=cmd_demo)
 

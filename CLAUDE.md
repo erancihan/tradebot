@@ -13,20 +13,20 @@ then skim `README.md` for the user-facing tour.
 ## What this is
 
 A **paper-trading-first** equities trading bot in Python, built on Alpaca
-(commission-free, free paper trading + IEX data, $0 minimum). Greenfield, lives
-entirely under `trading-bot/`. Four pillars:
+(commission-free, free paper trading + IEX data, $0 minimum). Greenfield; the
+`tradebot/` package and its tooling live at the **repository root**. Four pillars:
 
 1. **Trading core** — strategies, risk, backtester, broker/data adapters, CLI.
 2. **Dry-run** — real-time loop with *simulated* fills against a virtual account.
 3. **Arena** — load algorithms dynamically and rank them in competitions.
 4. **Web dashboard** — FastAPI + TS/Tailwind/Alpine/ECharts; monitor + run sims.
 
-Status: feature-complete for the core vision. **~90 tests, all offline & green**;
-frontend has a strict `tsc` gate. Open PR: erancihan/erancihan #42 (base `master`).
+Status: feature-complete for the core vision. **166 tests, all offline & green**;
+frontend has a strict `tsc` gate.
 
 ## Agent skills
 
-Project-scoped Claude Code skills live in `trading-bot/.claude/skills/`:
+Project-scoped Claude Code skills live in `.claude/skills/`:
 - **tradebot-dev** — orientation + the dev/test/build loop and the pre-commit
   checklist. Start here.
 - **add-strategy** — add a pluggable trading strategy.
@@ -37,10 +37,11 @@ Keep these in sync when workflows or invariants change.
 ## Layout
 
 ```
-trading-bot/
+.                             # repository root
 ├── tradebot/                 # the Python package
-│   ├── strategies/           # Strategy ABC + sma_crossover, rsi_reversion, registry
-│   ├── indicators.py         # pure pandas: sma/ema/rsi/crossover
+│   ├── strategies/           # Strategy ABC + 7 strategies (crossover, rsi, macd,
+│   │                         #   bollinger, donchian, momentum, supertrend) + registry
+│   ├── indicators.py         # pure pandas: sma/ema/rsi/macd/bollinger/atr/donchian/roc/crossover
 │   ├── risk.py               # RiskManager + RiskConfig (sizing, caps, daily-loss)
 │   ├── portfolio.py          # cost-basis + realised-PnL accounting (sim)
 │   ├── backtest.py           # Backtester + BacktestResult (metrics)
@@ -100,7 +101,6 @@ gitignored).
 
 Python (works offline; no creds needed for tests/demos):
 ```bash
-cd trading-bot
 make install            # venv .venv + pip install -e ".[dev]"
 make install-web        # adds [web] extra + npm install (for the dashboard)
 make test               # pytest (web tests skip if fastapi absent)
@@ -112,7 +112,7 @@ make web                # build frontend + serve dashboard at :8000
 CLI: `tradebot {backtest,run,status,demo,arena,data}` and `tradebot-web`.
 `run --dry-run`/`--replay` = forward-test; `arena {list,run,validate,history,show}`.
 
-Frontend (`trading-bot/frontend/`):
+Frontend (`frontend/`):
 ```bash
 npm run typecheck       # strict tsc --noEmit (CI gate)
 npm run build           # -> tradebot/web/static/{js,css} (minified, gitignored)
@@ -121,8 +121,8 @@ npm run watch:js        # dev rebuild on change
 Stack: TypeScript, Alpine.js, Apache ECharts, Tailwind, esbuild. Built assets are
 gitignored — reproduce with `npm run build`.
 
-CI: `.github/workflows/trading-bot-ci.yml` runs pytest + (npm ci, typecheck,
-build) on changes under `trading-bot/**`.
+CI: `.github/workflows/ci.yml` runs pytest (Python 3.10–3.12) + (npm ci, typecheck,
+build) on pushes to `master` and all PRs.
 
 ## Conventions
 
@@ -179,6 +179,12 @@ build) on changes under `trading-bot/**`.
 - **ReplayData cursor:** advance the replay cursor exactly once per loop step
   (the engine does many `history()` calls per pass); never auto-advance in
   `history()`. Keep `required_history`/warmup integers.
+- **Bad prices are flat, everywhere.** Non-finite or non-positive prices
+  (NaN/inf/≤0 — e.g. a gap in live/broker data) must never reach sizing:
+  `RiskManager.target_qty`/`clamp_to_exposure` return 0 for them, and the live
+  `Engine.rebalance_symbol` holds (no order), mirroring the `continue` guard the
+  backtester and arena `simulate` already use. Keep all three execution loops
+  consistent — a raw `math.floor(NaN)` raises `ValueError`.
 - **Equity-curve charts:** the arena/job equity is serialised as
   `{index: [...], equity: [...]}` JSON; persisted in arena_results, returned by
   job/arena APIs.

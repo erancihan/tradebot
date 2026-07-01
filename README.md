@@ -67,8 +67,8 @@ accident. The design reflects that:
 
 | Module | Responsibility |
 |---|---|
-| `tradebot/indicators.py` | SMA, EMA, RSI, crossover helpers (pure pandas) |
-| `tradebot/strategies/` | `Strategy` interface + `SmaCrossover`, `RsiReversion` |
+| `tradebot/indicators.py` | SMA, EMA, RSI, MACD, Bollinger, ATR, Donchian, ROC, crossover helpers (pure pandas) |
+| `tradebot/strategies/` | `Strategy` interface + 7 strategies (crossover, RSI, MACD, Bollinger, Donchian, momentum, Supertrend) |
 | `tradebot/risk.py` | Position sizing, exposure cap, daily-loss breaker |
 | `tradebot/portfolio.py` | Cost-basis & realised-P&L accounting (backtest) |
 | `tradebot/backtest.py` | Event-driven backtester + performance metrics |
@@ -186,8 +186,19 @@ risk:
   MA, flat (or short) otherwise. SMA or EMA selectable.
 - **`rsi_reversion`** — mean-reversion. Long when RSI is oversold, exit when it
   normalises; optional short side.
+- **`macd`** — momentum. Long while the MACD line leads its signal line (or the
+  histogram is positive); optional short side.
+- **`bollinger_reversion`** — volatility mean-reversion. Buy a pierce of the lower
+  band, exit back at the middle band; optional symmetric short.
+- **`donchian_breakout`** — turtle-style breakout. Long on a break above the prior
+  N-bar high, exit on a break below the M-bar low; optional always-in reversal.
+- **`momentum`** — time-series momentum. Long when the N-bar rate-of-change clears
+  a threshold, with an optional long-SMA trend filter to veto counter-trend entries.
+- **`supertrend`** — ATR-based adaptive trend follower. Long while the trailing
+  ATR band signals an uptrend; optional short side.
 
-Add your own by subclassing `Strategy` and implementing
+All strategies are pure functions of price data emitting only `{-1, 0, +1}`
+targets — sizing and limits stay in the `RiskManager`. Add your own by subclassing `Strategy` and implementing
 `target_positions(bars) -> Series` (values in `{-1, 0, +1}`), then register it in
 `tradebot/strategies/registry.py`. Because strategies are pure functions of
 price data, they're trivial to unit-test (see `tests/test_strategies.py`).
@@ -316,12 +327,12 @@ tier.
 ## Testing
 
 ```bash
-make test     # 35 tests, fully offline
+make test     # 166 tests, fully offline
 ```
 
 ## Roadmap / ideas
 
-- More strategies (Bollinger bands, MACD, momentum) and a walk-forward optimiser
+- A walk-forward / parameter optimiser for tuning strategy params
 - Bracket / stop-loss / take-profit order types
 - Telegram or email notifications on fills and circuit-breaker trips
 - Streaming data via Alpaca websockets instead of polling
