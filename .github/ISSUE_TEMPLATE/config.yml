@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question / discussion
+    url: https://github.com/erancihan/tradebot/discussions
+    about: Ask usage questions or float an idea here (enable Discussions first).
+  - name: Report a security vulnerability
+    url: https://github.com/erancihan/tradebot/security/advisories/new
+    about: Please report vulnerabilities privately, not as a public issue.

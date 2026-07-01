@@ -1,0 +1,54 @@
+name: Bug report
+description: Something isn't working as documented
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Please keep it reproducible **offline** where possible —
+        the whole core runs on synthetic data with no credentials.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what did you get instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Ideally a minimal command or snippet (e.g. `tradebot demo --strategy ...`).
+      placeholder: |
+        1. `make install`
+        2. `tradebot backtest --config config.yaml --csv data.csv`
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: Output of `git rev-parse --short HEAD` or the release tag.
+    validations:
+      required: false
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Trading core (strategies / risk / backtest / engine)
+        - Arena (competition / isolation / season)
+        - Web dashboard
+        - Data / storage / config
+        - CLI / packaging / CI
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, and whether the `[live]`/`[web]` extras are installed.
+    validations:
+      required: false
