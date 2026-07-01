@@ -329,3 +329,7 @@ This software is for educational purposes and provided "as is", without warranty
 of any kind. Trading involves substantial risk of loss. You are solely
 responsible for any orders it places and any money you lose. Test in paper mode
 first, and never deploy capital you can't afford to lose.
+
+## License
+
+Released under the [MIT License](LICENSE). © 2026 erancihan.
