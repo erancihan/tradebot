@@ -1,0 +1,32 @@
+# Secrets — never commit API keys
+.env
+.env.*
+!.env.example
+
+# Local config you may fill with real settings
+config.yaml
+
+# Runtime artifacts
+*.db
+*.sqlite
+*.sqlite3
+equity*.csv
+
+# Local market-data cache (pulled from Alpaca; reproducible, not source)
+data/cache/
+
+# Frontend build artifacts (reproducible via `npm run build`)
+frontend/node_modules/
+tradebot/web/static/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/

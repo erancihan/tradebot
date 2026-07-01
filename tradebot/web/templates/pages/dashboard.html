@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · tradebot{% endblock %}
+{% block content %}
+<section class="space-y-6">
+  <div class="flex items-center justify-between">
+    <h1 class="text-lg font-semibold text-slate-100">Dashboard</h1>
+    <div class="flex items-center gap-3 text-xs">
+      <span class="text-slate-500"
+            x-text="$store.live.lastUpdated ? ('updated ' + $store.live.lastUpdated) : ''"></span>
+      <button @click="$store.live.toggle()"
+              class="rounded border border-slate-700 px-2 py-1 hover:border-slate-500">
+        <span x-show="$store.live.enabled" class="text-emerald-400">● Live</span>
+        <span x-show="!$store.live.enabled" class="text-slate-400" x-cloak>❚❚ Paused</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 gap-3 rounded-lg border border-slate-800 bg-slate-900/40 p-4 sm:grid-cols-5">
+    <div>
+      <div class="text-xs uppercase tracking-wide text-slate-500">Equity</div>
+      <div class="text-lg font-semibold text-slate-100"
+           x-text="$store.live.account && $store.live.account.equity != null ? '$' + $store.live.account.equity.toLocaleString() : '—'"></div>
+    </div>
+    <div>
+      <div class="text-xs uppercase tracking-wide text-slate-500">Cash</div>
+      <div class="text-lg font-semibold text-slate-100"
+           x-text="$store.live.account && $store.live.account.cash != null ? '$' + $store.live.account.cash.toLocaleString() : '—'"></div>
+    </div>
+    <div>
+      <div class="text-xs uppercase tracking-wide text-slate-500">Buying power</div>
+      <div class="text-lg font-semibold text-slate-100"
+           x-text="$store.live.account && $store.live.account.buying_power != null ? '$' + $store.live.account.buying_power.toLocaleString() : '—'"></div>
+    </div>
+    <div>
+      <div class="text-xs uppercase tracking-wide text-slate-500">Market</div>
+      <div class="text-lg font-semibold"
+           :class="$store.live.account && $store.live.account.market_open ? 'text-emerald-400' : 'text-slate-400'"
+           x-text="$store.live.account && $store.live.account.market_open != null ? ($store.live.account.market_open ? 'open' : 'closed') : '—'"></div>
+    </div>
+    <div>
+      <div class="text-xs uppercase tracking-wide text-slate-500">Source</div>
+      <div class="text-lg font-semibold text-slate-300" x-text="$store.live.account ? $store.live.account.source : '—'"></div>
+    </div>
+  </div>
+
+  <div x-data="partialLoader('/partials/stats')" x-html="html">
+    {% include "components/stats.html" %}
+  </div>
+
+  <div class="rounded-lg border border-slate-800 bg-slate-900/40 p-4" x-data="equityChart()">
+    <div class="mb-3 flex items-center justify-between">
+      <h2 class="text-sm font-semibold text-slate-300">Equity curve</h2>
+      <select class="rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200"
+              @change="setMode($event.target.value)">
+        <option value="">all modes</option>
+        {% for m in modes %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+      </select>
+    </div>
+    <div x-ref="chart" class="h-72 w-full"></div>
+  </div>
+
+  <div class="grid gap-6 lg:grid-cols-2">
+    <div>
+      <h2 class="mb-2 text-sm font-semibold text-slate-300">Recent orders</h2>
+      <div x-data="partialLoader('/partials/orders')" x-html="html">
+        {% include "components/orders_table.html" %}
+      </div>
+    </div>
+    <div>
+      <h2 class="mb-2 text-sm font-semibold text-slate-300">Positions</h2>
+      <div x-data="partialLoader('/partials/positions')" x-html="html">
+        {% include "components/positions_table.html" %}
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,22 @@
+# A tournament over real Alpaca data, pulled once and cached locally.
+#
+# First populate the cache (needs free Alpaca data keys in .env), then every
+# subsequent run is offline and reproducible:
+#   tradebot data pull --symbols SPY QQQ --start 2023-01-01 --end 2024-01-01
+#   tradebot arena run --algos ./algos --scenario scenarios/alpaca_spy.yaml
+name: alpaca_spy
+source: alpaca
+symbols: [SPY, QQQ]
+timeframe: 1day
+start: "2023-01-01"
+end: "2024-01-01"
+cache_dir: data/cache
+
+initial_cash: 10000
+commission: 0.0
+slippage_bps: 1.0
+
+risk:
+  max_position_pct: 0.5      # split capital across the two symbols
+  max_gross_exposure: 1.0
+  max_daily_loss_pct: 1.0

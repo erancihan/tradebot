@@ -1,0 +1,59 @@
+# tradebot configuration. Copy to `config.yaml` and tweak.
+# Secrets (API keys) do NOT go here — they live in `.env` / the environment.
+
+# Trading mode: backtest | paper | live
+#   paper  -> simulated fills on Alpaca's paper account (safe, default)
+#   live   -> REAL money; also requires TRADEBOT_LIVE_CONFIRM=I_UNDERSTAND
+#
+# Tip: add `--dry-run` (or `--replay` for fully offline) to `tradebot run` to
+# forward-test this exact config against a virtual account — no orders are sent,
+# regardless of the mode below. e.g. `tradebot run --config config.yaml --replay`
+mode: paper
+
+# Symbols to trade. Liquid ETFs are a sane place to start.
+symbols:
+  - SPY
+  - QQQ
+
+# Bar size: 1min | 5min | 15min | 1hour | 1day
+timeframe: 1day
+
+# How often the live loop rebalances, in seconds (300 = every 5 min).
+poll_seconds: 300
+
+# Starting capital for backtests (paper/live read equity from the broker).
+initial_cash: 10000
+
+# Backtest cost assumptions.
+commission: 0.0       # Alpaca US equities are commission-free
+slippage_bps: 1.0     # 1 bp = 0.01% slippage per fill
+
+# Where the SQLite audit log (orders + equity snapshots) is written.
+db_path: tradebot.db
+
+# --- Strategy -----------------------------------------------------------------
+# Available: sma_crossover, rsi_reversion
+strategy:
+  name: sma_crossover
+  params:
+    fast: 20
+    slow: 50
+    use_ema: false
+    allow_short: false
+
+# Example RSI config (swap `name` above to use it):
+# strategy:
+#   name: rsi_reversion
+#   params:
+#     period: 14
+#     oversold: 30
+#     overbought: 70
+#     exit_level: 50
+#     allow_short: false
+
+# --- Risk management ----------------------------------------------------------
+risk:
+  max_position_pct: 0.10      # at most 10% of equity per symbol
+  max_gross_exposure: 1.0     # at most 100% of equity deployed across all symbols
+  max_daily_loss_pct: 0.03    # flatten + halt after a 3% daily drawdown
+  allow_fractional: false     # whole shares only

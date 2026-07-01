@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Run · tradebot{% endblock %}
+{% block content %}
+<section class="space-y-6" x-data="jobRunner()">
+  <h1 class="text-lg font-semibold text-slate-100">Run a simulation</h1>
+  <p class="text-sm text-slate-500">
+    Launch a backtest or a dry-run forward-test on synthetic data — no credentials needed.
+  </p>
+
+  <form @submit.prevent="submit()"
+        class="grid gap-4 rounded-lg border border-slate-800 bg-slate-900/40 p-4 sm:grid-cols-2 lg:grid-cols-3">
+    <label class="text-sm">
+      <span class="mb-1 block text-slate-400">Kind</span>
+      <select x-model="form.kind" class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5">
+        <option value="backtest">Backtest</option>
+        <option value="dryrun">Dry-run (forward-test)</option>
+      </select>
+    </label>
+
+    <label class="text-sm">
+      <span class="mb-1 block text-slate-400">Strategy</span>
+      <select x-model="form.strategy" class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5">
+        <option value="sma_crossover">SMA crossover</option>
+        <option value="rsi_reversion">RSI reversion</option>
+      </select>
+    </label>
+
+    <label class="text-sm">
+      <span class="mb-1 block text-slate-400">Initial cash</span>
+      <input type="number" min="100" step="100" x-model.number="form.initial_cash"
+             class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
+    </label>
+
+    <label class="text-sm">
+      <span class="mb-1 block text-slate-400">Bars (periods)</span>
+      <input type="number" min="30" max="5000" x-model.number="form.periods"
+             class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
+    </label>
+
+    <label class="text-sm">
+      <span class="mb-1 block text-slate-400">Seed</span>
+      <input type="number" x-model.number="form.seed"
+             class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
+    </label>
+
+    <!-- Strategy-specific params -->
+    <template x-if="form.strategy === 'sma_crossover'">
+      <div class="grid grid-cols-2 gap-2">
+        <label class="text-sm">
+          <span class="mb-1 block text-slate-400">Fast</span>
+          <input type="number" min="2" x-model.number="form.fast"
+                 class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
+        </label>
+        <label class="text-sm">
+          <span class="mb-1 block text-slate-400">Slow</span>
+          <input type="number" min="3" x-model.number="form.slow"
+                 class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
+        </label>
+      </div>
+    </template>
+    <template x-if="form.strategy === 'rsi_reversion'">
+      <div class="grid grid-cols-2 gap-2">
+        <label class="text-sm">
+          <span class="mb-1 block text-slate-400">Period</span>
+          <input type="number" min="2" x-model.number="form.period"
+                 class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
+        </label>
+        <label class="text-sm">
+          <span class="mb-1 block text-slate-400">Oversold</span>
+          <input type="number" min="1" max="50" x-model.number="form.oversold"
+                 class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
+        </label>
+      </div>
+    </template>
+
+    <div class="flex items-end">
+      <button type="submit" :disabled="state === 'running'"
+              class="rounded bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50">
+        <span x-show="state !== 'running'">Run</span>
+        <span x-show="state === 'running'">Running…</span>
+      </button>
+    </div>
+  </form>
+
+  <div x-show="state === 'error'" x-cloak
+       class="rounded-lg border border-rose-800 bg-rose-950/40 p-4 text-sm text-rose-300" x-text="error"></div>
+
+  <div x-show="state === 'done'" x-cloak class="space-y-4">
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <template x-for="[key, value] in Object.entries(summary || {})" :key="key">
+        <div class="rounded-lg border border-slate-800 bg-slate-900/50 p-4">
+          <div class="text-xs uppercase tracking-wide text-slate-500" x-text="key"></div>
+          <div class="mt-1 text-lg font-semibold text-slate-100" x-text="value"></div>
+        </div>
+      </template>
+    </div>
+    <div class="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+      <h2 class="mb-3 text-sm font-semibold text-slate-300">Equity curve</h2>
+      <div x-ref="chart" class="h-72 w-full"></div>
+    </div>
+  </div>
+</section>
+{% endblock %}

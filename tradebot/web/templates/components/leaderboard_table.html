@@ -1,0 +1,41 @@
+{% from "components/macros.html" import pctcell, numcell %}
+{% if entries %}
+  <div class="overflow-x-auto rounded-lg border border-slate-800">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-900/70 text-slate-400">
+        <tr>
+          <th class="px-3 py-2 text-right font-medium">#</th>
+          <th class="px-3 py-2 text-left font-medium">name</th>
+          <th class="px-3 py-2 text-left font-medium">author</th>
+          <th class="px-3 py-2 text-left font-medium">kind</th>
+          <th class="px-3 py-2 text-right font-medium">score</th>
+          <th class="px-3 py-2 text-right font-medium">return</th>
+          <th class="px-3 py-2 text-right font-medium">sharpe</th>
+          <th class="px-3 py-2 text-right font-medium">maxDD</th>
+          <th class="px-3 py-2 text-right font-medium">trades</th>
+          <th class="px-3 py-2 text-left font-medium">status</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-800">
+        {% for e in entries %}
+          <tr class="{{ 'bg-emerald-500/5' if e.rank == 1 else '' }}">
+            <td class="px-3 py-2 text-right text-slate-400">{{ e.rank if e.rank is not none else "—" }}</td>
+            <td class="px-3 py-2 font-medium text-slate-100">{{ e.name }}</td>
+            <td class="px-3 py-2 text-slate-400">{{ e.author }}</td>
+            <td class="px-3 py-2 text-slate-400">{{ e.kind }}</td>
+            <td class="px-3 py-2 text-right tabular-nums">{{ numcell(e.score) }}</td>
+            <td class="px-3 py-2 text-right tabular-nums {{ 'text-emerald-400' if (e.total_return or 0) >= 0 else 'text-rose-400' }}">{{ pctcell(e.total_return) }}</td>
+            <td class="px-3 py-2 text-right tabular-nums">{{ numcell(e.sharpe) }}</td>
+            <td class="px-3 py-2 text-right tabular-nums text-rose-400">{{ pctcell(e.max_drawdown) }}</td>
+            <td class="px-3 py-2 text-right tabular-nums">{{ e.num_trades }}</td>
+            <td class="px-3 py-2 {{ 'text-slate-400' if e.status == 'ok' else 'text-amber-400' }}">{{ e.status }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="rounded-lg border border-dashed border-slate-800 p-6 text-center text-slate-500">
+    No saved tournaments yet — run <code>tradebot arena run --algos ./algos --save</code>.
+  </div>
+{% endif %}

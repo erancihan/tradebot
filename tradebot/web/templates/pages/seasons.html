@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Seasons · tradebot{% endblock %}
+{% block content %}
+<section class="space-y-4">
+  <h1 class="text-lg font-semibold text-slate-100">Seasons</h1>
+  <div class="grid gap-6 lg:grid-cols-3">
+    <aside class="lg:col-span-1">
+      <h2 class="mb-2 text-sm font-semibold text-slate-300">Live leagues</h2>
+      {% if seasons %}
+        <ul class="space-y-1">
+          {% for s in seasons %}
+            <li>
+              <a href="/seasons/{{ s.id }}"
+                 class="block rounded border px-3 py-2 text-sm {{ 'border-emerald-700 bg-emerald-500/10' if s.id == season_id else 'border-slate-800 hover:border-slate-700' }}">
+                <span class="font-medium text-slate-100">#{{ s.id }} {{ s.name }}</span>
+                <span class="text-slate-500">· {{ s.metric }}</span>
+                <div class="text-xs text-slate-500">{{ s.symbols }} · {{ s.status }}</div>
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="rounded-lg border border-dashed border-slate-800 p-6 text-center text-slate-500">
+          No seasons. Create one with <code>tradebot arena season create</code>.
+        </div>
+      {% endif %}
+    </aside>
+
+    <div class="space-y-6 lg:col-span-2">
+      {% if season %}
+        <div class="rounded-lg border border-slate-800 bg-slate-900/40 p-4" x-data="seasonChart({{ season_id }})">
+          <h2 class="mb-3 text-sm font-semibold text-slate-300">Return over the season · #{{ season.id }} ({{ season.name }})</h2>
+          <div x-ref="chart" class="h-72 w-full"></div>
+        </div>
+        {% include "components/season_standings.html" %}
+      {% else %}
+        <div class="rounded-lg border border-dashed border-slate-800 p-8 text-center text-slate-500">
+          Create and run a season: <code>tradebot arena season create … && tradebot arena season run … --replay</code>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,25 @@
+# A reproducible, offline tournament scenario.
+# Every contestant trades this exact dataset with this exact capital & costs.
+name: default
+source: synthetic        # synthetic | csv | (alpaca: Phase 2)
+symbols: [DEMO]
+initial_cash: 10000
+commission: 0.0
+slippage_bps: 1.0
+
+# Synthetic data parameters (deterministic given the seed).
+periods: 600
+seed: 7
+drift: 0.0005
+volatility: 0.012
+
+# Shared risk model. A high per-position cap lets single-symbol contestants
+# deploy most of their capital, so differences in skill show up clearly.
+risk:
+  max_position_pct: 0.95
+  max_gross_exposure: 1.0
+  max_daily_loss_pct: 1.0   # disabled for the batch tournament
+
+# For a CSV-backed round instead, set:
+# source: csv
+# csv_paths: { DEMO: data/DEMO.csv }

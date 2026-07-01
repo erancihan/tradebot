@@ -1,0 +1,20 @@
+{% from "components/macros.html" import stat_card %}
+<div>
+  <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    {% if metrics.present %}
+      {{ stat_card("Equity", (account.equity if account.equity is not none else metrics.current_equity) | money) }}
+      {{ stat_card("Cash", (account.cash if account.cash is not none else metrics.cash) | money) }}
+      {{ stat_card("Total return", metrics.total_return | pct,
+          "text-emerald-400" if metrics.total_return >= 0 else "text-rose-400") }}
+      {{ stat_card("Max drawdown", metrics.max_drawdown | pct, "text-rose-400") }}
+    {% else %}
+      <div class="col-span-full rounded-lg border border-dashed border-slate-800 p-6 text-center text-slate-500">
+        No equity snapshots yet — run the bot (<code>paper</code> or <code>--dry-run</code>) to populate the dashboard.
+      </div>
+    {% endif %}
+  </div>
+  <div class="mt-2 text-xs text-slate-500">
+    source: <span class="text-slate-400">{{ account.source }}</span>
+    {% if metrics.present %} · {{ metrics.points }} snapshots · mode <span class="text-slate-400">{{ metrics.mode }}</span>{% endif %}
+  </div>
+</div>

@@ -1,0 +1,9 @@
+{% macro stat_card(label, value, accent="text-slate-100") %}
+<div class="rounded-lg border border-slate-800 bg-slate-900/50 p-4">
+  <div class="text-xs uppercase tracking-wide text-slate-500">{{ label }}</div>
+  <div class="mt-1 text-xl font-semibold {{ accent }}">{{ value }}</div>
+</div>
+{% endmacro %}
+
+{% macro pctcell(v) %}{{ "%.2f%%"|format(v * 100) if v is not none else "—" }}{% endmacro %}
+{% macro numcell(v) %}{{ "%.2f"|format(v) if v is not none else "—" }}{% endmacro %}

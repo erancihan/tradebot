@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tradebot"
+version = "0.1.0"
+description = "A lean, modular, paper-trading-first stock/ETF trading bot built on Alpaca."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "erancihan" }]
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "PyYAML>=6.0",
+]
+
+# Live/paper trading against the broker needs the Alpaca SDK + dotenv.
+# The strategy/backtest core works without these, so they are optional.
+[project.optional-dependencies]
+live = [
+    "alpaca-py>=0.21",
+    "python-dotenv>=1.0",
+]
+dev = [
+    "pytest>=7.4",
+    "httpx>=0.24",
+]
+web = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "jinja2>=3.1",
+]
+
+[project.scripts]
+tradebot = "tradebot.cli:main"
+tradebot-web = "tradebot.web.server:main"
+
+[tool.setuptools.packages.find]
+include = ["tradebot*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
