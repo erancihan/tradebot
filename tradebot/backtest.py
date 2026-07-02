@@ -112,12 +112,14 @@ class Backtester:
         initial_cash: float = 10_000.0,
         commission: float = 0.0,
         slippage_bps: float = 1.0,
+        allocator=None,           # optional tradebot.allocation.Allocator
     ) -> None:
         self.strategy = strategy
         self.risk = risk
         self.initial_cash = initial_cash
         self.commission = commission
         self.slippage_bps = slippage_bps
+        self.allocator = allocator
 
     def run(self, data: dict[str, pd.DataFrame] | pd.DataFrame, symbol: str = "ASSET") -> BacktestResult:
         if isinstance(data, pd.DataFrame):
@@ -140,24 +142,39 @@ class Backtester:
             t = self.strategy.target_positions(df).reindex(common).shift(1).fillna(0)
             targets[sym] = t.astype(int)
 
-        opens = {s: df["open"].reindex(common) for s, df in data.items()}
-        closes = {s: df["close"].reindex(common) for s, df in data.items()}
+        aligned = {s: df.reindex(common) for s, df in data.items()}
+        opens = {s: aligned[s]["open"] for s in data}
+        closes = {s: aligned[s]["close"] for s in data}
 
         pf = Portfolio(cash=self.initial_cash)
         equity_points: list[float] = []
         slip = self.slippage_bps / 10_000.0
 
-        for ts in common:
+        for i, ts in enumerate(common):
             close_prices = {s: float(closes[s].loc[ts]) for s in data}
             equity = pf.equity(close_prices)
 
+            # Gather this bar's fillable symbols, then size the book jointly so
+            # the result never depends on symbol iteration order.
+            bar_targets: dict[str, int] = {}
+            bar_prices: dict[str, float] = {}
             for sym in data:
                 price = float(opens[sym].loc[ts])
                 if not np.isfinite(price) or price <= 0:
                     continue
-                desired = self.risk.target_qty(int(targets[sym].loc[ts]), equity, price)
-                current = pf.position(sym).qty
-                delta = desired - current
+                bar_targets[sym] = int(targets[sym].loc[ts])
+                bar_prices[sym] = price
+
+            weights = None
+            if self.allocator is not None:
+                # Weights obey the same one-bar shift as targets: decided from
+                # bars strictly before the fill bar.
+                history = {s: aligned[s].iloc[:i] for s in bar_targets}
+                weights = self.allocator.weights(bar_targets, history)
+            desired = self.risk.allocate(bar_targets, equity, bar_prices, weights)
+
+            for sym, want in desired.items():
+                delta = want - pf.position(sym).qty
                 if self.risk.config.allow_fractional:
                     if abs(delta) < 1e-9:
                         continue
@@ -165,20 +182,7 @@ class Backtester:
                     delta = float(round(delta))
                     if delta == 0:
                         continue
-
-                # Respect the gross-exposure cap when *increasing* exposure.
-                increasing = (current == 0) or ((current > 0) == (delta > 0))
-                if increasing:
-                    other_gross = pf.gross_exposure(close_prices, exclude=sym)
-                    delta = self.risk.clamp_to_exposure(delta, price, equity, other_gross)
-                    if self.risk.config.allow_fractional:
-                        if abs(delta) < 1e-9:
-                            continue
-                    else:
-                        delta = float(round(delta))
-                        if delta == 0:
-                            continue
-
+                price = bar_prices[sym]
                 fill_price = price * (1 + slip) if delta > 0 else price * (1 - slip)
                 pf.execute(sym, delta, fill_price, commission=self.commission)
 

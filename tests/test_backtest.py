@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 
+from tradebot.allocation import EqualWeight
 from tradebot.backtest import Backtester, _infer_periods_per_year
 from tradebot.data.synthetic import synthetic_ohlcv
 from tradebot.risk import RiskConfig, RiskManager
@@ -54,6 +55,49 @@ def test_rsi_strategy_backtests():
     df = synthetic_ohlcv(periods=400, seed=9)
     result = _bt(RsiReversion(period=14)).run(df, symbol="R")
     assert len(result.equity_curve) == len(df)
+
+
+def test_equal_weight_halves_equal_one_full_book():
+    # 50/50 across two identical price series must equal 100% in one of them:
+    # same dollar exposure, same fills, same curve.
+    df = synthetic_ohlcv(periods=300, seed=5)
+    risk_kw = dict(max_position_pct=1.0, max_gross_exposure=1.0, allow_fractional=True)
+
+    single = Backtester(
+        SmaCrossover(10, 30), RiskManager(RiskConfig(**risk_kw)),
+        initial_cash=10_000, slippage_bps=0.0,
+    ).run(df, symbol="X")
+    split = Backtester(
+        SmaCrossover(10, 30), RiskManager(RiskConfig(**risk_kw)),
+        initial_cash=10_000, slippage_bps=0.0, allocator=EqualWeight(),
+    ).run({"A": df, "B": df.copy()})
+
+    assert np.allclose(single.equity_curve.to_numpy(), split.equity_curve.to_numpy())
+
+
+class _SpyAllocator:
+    """Records the longest history window it is ever shown."""
+
+    def __init__(self):
+        self.seen: list[int] = []
+
+    def weights(self, targets, history):
+        self.seen.append(max((len(h) for h in history.values()), default=0))
+        active = [s for s, t in targets.items() if t != 0]
+        return {s: 1.0 / len(active) for s in active} if active else {}
+
+
+def test_allocator_never_sees_the_fill_bar():
+    # Weights follow the same one-bar shift as targets: at fill bar i the
+    # allocator may only see bars 0..i-1.
+    a = synthetic_ohlcv(periods=120, seed=1)
+    b = synthetic_ohlcv(periods=120, seed=2)
+    spy = _SpyAllocator()
+    Backtester(
+        SmaCrossover(10, 30), RiskManager(RiskConfig(max_position_pct=0.5)),
+        initial_cash=10_000, allocator=spy,
+    ).run({"A": a, "B": b})
+    assert spy.seen == list(range(120))
 
 
 def test_infer_periods_per_year_daily():

@@ -49,6 +49,7 @@ class Engine:
         storage: Storage | None = None,
         mode_label: str | None = None,
         enforce_live_ack: bool = True,
+        allocator=None,              # optional tradebot.allocation.Allocator
     ) -> None:
         # The live gate is skipped for dry-runs (no real broker can be reached).
         if enforce_live_ack:
@@ -59,6 +60,7 @@ class Engine:
         self.strategy = strategy
         self.risk = risk
         self.storage = storage
+        self.allocator = allocator
         # Label used for logs and storage tagging (e.g. "dry_run").
         self._mode_label = mode_label or settings.mode
         self._session_start_equity: float | None = None
@@ -71,24 +73,11 @@ class Engine:
         # Ensure enough history for the strategy plus headroom for weekends/holidays.
         return max(self.strategy.required_history * 2, 60)
 
-    def rebalance_symbol(self, symbol: str, equity: float, other_gross: float) -> RebalanceAction:
-        bars = self.data.history(
-            symbol, timeframe=self.settings.timeframe, lookback=self._lookback_days()
-        )
-        if self.storage is not None:
-            # Persist the price history (idempotent) so the dashboard can chart it.
-            self.storage.record_bars(symbol, self.settings.timeframe, bars, self.mode)
-        target = self.strategy.latest_target(bars)
-        price = float(bars["close"].iloc[-1])
-
+    def _submit_delta(
+        self, symbol: str, target: int, desired: float, price: float
+    ) -> RebalanceAction:
         current = self.broker.position(symbol).qty
-        desired = self.risk.target_qty(target, equity, price)
         delta = desired - current
-
-        increasing = (current == 0) or ((current > 0) == (delta > 0))
-        if increasing and delta != 0:
-            delta = self.risk.clamp_to_exposure(delta, price, equity, other_gross)
-
         if not self.risk.config.allow_fractional:
             delta = float(round(delta))
 
@@ -114,7 +103,8 @@ class Engine:
         return action
 
     def rebalance(self) -> list[RebalanceAction]:
-        """One full pass across all configured symbols."""
+        """One full pass: gather signals for all symbols, size the book
+        jointly, then submit the per-symbol deltas."""
         if not self.broker.is_market_open():
             log.info("Market closed; skipping rebalance.")
             return []
@@ -134,14 +124,44 @@ class Engine:
             self.broker.cancel_all()
             return []
 
-        positions = self.broker.positions()
-        actions: list[RebalanceAction] = []
+        # 1) Gather bars, latest target and price per symbol. A failing symbol
+        #    drops out of this pass instead of killing it.
+        frames: dict[str, object] = {}
+        targets: dict[str, int] = {}
+        prices: dict[str, float] = {}
         for sym in self.settings.symbols:
-            other_gross = sum(
-                abs(p.qty) * p.avg_price for s, p in positions.items() if s != sym
-            )
             try:
-                actions.append(self.rebalance_symbol(sym, acct.equity, other_gross))
+                bars = self.data.history(
+                    sym, timeframe=self.settings.timeframe, lookback=self._lookback_days()
+                )
+                if self.storage is not None:
+                    # Persist the price history (idempotent) for the dashboard.
+                    self.storage.record_bars(sym, self.settings.timeframe, bars, self.mode)
+                price = float(bars["close"].iloc[-1])
+                if not math.isfinite(price) or price <= 0:
+                    raise ValueError(f"no valid price for {sym} (got {price})")
+                targets[sym] = self.strategy.latest_target(bars)
+                prices[sym] = price
+                frames[sym] = bars
+            except Exception:
+                log.exception("Data/signal failed for %s; skipping it this pass", sym)
+
+        # 2) Size the whole book at once (order-independent). Live decisions
+        #    use bars up to now, same as the strategy's latest_target.
+        weights = None
+        if self.allocator is not None:
+            weights = self.allocator.weights(targets, frames)
+            if self.storage:
+                self.storage.record_weights(weights, self.mode)
+        desired = self.risk.allocate(targets, acct.equity, prices, weights)
+
+        # 3) Submit the deltas.
+        actions: list[RebalanceAction] = []
+        for sym in targets:
+            try:
+                actions.append(
+                    self._submit_delta(sym, targets[sym], desired[sym], prices[sym])
+                )
             except Exception:  # one bad symbol shouldn't kill the whole pass
                 log.exception("Rebalance failed for %s", sym)
         return actions

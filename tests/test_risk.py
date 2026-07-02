@@ -41,6 +41,56 @@ def test_exposure_clamp_blocks_when_full():
     assert r.clamp_to_exposure(50, price=100, equity=10_000, current_gross=10_000) == 0
 
 
+def test_target_qty_with_weight_overrides_default():
+    r = rm(max_position_pct=0.50, allow_fractional=False)
+    # 20% of 10_000 = 2_000 at $50 -> 40 shares.
+    assert r.target_qty(1, equity=10_000, price=50, weight=0.20) == 40
+    # Weight is capped at max_position_pct: 0.9 -> 0.5 -> 100 shares.
+    assert r.target_qty(1, equity=10_000, price=50, weight=0.90) == 100
+    # Zero weight -> no position, even with a long target.
+    assert r.target_qty(1, equity=10_000, price=50, weight=0.0) == 0
+
+
+def test_allocate_defaults_match_per_symbol_sizing():
+    r = rm(max_position_pct=0.10, max_gross_exposure=1.0)
+    got = r.allocate({"A": 1, "B": -1, "C": 0}, equity=10_000,
+                     prices={"A": 50, "B": 25, "C": 10})
+    assert got == {
+        "A": r.target_qty(1, 10_000, 50),
+        "B": r.target_qty(-1, 10_000, 25),
+        "C": 0.0,
+    }
+
+
+def test_allocate_is_order_independent():
+    r = rm(max_position_pct=0.60, max_gross_exposure=1.0)
+    prices = {"A": 100.0, "B": 50.0, "C": 20.0}
+    targets = {"A": 1, "B": 1, "C": 1}
+    forward = r.allocate(targets, 10_000, prices)
+    reversed_ = r.allocate(dict(reversed(list(targets.items()))), 10_000, prices)
+    assert forward == reversed_
+
+
+def test_allocate_scales_book_to_gross_cap():
+    # Two names wanting 0.6 each (1.2 gross) against a 1.0 cap -> 0.5 each.
+    r = rm(max_position_pct=0.60, max_gross_exposure=1.0, allow_fractional=True)
+    got = r.allocate({"A": 1, "B": 1}, equity=10_000, prices={"A": 100, "B": 100})
+    assert got["A"] == pytest.approx(50.0)   # 0.5 * 10_000 / 100
+    assert got["B"] == pytest.approx(50.0)
+
+
+def test_allocate_uses_and_caps_provided_weights():
+    r = rm(max_position_pct=0.30, max_gross_exposure=1.0, allow_fractional=True)
+    got = r.allocate(
+        {"A": 1, "B": 1, "C": 1}, equity=10_000,
+        prices={"A": 100, "B": 100, "C": 100},
+        weights={"A": 0.20, "B": 0.90},       # B capped to 0.30; C unfunded
+    )
+    assert got["A"] == pytest.approx(20.0)
+    assert got["B"] == pytest.approx(30.0)
+    assert got["C"] == 0.0
+
+
 def test_daily_loss_circuit_breaker():
     r = rm(max_daily_loss_pct=0.03)
     assert not r.daily_loss_tripped(10_000, 9_800)   # -2% ok

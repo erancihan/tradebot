@@ -51,6 +51,19 @@ strategy:
 #     exit_level: 50
 #     allow_short: false
 
+# --- Portfolio allocation -------------------------------------------------------
+# Optional: how to split capital across the symbols the strategy wants held.
+# Omit this block entirely to keep the legacy sizing (every symbol gets the
+# fixed `max_position_pct` slug below). Weights always pass through the risk
+# caps, and the whole book is sized jointly (order-independent).
+#
+# portfolio:
+#   allocation: inverse_vol   # equal | inverse_vol | explicit
+#   params:
+#     window: 63              # inverse_vol: rolling stdev window (daily bars)
+#     # gross_target: 1.0     # equal/inverse_vol: total fraction to deploy
+#     # weights: {SPY: 0.6, QQQ: 0.4}   # explicit only
+
 # --- Risk management ----------------------------------------------------------
 risk:
   max_position_pct: 0.10      # at most 10% of equity per symbol

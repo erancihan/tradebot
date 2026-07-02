@@ -59,6 +59,10 @@ class Settings:
     poll_seconds: int = 300                 # live loop cadence
     strategy_name: str = "sma_crossover"
     strategy_params: dict[str, Any] = field(default_factory=dict)
+    #: Allocation scheme name (see tradebot.allocation); None keeps the legacy
+    #: fixed max_position_pct-per-symbol sizing.
+    allocation_name: str | None = None
+    allocation_params: dict[str, Any] = field(default_factory=dict)
     risk: RiskConfig = field(default_factory=RiskConfig)
     db_path: str = "tradebot.db"
     commission: float = 0.0
@@ -90,6 +94,17 @@ class Settings:
     def broker_is_paper(self) -> bool:
         return self.mode != "live"
 
+    def build_allocator(self):
+        """Instantiate the configured allocator, or None for legacy sizing.
+
+        Imported lazily so merely loading config never pulls in pandas.
+        """
+        if self.allocation_name is None:
+            return None
+        from .allocation import build_allocator
+
+        return build_allocator(self.allocation_name, self.allocation_params)
+
     # --- loading -------------------------------------------------------------
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Settings":
@@ -100,6 +115,7 @@ class Settings:
     def from_dict(cls, raw: dict[str, Any]) -> "Settings":
         risk_raw = raw.get("risk", {}) or {}
         strat = raw.get("strategy", {}) or {}
+        portfolio = raw.get("portfolio", {}) or {}
         return cls(
             mode=raw.get("mode", "paper"),
             symbols=list(raw.get("symbols", ["SPY"])),
@@ -108,6 +124,8 @@ class Settings:
             poll_seconds=int(raw.get("poll_seconds", 300)),
             strategy_name=strat.get("name", raw.get("strategy_name", "sma_crossover")),
             strategy_params=strat.get("params", raw.get("strategy_params", {})) or {},
+            allocation_name=portfolio.get("allocation"),
+            allocation_params=portfolio.get("params", {}) or {},
             risk=RiskConfig(**risk_raw),
             db_path=raw.get("db_path", "tradebot.db"),
             commission=float(raw.get("commission", 0.0)),

@@ -49,8 +49,13 @@ accident. The design reflects that:
                  └──────────────┘
                         │
                         ▼
-                 ┌──────────────┐   sizing + caps + daily-loss breaker
-                 │ RiskManager  │ → signed share quantity
+                 ┌──────────────┐   equal / inverse-vol / explicit weights
+                 │  Allocator   │ → target weight per symbol   (optional)
+                 └──────────────┘
+                        │
+                        ▼
+                 ┌──────────────┐   joint sizing + caps + daily-loss breaker
+                 │ RiskManager  │ → signed share quantities (whole book)
                  └──────────────┘
                         │
           ┌─────────────┴──────────────┐
@@ -65,7 +70,8 @@ accident. The design reflects that:
 |---|---|
 | `tradebot/indicators.py` | SMA, EMA, RSI, crossover helpers (pure pandas) |
 | `tradebot/strategies/` | `Strategy` interface + `SmaCrossover`, `RsiReversion` |
-| `tradebot/risk.py` | Position sizing, exposure cap, daily-loss breaker |
+| `tradebot/risk.py` | Position sizing, joint book allocation, exposure cap, daily-loss breaker |
+| `tradebot/allocation.py` | Portfolio weighting: equal / inverse-vol / explicit |
 | `tradebot/portfolio.py` | Cost-basis & realised-P&L accounting (backtest) |
 | `tradebot/backtest.py` | Event-driven backtester + performance metrics |
 | `tradebot/broker/` | `Broker` interface + Alpaca adapter (lazy SDK import) |
@@ -175,6 +181,32 @@ risk:
   max_gross_exposure: 1.0    # ≤100% of equity deployed at once
   max_daily_loss_pct: 0.03   # flatten + halt after a 3% daily drawdown
 ```
+
+## Portfolio allocation
+
+By default every symbol gets the same fixed `max_position_pct` slug of equity.
+Add an optional `portfolio:` block to split capital *across* the book instead —
+weights flow through the same `RiskManager`, so the per-symbol and gross caps
+always apply on top:
+
+```yaml
+portfolio:
+  allocation: inverse_vol    # equal | inverse_vol | explicit
+  params: {window: 63}       # e.g. weights: {SPY: 0.6, QQQ: 0.4} for explicit
+```
+
+- **`equal`** — 1/N over the symbols the strategy wants held. The classic
+  hard-to-beat baseline.
+- **`inverse_vol`** — weight by 1/volatility (rolling stdev of daily returns
+  over `window` bars), so risk rather than dollars is spread evenly. Symbols
+  without enough history to measure get nothing.
+- **`explicit`** — fixed per-symbol weights you choose; unlisted symbols get 0.
+
+The whole book is sized in one order-independent pass: weights are capped
+per-name, scaled down proportionally if their total exceeds
+`max_gross_exposure`, and only then turned into share quantities. Weights obey
+the same one-bar shift as signals in backtests (decided on bar *t*, filled on
+*t+1*), and each rebalance's target weights are persisted to the SQLite log.
 
 ## Strategies
 

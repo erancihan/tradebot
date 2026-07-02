@@ -67,6 +67,7 @@ def cmd_backtest(args: argparse.Namespace) -> int:
         initial_cash=settings.initial_cash,
         commission=settings.commission,
         slippage_bps=settings.slippage_bps,
+        allocator=settings.build_allocator(),
     )
 
     if args.csv:
@@ -125,7 +126,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         return _run_dry(settings, args)
 
     broker, data, strategy, risk, storage = _build_live_components(settings)
-    engine = Engine(settings, broker, data, strategy, risk, storage)
+    engine = Engine(settings, broker, data, strategy, risk, storage,
+                    allocator=settings.build_allocator())
 
     mode = "LIVE (real money)" if settings.is_live else "paper"
     print(f"Running in {mode} mode on {settings.symbols} with {strategy.name}.")
@@ -177,6 +179,7 @@ def _run_dry(settings, args: argparse.Namespace) -> int:
     engine = Engine(
         settings, broker, data, strategy, risk, storage,
         mode_label="dry_run", enforce_live_ack=False,
+        allocator=settings.build_allocator(),
     )
 
     src = "replay" if replay else "live data"

@@ -29,6 +29,19 @@ def test_record_bars_is_idempotent(tmp_path):
     assert _count_bars(db) == 10                            # de-duplicated
 
 
+def test_target_weights_round_trip(tmp_path):
+    db = str(tmp_path / "t.db")
+    with Storage(db) as st:
+        st.record_weights({"SPY": 0.6, "QQQ": 0.4}, "paper")
+        st.record_weights({"SPY": 0.5, "QQQ": 0.5}, "paper")   # newer pass wins
+        st.record_weights({"IWM": 1.0}, "dry_run")
+        assert st.latest_weights("paper") == {"SPY": 0.5, "QQQ": 0.5}
+        assert st.latest_weights("dry_run") == {"IWM": 1.0}
+        assert st.latest_weights() != {}
+        st.record_weights({}, "paper")                          # no-op, keeps latest
+        assert st.latest_weights("paper") == {"SPY": 0.5, "QQQ": 0.5}
+
+
 def test_engine_records_bars_when_storage_present(tmp_path):
     db = str(tmp_path / "t.db")
     df = synthetic_ohlcv(periods=60, seed=1)

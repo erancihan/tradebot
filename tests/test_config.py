@@ -25,6 +25,23 @@ def test_from_dict_parses_strategy_and_risk():
     assert s.risk.max_position_pct == 0.2
 
 
+def test_portfolio_block_builds_allocator():
+    s = Settings.from_dict({
+        "symbols": ["SPY", "QQQ"],
+        "portfolio": {"allocation": "inverse_vol", "params": {"window": 21}},
+    })
+    assert s.allocation_name == "inverse_vol"
+    assert s.allocation_params == {"window": 21}
+    alloc = s.build_allocator()
+    assert alloc is not None and alloc.window == 21
+
+
+def test_no_portfolio_block_keeps_legacy_sizing():
+    s = Settings.from_dict({"symbols": ["SPY"]})
+    assert s.allocation_name is None
+    assert s.build_allocator() is None
+
+
 def test_invalid_mode_rejected():
     with pytest.raises(ValueError):
         Settings(mode="yolo")

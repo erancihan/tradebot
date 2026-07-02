@@ -36,6 +36,7 @@ def simulate(
     frames: dict[str, pd.DataFrame],
     risk: RiskManager,
     config: SimConfig,
+    allocator=None,           # optional tradebot.allocation.Allocator
 ) -> BacktestResult:
     if not frames:
         raise ValueError("No data provided to simulate")
@@ -64,15 +65,27 @@ def simulate(
         close_prices = {s: float(closes[s].iloc[i]) for s in symbols}
         equity = pf.equity(close_prices)
 
-        # 1) Execute the targets decided on the previous bar, at this bar's open.
+        # 1) Execute the targets decided on the previous bar, at this bar's
+        #    open — sized jointly, exactly like the Backtester.
+        bar_targets: dict[str, int] = {}
+        bar_prices: dict[str, float] = {}
         for s in symbols:
             price = float(opens[s].iloc[i])
             if not np.isfinite(price) or price <= 0:
                 continue
-            desired = risk.target_qty(pending[s], equity, price)
-            current = pf.position(s).qty
-            delta = desired - current
+            bar_targets[s] = pending[s]
+            bar_prices[s] = price
 
+        weights = None
+        if allocator is not None:
+            # Same one-bar discipline as targets: weights come from bars
+            # strictly before the fill bar.
+            history = {s: aligned[s].iloc[:i] for s in bar_targets}
+            weights = allocator.weights(bar_targets, history)
+        desired = risk.allocate(bar_targets, equity, bar_prices, weights)
+
+        for s, want in desired.items():
+            delta = want - pf.position(s).qty
             if fractional:
                 if abs(delta) < 1e-9:
                     continue
@@ -80,19 +93,7 @@ def simulate(
                 delta = float(round(delta))
                 if delta == 0:
                     continue
-
-            increasing = (current == 0) or ((current > 0) == (delta > 0))
-            if increasing:
-                other_gross = pf.gross_exposure(close_prices, exclude=s)
-                delta = risk.clamp_to_exposure(delta, price, equity, other_gross)
-                if fractional:
-                    if abs(delta) < 1e-9:
-                        continue
-                else:
-                    delta = float(round(delta))
-                    if delta == 0:
-                        continue
-
+            price = bar_prices[s]
             fill_price = price * (1 + slip) if delta > 0 else price * (1 - slip)
             pf.execute(s, delta, fill_price, commission=config.commission)
 

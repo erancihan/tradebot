@@ -44,6 +44,18 @@ def rsi(series: pd.Series, window: int = 14) -> pd.Series:
     return out
 
 
+def rolling_volatility(close: pd.Series, window: int) -> pd.Series:
+    """Rolling standard deviation of simple (close-to-close) returns.
+
+    NaN until a full ``window`` of returns is available, so downstream code can
+    tell "not enough history" apart from "genuinely low volatility".
+    """
+    if window < 1:
+        raise ValueError("window must be >= 1")
+    returns = close.pct_change()
+    return returns.rolling(window=window, min_periods=window).std()
+
+
 def crossover(fast: pd.Series, slow: pd.Series) -> pd.Series:
     """True at bars where `fast` crosses from <= to > `slow`."""
     prev = fast.shift(1) <= slow.shift(1)

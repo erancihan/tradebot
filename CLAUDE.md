@@ -21,8 +21,9 @@ entirely under `trading-bot/`. Four pillars:
 3. **Arena** — load algorithms dynamically and rank them in competitions.
 4. **Web dashboard** — FastAPI + TS/Tailwind/Alpine/ECharts; monitor + run sims.
 
-Status: feature-complete for the core vision. **~90 tests, all offline & green**;
-frontend has a strict `tsc` gate. Open PR: erancihan/erancihan #42 (base `master`).
+Status: feature-complete for the core vision; **portfolio expansion in
+progress** (see Roadmap). **~140 tests, all offline & green**; frontend has a
+strict `tsc` gate.
 
 ## Agent skills
 
@@ -40,8 +41,9 @@ Keep these in sync when workflows or invariants change.
 trading-bot/
 ├── tradebot/                 # the Python package
 │   ├── strategies/           # Strategy ABC + sma_crossover, rsi_reversion, registry
-│   ├── indicators.py         # pure pandas: sma/ema/rsi/crossover
-│   ├── risk.py               # RiskManager + RiskConfig (sizing, caps, daily-loss)
+│   ├── indicators.py         # pure pandas: sma/ema/rsi/rolling_volatility/crossover
+│   ├── risk.py               # RiskManager + RiskConfig (sizing, allocate(), caps, daily-loss)
+│   ├── allocation.py         # Allocator ABC + equal/inverse_vol/explicit + registry
 │   ├── portfolio.py          # cost-basis + realised-PnL accounting (sim)
 │   ├── backtest.py           # Backtester + BacktestResult (metrics)
 │   ├── models.py             # Order/Fill/Position/Trade/Side, BAR_COLUMNS, utcnow
@@ -81,8 +83,13 @@ gitignored).
   weaken this gate or default anything to live.
 - **No look-ahead.** Backtester shifts targets by one bar (decide on `t`, fill on
   `t+1`). The arena feeds a *growing window* so the future is physically invisible.
+  Allocation weights obey the same shift: at fill bar `t+1` the allocator only
+  sees bars `≤ t` (guarded by `test_allocator_never_sees_the_fill_bar`).
 - **Risk is centralised.** All sizing/limits go through `RiskManager`; strategies
   only emit targets in `{-1, 0, +1}`. Don't let strategies size positions.
+  Allocators (`allocation.py`) only *propose* weights; `RiskManager.allocate`
+  caps them per-name, scales the book to the gross cap (order-independent), and
+  is the only place weights become share quantities.
 - **Backtest == live.** Backtester and live `Engine` share the same `Strategy` +
   `RiskManager`. The arena's stepped `simulation.simulate` must stay consistent
   with `Backtester` — guarded by `tests/test_arena_simulation.py`. If you touch
@@ -182,6 +189,18 @@ build) on changes under `trading-bot/**`.
 - **Equity-curve charts:** the arena/job equity is serialised as
   `{index: [...], equity: [...]}` JSON; persisted in arena_results, returned by
   job/arena APIs.
+- **Joint allocation replaced per-symbol clamping.** The Backtester, arena
+  `simulate`, and `Engine.rebalance` all size the whole book in one
+  `RiskManager.allocate` pass (gather targets/prices → weights → quantities).
+  The old first-come-first-served `clamp_to_exposure` loop is gone from the
+  execution paths (the primitive remains for direct use); if the book is
+  over-subscribed the *desired* weights are scaled down, which can force
+  reductions — that is intended rebalancing, not a bug. Keep all three loops
+  identical (guarded by `test_simulate_matches_backtester_with_allocator`).
+- **Allocator history slicing:** in both backtest and arena loops the allocator
+  is called at the *fill* bar `i` with `aligned.iloc[:i]` — bars strictly before
+  the fill — over the same fillable-symbol set in both engines. Change one,
+  change the other, or the lockstep test fails.
 - **Season = bars are source of truth.** A live `Season` (`season.py`) persists
   only the accumulated bars (+ a standings snapshot per tick) to SQLite; each
   tick re-ranks the field with `run_tournament(..., frames=accumulated)`. No
@@ -208,7 +227,37 @@ real-time league: SQLite bars/standings that survive restarts; replay feed +
 thin live Alpaca feed) · **season daemon** (`market.py` market-hours gating +
 next_open + partial-bar drop, supervised loop with **injected clock/sleep** so
 the whole loop is dry-run-testable offline via `season run --simulate`,
-`/seasons` dashboard standings view).
+`/seasons` dashboard standings view) · **portfolio foundation** (weight-aware
+`RiskManager.target_qty` + joint order-independent `RiskManager.allocate` in
+all three execution loops; `allocation.py` allocator registry — `equal`,
+`inverse_vol`, `explicit` — wired via the `portfolio:` config block; target
+weights persisted to `target_weights` in SQLite).
+
+**Portfolio expansion — staged plan** (owner-approved 2026-07; investigation
+report in the session notes). Decisions locked: build the foundation first
+(done, above); support equal/inverse-vol/explicit weighting (done); the
+candidate universe will come from a **live Alpaca liquidity screen** (owner
+decision — not a curated list, not index constituents). Honesty regime:
+live-forward paper; historical backtests over a current-membership universe
+must be labelled survivorship-biased. Remaining stages:
+1. **Cross-sectional selector** — rank a candidate pool by momentum (12-1
+   trailing return), hold top-K, weights from the existing allocators, no-trade
+   rebalancing bands for turnover. A *new layer*, not a Strategy (it sees the
+   whole cross-section; strategies stay per-symbol `{-1,0,+1}`). Ranking must
+   use only bars ≤ t — test it like the allocator shift.
+2. **Alpaca-backed universe** — `get_all_assets` (active+tradable US equities;
+   note: alpaca-py name, not `list_assets`) behind a lazy, creds-gated adapter
+   + a liquidity screen (min price ~$5, rolling ADV floor — conservative, IEX
+   volume is ~2% of consolidated) + batched multi-symbol bar fetch (page on
+   `next_page_token`; the `limit` is aggregate across symbols). Persist a
+   point-in-time universe snapshot per rebalance. Offline path = fixture
+   universe.
+3. **Overlays (only if justified)** — vol-targeting exposure dial (scale down,
+   never lever up), coarse sector caps, walk-forward validation.
+Non-goals (do not re-propose): mean-variance/Markowitz optimizers (error
+maximizer), Black-Litterman, fundamentals/value screens (no Alpaca data),
+shorting by default, yfinance as a real dependency, dashboard allocations view
+is pending (weights are already persisted; follow routes→services→repository).
 
 Deferred (decided, do not re-propose without a new ask):
 - **Container/gVisor containment** — the strongest, OS-level tier, for fully

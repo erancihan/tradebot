@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 
+from tradebot.allocation import EqualWeight, InverseVolatility
 from tradebot.arena import Action, Algo
 from tradebot.arena.adapters import EventPolicy, VectorizedPolicy
 from tradebot.arena.simulation import SimConfig, simulate
@@ -27,6 +28,29 @@ def test_simulate_matches_backtester_for_vectorized_strategy():
         expected.equity_curve, got.equity_curve, check_names=False
     )
     assert expected.num_trades == got.num_trades
+
+
+def test_simulate_matches_backtester_with_allocator():
+    """The joint-allocation path must stay lockstep between both engines."""
+    frames = {
+        "A": synthetic_ohlcv(periods=250, seed=1),
+        "B": synthetic_ohlcv(periods=250, seed=2),
+    }
+    cfg = RiskConfig(max_position_pct=0.6, max_gross_exposure=1.0)
+    for allocator in (EqualWeight(), InverseVolatility(window=20)):
+        bt = Backtester(SmaCrossover(10, 30), RiskManager(cfg),
+                        initial_cash=10_000, commission=0.0, slippage_bps=1.0,
+                        allocator=allocator)
+        expected = bt.run(frames)
+
+        policy = VectorizedPolicy(lambda: SmaCrossover(10, 30))
+        got = simulate(policy, frames, RiskManager(cfg),
+                       SimConfig(10_000, 0.0, 1.0), allocator=allocator)
+
+        pd.testing.assert_series_equal(
+            expected.equity_curve, got.equity_curve, check_names=False
+        )
+        assert expected.num_trades == got.num_trades
 
 
 class _AlwaysLongStrategy(Strategy):

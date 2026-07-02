@@ -118,6 +118,42 @@ def test_engine_dry_run_forward_test_offline():
     assert broker.account().equity > 0
 
 
+def test_engine_dry_run_with_allocator_splits_the_book():
+    from tradebot.allocation import EqualWeight
+
+    settings = Settings(
+        mode="paper", symbols=["A", "B"], initial_cash=10_000, timeframe="1day",
+        strategy_name="sma_crossover", strategy_params={"fast": 5, "slow": 20},
+        risk=RiskConfig(max_position_pct=1.0, max_gross_exposure=1.0),
+    )
+    strategy = build_strategy(settings.strategy_name, settings.strategy_params)
+    frames = {
+        "A": synthetic_ohlcv(periods=120, drift=0.003, volatility=0.005, seed=3),
+        "B": synthetic_ohlcv(periods=120, drift=0.003, volatility=0.005, seed=4),
+    }
+    data = ReplayData(frames, warmup=strategy.required_history + 2)
+    broker = DryRunBroker(data, timeframe="1day", initial_cash=10_000, slippage_bps=0)
+    engine = Engine(
+        settings, broker, data, strategy, RiskManager(settings.risk),
+        mode_label="dry_run", enforce_live_ack=False, allocator=EqualWeight(),
+    )
+
+    while True:
+        engine.rebalance()
+        if not data.has_next():
+            break
+        data.advance()
+
+    # Both uptrending symbols end up held, each within an equal (~50%) share
+    # of equity — the allocator split the book instead of double-allocating.
+    positions = {s: p for s, p in broker.positions().items() if not p.is_flat}
+    assert set(positions) == {"A", "B"}
+    equity = broker.account().equity
+    for sym, pos in positions.items():
+        price = float(data.history(sym)["close"].iloc[-1])
+        assert abs(pos.qty) * price <= 0.55 * equity
+
+
 def test_live_config_with_dry_run_skips_live_gate(monkeypatch):
     monkeypatch.delenv(LIVE_CONFIRM_ENV, raising=False)
     settings = Settings(mode="live", symbols=["X"])
