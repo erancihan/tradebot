@@ -73,5 +73,12 @@
       </div>
     </div>
   </div>
+
+  <div>
+    <h2 class="mb-2 text-sm font-semibold text-slate-300">Target allocations</h2>
+    <div x-data="partialLoader('/partials/allocations')" x-html="html">
+      {% include "components/allocations_table.html" %}
+    </div>
+  </div>
 </section>
 {% endblock %}

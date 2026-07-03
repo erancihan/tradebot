@@ -81,6 +81,44 @@ class TradingRepository:
         )
         return rows[0] if rows else None
 
+    def latest_weights(self, mode: str | None = None) -> dict:
+        """The most recent rebalance's target weights, largest first."""
+        where = "WHERE mode = ?" if mode else ""
+        params = (mode,) if mode else ()
+        head = _read(
+            self.db_path,
+            f"SELECT ts, mode FROM target_weights {where} ORDER BY ts DESC, id DESC LIMIT 1",
+            params,
+        )
+        if not head:
+            return {"ts": None, "mode": None, "weights": []}
+        ts = head[0]["ts"]
+        rows = _read(
+            self.db_path,
+            f"SELECT symbol, weight FROM target_weights {where}"
+            f"{' AND' if mode else ' WHERE'} ts = ? ORDER BY weight DESC, symbol",
+            params + (ts,),
+        )
+        return {"ts": ts, "mode": head[0]["mode"], "weights": rows}
+
+    def latest_universe(self, mode: str | None = None) -> dict:
+        """The most recently resolved candidate universe (if any)."""
+        where = "WHERE mode = ?" if mode else ""
+        params = (mode,) if mode else ()
+        rows = _read(
+            self.db_path,
+            f"SELECT ts, symbols, mode FROM universe_snapshots {where} "
+            "ORDER BY id DESC LIMIT 1",
+            params,
+        )
+        if not rows:
+            return {"ts": None, "mode": None, "symbols": []}
+        try:
+            symbols = json.loads(rows[0]["symbols"])
+        except (json.JSONDecodeError, TypeError):
+            symbols = []
+        return {"ts": rows[0]["ts"], "mode": rows[0]["mode"], "symbols": symbols}
+
 
 class ArenaRepository:
     """Saved tournaments (runs, results, equity curves)."""

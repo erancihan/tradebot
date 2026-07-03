@@ -352,8 +352,9 @@ into the on-disk cache, and serves everything else from disk — so a given
 
 A FastAPI dashboard visualises everything the bot records: the equity curve,
 account stats, recent orders and positions (from the SQLite log, with a live
-Alpaca overlay when credentials are present), plus the **arena leaderboards** with
-each contestant's equity curve. The **Run** page launches a backtest or dry-run
+Alpaca overlay when credentials are present), the **target allocations** of the
+latest rebalance (weight bars + the resolved candidate universe, refreshed
+live), plus the **arena leaderboards** with each contestant's equity curve. The **Run** page launches a backtest or dry-run
 forward-test from the browser (a background job → polled → summary + equity
 chart), all on synthetic data with no credentials. The **Chart** page shows a
 candlestick of the bars the bot acted on, with buy/sell order pins overlaid. A

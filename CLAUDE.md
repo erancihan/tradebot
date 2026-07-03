@@ -21,9 +21,10 @@ entirely under `trading-bot/`. Four pillars:
 3. **Arena** — load algorithms dynamically and rank them in competitions.
 4. **Web dashboard** — FastAPI + TS/Tailwind/Alpine/ECharts; monitor + run sims.
 
-Status: feature-complete for the core vision; **portfolio expansion in
-progress** (see Roadmap). **~140 tests, all offline & green**; frontend has a
-strict `tsc` gate.
+Status: feature-complete for the core vision **including the portfolio stack**
+(universe → selector → allocator → risk; see Roadmap). **~185 tests, all
+offline & green** (web tests skip without fastapi); frontend has a strict
+`tsc` gate.
 
 ## Agent skills
 
@@ -259,17 +260,20 @@ offline-tested — and `AlpacaLiquidityUniverse`: most-actives shortlist →
 `get_all_assets` active+tradable filter → batched `history_many` bars → screen;
 all fetchers lazy AND constructor-injectable for offline tests; `universe:`
 config block replaces `symbols` at startup — replay ignores it; `tradebot
-universe` preview command; snapshots persisted to `universe_snapshots`).
+universe` preview command; snapshots persisted to `universe_snapshots`) ·
+**dashboard allocations view** (`/api/allocations` + `/partials/allocations`
++ "Target allocations" card on the dashboard: weight bars for the latest
+rebalance + the resolved candidate universe as chips; server-rendered partial,
+refreshes via the existing partialLoader — zero new TS).
 
 **Portfolio expansion — staged plan** (owner-approved 2026-07; investigation
 report in the session notes). Decisions locked: build the foundation first
 (done); support equal/inverse-vol/explicit weighting (done); candidate universe
-from a **live Alpaca liquidity screen** (done — owner decision). Honesty
-regime: live-forward paper; historical backtests over a current-membership
-universe must be labelled survivorship-biased. Remaining stages:
-1. **Dashboard allocations view** — weights already persisted in
-   `target_weights` (+ `universe_snapshots`); follow routes→services→repository.
-2. **Overlays (only if justified)** — vol-targeting exposure dial (scale down,
+from a **live Alpaca liquidity screen** (done — owner decision); dashboard
+allocations view (done). Honesty regime: live-forward paper; historical
+backtests over a current-membership universe must be labelled
+survivorship-biased. Remaining stages:
+1. **Overlays (only if justified)** — vol-targeting exposure dial (scale down,
    never lever up), coarse sector caps, walk-forward validation.
 Non-goals (do not re-propose): mean-variance/Markowitz optimizers (error
 maximizer), Black-Litterman, fundamentals/value screens (no Alpaca data),

@@ -20,11 +20,14 @@ router = APIRouter()
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, repo: TradingRepository = Depends(get_trading_repo)):
     equity = repo.equity_series(limit=2000)
+    weights = repo.latest_weights()
+    universe = repo.latest_universe()
     context = {
         "metrics": metrics_service.summarize(equity),
         "account": account_service.snapshot(repo),
         "orders": repo.recent_orders(limit=25),
         "modes": repo.modes(),
+        "allocations": {**weights, "universe": universe["symbols"]},
         "active": "dashboard",
     }
     return templates.TemplateResponse(request, "pages/dashboard.html", context)

@@ -1,0 +1,51 @@
+{% if allocations.weights %}
+  <div class="overflow-x-auto rounded-lg border border-slate-800">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-900/70 text-slate-400">
+        <tr>
+          <th class="px-3 py-2 text-left font-medium">symbol</th>
+          <th class="px-3 py-2 text-right font-medium">target weight</th>
+          <th class="px-3 py-2 text-left font-medium w-1/2"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-800">
+        {% for w in allocations.weights %}
+          <tr>
+            <td class="px-3 py-2 font-medium text-slate-100">{{ w.symbol }}</td>
+            <td class="px-3 py-2 text-right tabular-nums">{{ w.weight | pct }}</td>
+            <td class="px-3 py-2">
+              <div class="h-2 rounded bg-slate-800">
+                <div class="h-2 rounded bg-sky-500/70"
+                     style="width: {{ '%.1f' | format([w.weight * 100, 100] | min) }}%"></div>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if allocations.ts %}
+    <div class="mt-2 text-xs text-slate-500">
+      last rebalance {{ allocations.ts[:19].replace("T", " ") }}
+      {% if allocations.mode %}({{ allocations.mode }}){% endif %}
+    </div>
+  {% endif %}
+{% else %}
+  <div class="rounded-lg border border-dashed border-slate-800 p-6 text-center text-slate-500">
+    No target weights recorded yet — configure a <code>portfolio:</code>
+    allocation and run the bot (or a dry-run).
+  </div>
+{% endif %}
+
+{% if allocations.universe %}
+  <div class="mt-3 rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+    <div class="mb-1 text-xs uppercase tracking-wide text-slate-500">
+      Candidate universe ({{ allocations.universe | length }} symbols)
+    </div>
+    <div class="flex flex-wrap gap-1.5">
+      {% for s in allocations.universe %}
+        <span class="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-300">{{ s }}</span>
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}

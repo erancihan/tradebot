@@ -26,6 +26,8 @@ def _seed_trading(path):
     st.record_equity(10_050, 4_950, "paper")
     st.record_order(Order(symbol="SPY", qty=10, side=Side.BUY), "ord-1", "paper")
     st.record_bars("SPY", "1day", synthetic_ohlcv(periods=20, seed=1), "paper")
+    st.record_weights({"SPY": 0.6, "QQQ": 0.4}, "paper")
+    st.record_universe(["SPY", "QQQ", "IWM"], "paper")
     st.close()
 
 
@@ -123,6 +125,32 @@ def test_partials_reuse_components(client):
     assert "SPY" in client.get("/partials/orders").text
     assert "Total return" in client.get("/partials/stats").text
     assert client.get("/partials/positions").status_code == 200
+
+
+def test_allocations_api(client):
+    a = client.get("/api/allocations").json()
+    assert [w["symbol"] for w in a["weights"]] == ["SPY", "QQQ"]   # weight desc
+    assert a["weights"][0]["weight"] == 0.6
+    assert a["universe"] == ["SPY", "QQQ", "IWM"]
+    assert a["ts"] is not None
+
+
+def test_allocations_partial_and_dashboard_section(client):
+    partial = client.get("/partials/allocations").text
+    assert "QQQ" in partial and "60.00%" in partial
+    assert "Candidate universe" in partial and "IWM" in partial
+
+    page = client.get("/").text
+    assert "Target allocations" in page and "60.00%" in page
+
+
+def test_allocations_empty_state(tmp_path):
+    app = create_app(trading_db=str(tmp_path / "missing.db"),
+                     arena_db=str(tmp_path / "missing2.db"))
+    c = TestClient(app)
+    a = c.get("/api/allocations").json()
+    assert a["weights"] == [] and a["universe"] == []
+    assert "No target weights recorded yet" in c.get("/partials/allocations").text
 
 
 def test_arena_page_and_api(client):

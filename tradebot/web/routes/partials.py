@@ -42,6 +42,16 @@ def positions(request: Request, repo: TradingRepository = Depends(get_trading_re
     )
 
 
+@router.get("/allocations", response_class=HTMLResponse)
+def allocations(request: Request, repo: TradingRepository = Depends(get_trading_repo)):
+    weights = repo.latest_weights()
+    universe = repo.latest_universe()
+    return templates.TemplateResponse(
+        request, "components/allocations_table.html",
+        {"allocations": {**weights, "universe": universe["symbols"]}},
+    )
+
+
 @router.get("/leaderboard", response_class=HTMLResponse)
 def leaderboard(
     request: Request,

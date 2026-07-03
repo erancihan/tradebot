@@ -8,6 +8,8 @@ from ..dependencies import get_arena_repo, get_season_repo, get_trading_repo
 from ..repository import ArenaRepository, SeasonRepository, TradingRepository
 from ..schemas import (
     AccountView,
+    AllocationRow,
+    AllocationsView,
     ArenaCurve,
     ArenaRunDetail,
     Candle,
@@ -60,6 +62,19 @@ def account(repo: TradingRepository = Depends(get_trading_repo)):
         source=snap["source"], equity=snap.get("equity"), cash=snap.get("cash"),
         buying_power=snap.get("buying_power"), market_open=snap.get("market_open"),
         positions=[PositionView(**p) for p in snap.get("positions", [])],
+    )
+
+
+@router.get("/allocations", response_model=AllocationsView)
+def allocations(mode: str | None = None,
+                repo: TradingRepository = Depends(get_trading_repo)):
+    w = repo.latest_weights(mode=mode)
+    u = repo.latest_universe(mode=mode)
+    return AllocationsView(
+        ts=w["ts"], mode=w["mode"],
+        weights=[AllocationRow(symbol=r["symbol"], weight=float(r["weight"]))
+                 for r in w["weights"]],
+        universe=u["symbols"], universe_ts=u["ts"],
     )
 
 

@@ -54,6 +54,19 @@ class AccountView(BaseModel):
     positions: list[PositionView] = []
 
 
+class AllocationRow(BaseModel):
+    symbol: str
+    weight: float
+
+
+class AllocationsView(BaseModel):
+    ts: str | None = None             # when the weights were last recorded
+    mode: str | None = None
+    weights: list[AllocationRow] = []
+    universe: list[str] = []          # last resolved candidate pool (if any)
+    universe_ts: str | None = None
+
+
 class LeaderboardEntry(BaseModel):
     rank: int | None
     name: str
