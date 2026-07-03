@@ -55,11 +55,27 @@ tradebot arena season create --name s1 --symbols SPY --algos ./algos  # durable 
 tradebot arena history && tradebot arena show
 ```
 
+Then run the **regime gauntlet** — one scenario proves nothing. `scenarios/`
+ships `bull_trend`, `sideways_chop`, `crash_recovery`, `vol_spike`; rank with a
+robustness metric (`worst_fold` = worst quarter of the run, `consistency` =
+mean fold return − dispersion):
+```bash
+tradebot arena run --algos ./algos --scenario scenarios/crash_recovery.yaml --score worst_fold
+```
+House rules: every new algo ships with offline tests **and** a walk-forward
+pass (`tradebot.walkforward.walk_forward` smoke in tests), and count every
+variant you tried (multiple-testing honesty). Adding an example contestant to
+`algos/` changes the field size some tests assert on — see the CLAUDE.md gotcha.
+
 ## Extending the arena itself
 
-- **New score metric:** add to `SCORERS` in `tradebot/arena/scoring.py`.
+- **New score metric:** add to `SCORERS` in `tradebot/arena/scoring.py`
+  (whole-run metrics + fold-based `worst_fold`/`consistency`; the fold scorers
+  are only valid while contestants carry fixed params — nothing fit mid-run).
 - **New data source / scenario field:** `tradebot/arena/scenario.py`
   (`build_frames`); real data flows Alpaca → `data/cache.py BarCache` → frames.
+  Synthetic scenarios support piecewise `regimes:` segments
+  (`data/synthetic.py synthetic_regime_ohlcv`, continuous price path).
 - **Isolation:** `runner.py` has two runners behind the `Runner` protocol,
   chosen by `default_runner` via `--isolation`: `process` (default, hard
   kill-on-timeout + CPU/memory `rlimit`s — **raises** if fork is unavailable,

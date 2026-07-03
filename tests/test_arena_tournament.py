@@ -11,12 +11,24 @@ def test_tournament_over_example_algos_ranks_everyone():
     outcome = run_tournament([str(ALGOS_DIR)], Scenario.default(), metric="total_return")
     assert outcome.load_errors == []
     names = {e.name for e in outcome.leaderboard.entries}
-    assert {"sma_trend", "rsi_dip", "buy_and_hold"} <= names
+    assert {"sma_trend", "rsi_dip", "buy_and_hold",
+            "donchian", "macd_cross", "bollinger_dip"} <= names
     assert all(e.ok for e in outcome.leaderboard.entries)
     assert outcome.leaderboard.entries[0].rank == 1
     # Ranking is consistent with the chosen metric (descending total return).
     returns = [e.total_return for e in outcome.leaderboard.entries]
     assert returns == sorted(returns, reverse=True)
+
+
+def test_tournament_ranks_by_robustness_metric_on_a_regime_scenario():
+    scenario = Scenario.from_yaml(Path(__file__).resolve().parents[1]
+                                  / "scenarios" / "crash_recovery.yaml")
+    outcome = run_tournament([str(ALGOS_DIR)], scenario, metric="worst_fold",
+                             isolation="thread")
+    ok = [e for e in outcome.leaderboard.entries if e.ok]
+    assert ok and all(e.score is not None for e in ok)
+    scores = [e.score for e in ok]
+    assert scores == sorted(scores, reverse=True)
 
 
 def test_results_are_deterministic():

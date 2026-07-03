@@ -56,6 +56,40 @@ def rolling_volatility(close: pd.Series, window: int) -> pd.Series:
     return returns.rolling(window=window, min_periods=window).std()
 
 
+def macd(
+    close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9
+) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """MACD: returns (macd_line, signal_line, histogram).
+
+    macd_line = EMA(fast) - EMA(slow); signal_line = EMA(macd_line, signal);
+    histogram = macd_line - signal_line. NaN until each smoothing is warm.
+    """
+    if not 0 < fast < slow:
+        raise ValueError(f"require 0 < fast < slow, got {fast}, {slow}")
+    if signal < 1:
+        raise ValueError("signal must be >= 1")
+    macd_line = ema(close, fast) - ema(close, slow)
+    signal_line = macd_line.ewm(span=signal, adjust=False, min_periods=signal).mean()
+    return macd_line, signal_line, macd_line - signal_line
+
+
+def bollinger_bands(
+    close: pd.Series, window: int = 20, num_std: float = 2.0
+) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Bollinger bands: returns (middle, upper, lower).
+
+    middle = SMA(window); upper/lower = middle +/- num_std rolling stdevs.
+    NaN until a full window is available.
+    """
+    if window < 2:
+        raise ValueError("window must be >= 2")
+    if num_std <= 0:
+        raise ValueError("num_std must be > 0")
+    middle = sma(close, window)
+    std = close.rolling(window=window, min_periods=window).std(ddof=0)
+    return middle, middle + num_std * std, middle - num_std * std
+
+
 def crossover(fast: pd.Series, slow: pd.Series) -> pd.Series:
     """True at bars where `fast` crosses from <= to > `slow`."""
     prev = fast.shift(1) <= slow.shift(1)

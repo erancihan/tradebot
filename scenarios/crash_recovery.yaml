@@ -1,0 +1,21 @@
+# Regime library: calm bull -> sharp crash -> choppy recovery.
+# The stress test: does an algorithm de-risk into the crash, and does it
+# re-engage in the recovery? Rank with --score worst_fold so the crash fold
+# decides the ordering, not the recovery rally.
+name: crash_recovery
+source: synthetic
+symbols: [DEMO]
+initial_cash: 10000
+commission: 0.0
+slippage_bps: 1.0
+seed: 37
+
+regimes:
+  - {periods: 250, drift: 0.0006, volatility: 0.008}   # complacent bull
+  - {periods: 60,  drift: -0.004, volatility: 0.035}   # crash (~-21% drift)
+  - {periods: 190, drift: 0.0012, volatility: 0.015}   # volatile recovery
+
+risk:
+  max_position_pct: 0.95
+  max_gross_exposure: 1.0
+  max_daily_loss_pct: 1.0

@@ -13,7 +13,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from ..data.synthetic import load_csv, synthetic_ohlcv
+from ..data.synthetic import load_csv, synthetic_ohlcv, synthetic_regime_ohlcv
 from ..risk import RiskConfig
 
 
@@ -31,6 +31,10 @@ class Scenario:
     seed: int = 7
     drift: float = 0.0004
     volatility: float = 0.012
+    # synthetic regime segments (override drift/volatility/periods when set):
+    # [{periods: 250, drift: 0.0006, volatility: 0.008}, ...] — the price path
+    # is continuous across segments, so crash/recovery scenarios are one series.
+    regimes: list[dict] = field(default_factory=list)
     # csv params: {symbol: path}
     csv_paths: dict[str, str] = field(default_factory=dict)
     # alpaca params (pulled once, then cached + replayed)
@@ -49,7 +53,7 @@ class Scenario:
         risk = RiskConfig(**(raw.pop("risk", {}) or {}))
         known = {
             "name", "symbols", "source", "initial_cash", "commission", "slippage_bps",
-            "periods", "seed", "drift", "volatility", "csv_paths",
+            "periods", "seed", "drift", "volatility", "regimes", "csv_paths",
             "timeframe", "start", "end", "cache_dir",
         }
         kwargs = {k: v for k, v in raw.items() if k in known}
@@ -63,6 +67,11 @@ class Scenario:
         data is served without any fetch, so cached rounds run fully offline.
         """
         if self.source == "synthetic":
+            if self.regimes:
+                return {
+                    sym: synthetic_regime_ohlcv(self.regimes, seed=self.seed + i)
+                    for i, sym in enumerate(self.symbols)
+                }
             return {
                 sym: synthetic_ohlcv(
                     periods=self.periods, seed=self.seed + i,

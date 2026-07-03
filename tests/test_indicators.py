@@ -44,3 +44,38 @@ def test_crossover_detects_single_event():
     slow = pd.Series([2, 2, 2, 2], dtype=float)
     cross = indicators.crossover(fast, slow)
     assert list(cross) == [False, False, True, False]
+
+
+def test_macd_is_ema_difference_with_warmup():
+    s = pd.Series(np.linspace(10, 100, 120))
+    line, signal, hist = indicators.macd(s, fast=12, slow=26, signal=9)
+    expected = indicators.ema(s, 12) - indicators.ema(s, 26)
+    pd.testing.assert_series_equal(line, expected)
+    # Signal warms up after the line does; histogram is their spread.
+    assert signal.isna().sum() > line.isna().sum()
+    valid = hist.dropna().index
+    assert np.allclose(hist[valid], (line - signal)[valid])
+    # In a sustained uptrend the line ends above its own lagging EMA.
+    assert hist.iloc[-1] > 0
+
+
+def test_macd_rejects_bad_params():
+    s = pd.Series(range(50), dtype=float)
+    import pytest
+
+    with pytest.raises(ValueError):
+        indicators.macd(s, fast=26, slow=12)
+    with pytest.raises(ValueError):
+        indicators.macd(s, signal=0)
+
+
+def test_bollinger_bands_order_and_warmup():
+    rng = np.random.default_rng(3)
+    s = pd.Series(100 + rng.normal(0, 1, 100).cumsum())
+    mid, upper, lower = indicators.bollinger_bands(s, window=20, num_std=2.0)
+    assert mid.iloc[:19].isna().all()
+    valid = mid.dropna().index
+    assert (upper[valid] >= mid[valid]).all()
+    assert (lower[valid] <= mid[valid]).all()
+    # Bands are symmetric around the middle.
+    assert np.allclose(upper[valid] - mid[valid], mid[valid] - lower[valid])

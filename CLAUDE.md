@@ -22,9 +22,10 @@ entirely under `trading-bot/`. Four pillars:
 4. **Web dashboard** — FastAPI + TS/Tailwind/Alpine/ECharts; monitor + run sims.
 
 Status: feature-complete for the core vision **including the portfolio stack**
-(universe → selector → allocator → risk; see Roadmap). **~205 tests, all
-offline & green** (web tests skip without fastapi); frontend has a strict
-`tsc` gate.
+(universe → selector → allocator → risk; see Roadmap); the **algorithms-research
+arc** is underway (regime scenario library + robustness scorers + classic
+strategy roster shipped). **~225 tests, all offline & green** (web tests skip
+without fastapi); frontend has a strict `tsc` gate.
 
 ## Agent skills
 
@@ -41,8 +42,9 @@ Keep these in sync when workflows or invariants change.
 ```
 trading-bot/
 ├── tradebot/                 # the Python package
-│   ├── strategies/           # Strategy ABC + sma_crossover, rsi_reversion, buy_and_hold
-│   ├── indicators.py         # pure pandas: sma/ema/rsi/rolling_volatility/crossover
+│   ├── strategies/           # Strategy ABC + sma_crossover, rsi_reversion, buy_and_hold,
+│   │                         #   donchian_breakout, macd_trend, bollinger_reversion
+│   ├── indicators.py         # pure pandas: sma/ema/rsi/macd/bollinger/rolling_volatility/crossover
 │   ├── risk.py               # RiskManager + RiskConfig (sizing, allocate(), caps, band, daily-loss)
 │   ├── allocation.py         # Allocator ABC + equal/inverse_vol/explicit + registry
 │   ├── selection.py          # Selector ABC + momentum top-K w/ hysteresis + registry
@@ -61,7 +63,8 @@ trading-bot/
 │   ├── arena/                # competition system (see below)
 │   └── web/                  # FastAPI dashboard (see below)
 ├── algos/                    # example arena contestants + how-to README
-├── scenarios/                # arena scenario YAMLs
+├── scenarios/                # arena scenario YAMLs incl. the regime library
+│                             #   (bull_trend/sideways_chop/crash_recovery/vol_spike)
 ├── frontend/                 # TS + Tailwind + esbuild source for the dashboard
 ├── tests/                    # pytest (offline; web tests importorskip fastapi)
 ├── pyproject.toml            # deps + extras: [dev], [live], [web]; scripts
@@ -227,6 +230,15 @@ build) on changes under `trading-bot/**`.
   bars from a live feed is harmless. Recompute is O(history)/tick — fine for
   daily cadence; the default isolation is `thread` (light, re-evaluates data the
   contestants already survived).
+- **`algos/` head-count is baked into a few tests.** The web/season fixtures run
+  a tournament over the whole `algos/` dir; `test_web.py` (arena run entries,
+  season standings) and `test_arena_season.py` (name set) assert on the field.
+  Adding/removing an example contestant means updating those counts (currently 6).
+- **Fold scorers assume fixed parameters.** `worst_fold`/`consistency` treat
+  segments of the *realized* equity curve as out-of-sample folds. That's valid
+  while contestants don't fit anything during a run. If a contestant ever
+  optimizes in-run, its early folds become in-sample — use `walkforward.py`
+  with true refits instead.
 
 ## Roadmap
 
@@ -291,6 +303,26 @@ algorithms that run ON this system. The arena is the harness (contestants →
 tournaments → league → season → promote to paper via the trading core). See
 the session plan; key rule: every new algo ships with offline tests + a
 walk-forward pass, and multiple-testing honesty (count what you tried).
+Promotion pipeline: contestant → `arena validate` → tournaments across the
+regime scenario library → replay league → walk-forward → pass gate (positive
+worst fold, beats `buy_and_hold` net of costs, drawdown in bounds) → register
+as a core `Strategy` → paper dry-run → paper season.
+*Stage 1 — research lab (DONE):* **robustness scorers** (`worst_fold`,
+`consistency` in `arena/scoring.py` — split the realized equity curve into
+contiguous folds; valid as out-of-sample because contestants have fixed
+params, nothing is fit mid-run) · **regime scenario library**
+(`synthetic_regime_ohlcv` piecewise drift/vol segments, continuous price path;
+`Scenario.regimes`; four shipped YAMLs) · **classic roster** (donchian_breakout,
+macd_trend, bollinger_reversion strategies + macd/bollinger_bands indicators +
+`algos/` contestants: donchian, macd_cross, bollinger_dip — each with offline
+tests + a walk-forward smoke pass). Verified end-to-end: the library
+discriminates as theory predicts (trend-followers top the bull scenario,
+mean-reverters top the chop by `consistency`, buy_and_hold sinks in
+crash_recovery by `worst_fold`).
+*Next stages:* experiment journal (attempts counter per algo family) ·
+cross-sectional contestants on the selector/allocator stack · adaptive/meta
+algos (bandit over sub-strategies, follow-the-league-leader) · the pass-gate
+runbook + first promotion to a paper season.
 
 Deferred (decided, do not re-propose without a new ask):
 - **Container/gVisor containment** — the strongest, OS-level tier, for fully

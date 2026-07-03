@@ -4,8 +4,9 @@ Drop a `.py` file in this folder (or anywhere — point `--algos` at it) and
 decorate one or more classes with `@register`. The tournament imports the file,
 discovers your contestants, runs each over the same data, and ranks them.
 
-> ⚠️ The default runner imports and runs algorithms **in-process** — only run
-> code you trust. (A sandboxed subprocess runner is a planned drop-in.)
+> The default runner executes each contestant in a **sandboxed subprocess**
+> (hard timeout, no disk writes, no network; `--no-harden` to opt out,
+> `--seccomp` for the adversarial tier). Still: review code before running it.
 
 ## Two interfaces
 
@@ -54,3 +55,19 @@ class MyStrategy(Strategy):
 tradebot arena list --algos ./algos
 tradebot arena run  --algos ./algos --score sharpe
 ```
+
+## Prove it's robust, not lucky
+
+One leaderboard on one dataset proves nothing. The `scenarios/` folder ships a
+regime library (`bull_trend`, `sideways_chop`, `crash_recovery`, `vol_spike`) —
+run your contestant across all of them, and rank with a robustness metric:
+
+```bash
+tradebot arena run --algos ./algos --scenario scenarios/crash_recovery.yaml --score worst_fold
+tradebot arena run --algos ./algos --scenario scenarios/sideways_chop.yaml  --score consistency
+```
+
+`worst_fold` scores the *worst* quarter of the run (a crash fold can't hide
+behind a recovery rally); `consistency` penalises lumpy, regime-dependent
+earnings. House rule: count every variant you tried — 20 attempts make one
+"winner" meaningless.

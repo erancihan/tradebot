@@ -55,7 +55,8 @@ slippage_bps: 1.0     # 1 bp = 0.01% slippage per fill
 db_path: tradebot.db
 
 # --- Strategy -----------------------------------------------------------------
-# Available: sma_crossover, rsi_reversion
+# Available: sma_crossover, rsi_reversion, buy_and_hold, donchian_breakout,
+#            macd_trend, bollinger_reversion
 strategy:
   name: sma_crossover
   params:

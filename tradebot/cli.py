@@ -739,7 +739,8 @@ def build_parser() -> argparse.ArgumentParser:
     ar.add_argument("--algos", required=True, nargs="+", help="algo files and/or folders")
     ar.add_argument("--scenario", help="scenario YAML (default: built-in synthetic)")
     ar.add_argument("--score", default="sharpe",
-                    help="ranking metric: sharpe|total_return|cagr|calmar (default sharpe)")
+                    help="ranking metric: sharpe|total_return|cagr|calmar|"
+                         "worst_fold|consistency (default sharpe)")
     ar.add_argument("--time-budget", dest="time_budget", type=float, default=10.0,
                     help="per-contestant wall-clock budget in seconds (default 10)")
     ar.add_argument("--isolation", choices=["process", "thread", "auto"], default="process",
@@ -766,7 +767,8 @@ def build_parser() -> argparse.ArgumentParser:
     aL.add_argument("--algos", required=True, nargs="+", help="algo files and/or folders")
     aL.add_argument("--scenario", help="scenario YAML (default: built-in synthetic)")
     aL.add_argument("--score", default="sharpe",
-                    help="ranking metric: sharpe|total_return|cagr|calmar (default sharpe)")
+                    help="ranking metric: sharpe|total_return|cagr|calmar|"
+                         "worst_fold|consistency (default sharpe)")
     aL.add_argument("--snapshots", type=int, default=10,
                     help="number of standings snapshots over the season (default 10)")
     aL.add_argument("--pace", type=float, default=0.0,

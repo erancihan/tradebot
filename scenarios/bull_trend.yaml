@@ -1,0 +1,18 @@
+# Regime library: sustained bull trend, moderate volatility.
+# Trend-followers (breakouts, MA crossovers, MACD) should shine here;
+# mean-reverters pay for fading a market that keeps going.
+name: bull_trend
+source: synthetic
+symbols: [DEMO]
+initial_cash: 10000
+commission: 0.0
+slippage_bps: 1.0
+seed: 11
+
+regimes:
+  - {periods: 500, drift: 0.0008, volatility: 0.010}
+
+risk:
+  max_position_pct: 0.95
+  max_gross_exposure: 1.0
+  max_daily_loss_pct: 1.0

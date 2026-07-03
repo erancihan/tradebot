@@ -1,0 +1,22 @@
+# Regime library: quiet grind interrupted by two volatility spikes with no
+# direction. Tests position discipline — algorithms that size or exit on
+# volatility should hold up; ones that mistake noise for signal churn.
+# Rank with --score consistency to reward even performance across regimes.
+name: vol_spike
+source: synthetic
+symbols: [DEMO]
+initial_cash: 10000
+commission: 0.0
+slippage_bps: 1.0
+seed: 53
+
+regimes:
+  - {periods: 150, drift: 0.0004, volatility: 0.008}   # calm
+  - {periods: 100, drift: 0.0,    volatility: 0.030}   # spike 1
+  - {periods: 150, drift: 0.0004, volatility: 0.008}   # calm again
+  - {periods: 100, drift: 0.0,    volatility: 0.025}   # spike 2
+
+risk:
+  max_position_pct: 0.95
+  max_gross_exposure: 1.0
+  max_daily_loss_pct: 1.0

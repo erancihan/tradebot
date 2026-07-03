@@ -44,7 +44,10 @@ def test_step_accumulates_then_ranks(tmp_path):
         snap = season.step({"DEMO": df.iloc[[1]]})
         assert snap is not None and snap.step == 2
         assert [s.rank for s in snap.standings] == list(range(1, len(snap.standings) + 1))
-        assert {s.name for s in snap.standings} <= {"sma_trend", "rsi_dip", "buy_and_hold"}
+        assert {s.name for s in snap.standings} <= {
+            "sma_trend", "rsi_dip", "buy_and_hold",
+            "donchian", "macd_cross", "bollinger_dip",
+        }
 
 
 def test_season_survives_restart_and_resumes(tmp_path):

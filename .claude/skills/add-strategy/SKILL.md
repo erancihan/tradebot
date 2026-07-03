@@ -50,7 +50,8 @@ backtest, live, and the arena.
 3. **Add tests** in `tests/test_strategies.py` (offline, deterministic). Use
    `tradebot.data.synthetic.synthetic_ohlcv(...)`. Assert: targets ⊆ `{-1,0,1}`,
    correct behaviour on a known trend, and constructor validation. See existing
-   `SmaCrossover`/`RsiReversion` tests for the pattern.
+   `SmaCrossover`/`RsiReversion` tests for the pattern. House rule: also give it
+   a walk-forward smoke pass (see `test_new_strategies_pass_a_walk_forward_smoke`).
 
 4. **Verify**: `make test`. Optionally `tradebot demo --strategy my_strategy`
    isn't wired automatically, but you can backtest via a `config.yaml` with
@@ -58,7 +59,8 @@ backtest, live, and the arena.
 
 ## Notes
 - For a *stateful regime* (hold until exit), compute signals then `ffill` (see
-  `rsi_reversion.py`).
+  `rsi_reversion.py`, `donchian_breakout.py`). If the exit depends on which side
+  the position is on, use a causal walk instead (see `bollinger_reversion.py`).
 - Strategies are also valid arena contestants — add `@register` to enter one
   (see the `add-arena-algo` skill).
 - Update `CLAUDE.md`/`README.md` if you're adding a notable capability.

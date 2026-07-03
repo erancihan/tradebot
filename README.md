@@ -73,8 +73,8 @@ accident. The design reflects that:
 
 | Module | Responsibility |
 |---|---|
-| `tradebot/indicators.py` | SMA, EMA, RSI, crossover helpers (pure pandas) |
-| `tradebot/strategies/` | `Strategy` interface + `SmaCrossover`, `RsiReversion` |
+| `tradebot/indicators.py` | SMA, EMA, RSI, MACD, Bollinger, crossover helpers (pure pandas) |
+| `tradebot/strategies/` | `Strategy` interface + crossover, RSI, Donchian, MACD, Bollinger, buy-and-hold |
 | `tradebot/risk.py` | Position sizing, joint book allocation, exposure cap, no-trade band, daily-loss breaker |
 | `tradebot/allocation.py` | Portfolio weighting: equal / inverse-vol / explicit |
 | `tradebot/selection.py` | Cross-sectional selection: momentum top-K with hysteresis |
@@ -284,6 +284,14 @@ The full portfolio pipeline is then: **universe** (which symbols qualify) →
   MA, flat (or short) otherwise. SMA or EMA selectable.
 - **`rsi_reversion`** — mean-reversion. Long when RSI is oversold, exit when it
   normalises; optional short side.
+- **`donchian_breakout`** — turtle-style trend entry. Long on a break above the
+  prior `entry`-bar high, exit on a break below the prior `exit`-bar low.
+- **`macd_trend`** — long while the MACD line (fast EMA − slow EMA) is above its
+  signal line; optional short side.
+- **`bollinger_reversion`** — buy a close below the lower Bollinger band, exit
+  when price reverts to the middle band; optional short side above the upper.
+- **`buy_and_hold`** — always long; the benchmark every idea has to beat, and
+  the signal to use when a portfolio selector should be the only decision-maker.
 
 Add your own by subclassing `Strategy` and implementing
 `target_positions(bars) -> Series` (values in `{-1, 0, +1}`), then register it in
@@ -341,10 +349,24 @@ Every contestant runs through the **same simulation core** (which a test proves
 matches the `Backtester`), over an identical `Scenario` — same data, capital, and
 cost/risk model — fed bar-by-bar so the future is never visible. Crashes and
 timeouts are isolated (one bad algo can't sink the field), and the leaderboard is
-ranked by a configurable metric (`sharpe` | `total_return` | `cagr` | `calmar`).
-Scenarios are reproducible YAML (`scenarios/default.yaml`); synthetic and CSV
+ranked by a configurable metric (`sharpe` | `total_return` | `cagr` | `calmar` |
+`worst_fold` | `consistency`). The last two are **robustness** metrics: they
+split the realized equity curve into contiguous folds and score the worst fold
+(a crash can't hide behind a recovery) or the mean minus the dispersion
+(regime-dependence penalty). Scenarios are reproducible YAML; synthetic and CSV
 sources work fully offline. See [`algos/README.md`](algos/README.md) for the
 contestant guide.
+
+**Regime scenario library.** `scenarios/` ships stress environments built from
+piecewise synthetic regimes (the price path is continuous across segment
+boundaries): `bull_trend`, `sideways_chop`, `crash_recovery` (calm bull → sharp
+crash → volatile recovery), and `vol_spike`. An algorithm that only ever met the
+default scenario has been tested on one market; the library is the gauntlet:
+
+```bash
+tradebot arena run --algos ./algos --scenario scenarios/crash_recovery.yaml --score worst_fold
+tradebot arena run --algos ./algos --scenario scenarios/sideways_chop.yaml  --score consistency
+```
 
 **Real data, pulled once and cached.** A scenario can compete over real Alpaca
 history. You pull it once into a local cache, then every run is offline and
@@ -415,12 +437,11 @@ tier.
 ## Testing
 
 ```bash
-make test     # 35 tests, fully offline
+make test     # ~225 tests, fully offline
 ```
 
 ## Roadmap / ideas
 
-- More strategies (Bollinger bands, MACD, momentum) and a walk-forward optimiser
 - Bracket / stop-loss / take-profit order types
 - Telegram or email notifications on fills and circuit-breaker trips
 - Streaming data via Alpaca websockets instead of polling
