@@ -91,6 +91,18 @@ def test_allocate_uses_and_caps_provided_weights():
     assert got["C"] == 0.0
 
 
+def test_material_delta_band_skips_drift_but_always_exits():
+    r = rm(rebalance_band_pct=0.02, allow_fractional=True)
+    # 1 share of drift at $100 on $10_000 equity = 1% < 2% band -> skip.
+    assert r.material_delta(desired=51, current=50, price=100, equity=10_000) == 0.0
+    # 5 shares = 5% > band -> trade the full delta.
+    assert r.material_delta(desired=55, current=50, price=100, equity=10_000) == 5.0
+    # Full exit always executes, however small.
+    assert r.material_delta(desired=0, current=1, price=100, equity=10_000) == -1.0
+    # Band off -> raw delta.
+    assert rm().material_delta(51, 50, 100, 10_000) == 1.0
+
+
 def test_daily_loss_circuit_breaker():
     r = rm(max_daily_loss_pct=0.03)
     assert not r.daily_loss_tripped(10_000, 9_800)   # -2% ok

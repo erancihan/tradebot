@@ -27,9 +27,14 @@ class RiskConfig:
     #: Trade whole shares only (Alpaca supports fractional, but integers are the
     #: safer default and make sizing math obvious).
     allow_fractional: bool = False
+    #: No-trade band: skip rebalancing trades smaller than this fraction of
+    #: equity (full exits always execute). 0 disables the band. Cuts the drip
+    #: of tiny drift trades that eat returns via slippage.
+    rebalance_band_pct: float = 0.0
 
     def __post_init__(self) -> None:
-        for name in ("max_position_pct", "max_gross_exposure", "max_daily_loss_pct"):
+        for name in ("max_position_pct", "max_gross_exposure", "max_daily_loss_pct",
+                     "rebalance_band_pct"):
             v = getattr(self, name)
             if not 0 <= v <= 1:
                 raise ValueError(f"{name} must be in [0, 1], got {v}")
@@ -116,6 +121,23 @@ class RiskManager:
             max_qty = math.floor(max_qty)
         bounded = min(abs(desired_qty), max_qty)
         return math.copysign(bounded, desired_qty) if bounded > 0 else 0.0
+
+    def material_delta(
+        self, desired: float, current: float, price: float, equity: float
+    ) -> float:
+        """The delta worth trading once the no-trade band is applied.
+
+        Drift trades smaller than ``rebalance_band_pct`` of equity are skipped
+        (returning 0), but full exits (``desired == 0``) always execute so the
+        band can never strand a position that should be flat.
+        """
+        delta = desired - current
+        band = self.config.rebalance_band_pct
+        if band <= 0 or desired == 0 or equity <= 0:
+            return delta
+        if abs(delta) * price < band * equity:
+            return 0.0
+        return delta
 
     def daily_loss_tripped(self, start_equity: float, current_equity: float) -> bool:
         """True when today's drawdown breaches ``max_daily_loss_pct``."""

@@ -40,6 +40,23 @@ def test_no_portfolio_block_keeps_legacy_sizing():
     s = Settings.from_dict({"symbols": ["SPY"]})
     assert s.allocation_name is None
     assert s.build_allocator() is None
+    assert s.selector_name is None
+    assert s.build_selector() is None
+
+
+def test_portfolio_selector_block_builds_selector():
+    s = Settings.from_dict({
+        "symbols": ["A", "B", "C"],
+        "portfolio": {
+            "allocation": "equal",
+            "selector": {"name": "momentum",
+                         "params": {"lookback": 60, "skip": 5, "top_k": 2}},
+        },
+    })
+    sel = s.build_selector()
+    assert sel is not None
+    assert sel.top_k == 2 and sel.lookback == 60
+    assert s.build_allocator() is not None
 
 
 def test_invalid_mode_rejected():

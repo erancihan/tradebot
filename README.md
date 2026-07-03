@@ -45,7 +45,12 @@ accident. The design reflects that:
 
 ```
                  ┌──────────────┐
-   market data → │   Strategy   │ → target ∈ {-1, 0, +1}   (pure, stateless)
+   market data → │   Strategy   │ → target ∈ {-1, 0, +1}   (pure, per-symbol)
+                 └──────────────┘
+                        │
+                        ▼
+                 ┌──────────────┐   cross-sectional gate: momentum top-K
+                 │   Selector   │ → which symbols may be held   (optional)
                  └──────────────┘
                         │
                         ▼
@@ -54,7 +59,7 @@ accident. The design reflects that:
                  └──────────────┘
                         │
                         ▼
-                 ┌──────────────┐   joint sizing + caps + daily-loss breaker
+                 ┌──────────────┐   joint sizing + caps + no-trade band
                  │ RiskManager  │ → signed share quantities (whole book)
                  └──────────────┘
                         │
@@ -70,8 +75,9 @@ accident. The design reflects that:
 |---|---|
 | `tradebot/indicators.py` | SMA, EMA, RSI, crossover helpers (pure pandas) |
 | `tradebot/strategies/` | `Strategy` interface + `SmaCrossover`, `RsiReversion` |
-| `tradebot/risk.py` | Position sizing, joint book allocation, exposure cap, daily-loss breaker |
+| `tradebot/risk.py` | Position sizing, joint book allocation, exposure cap, no-trade band, daily-loss breaker |
 | `tradebot/allocation.py` | Portfolio weighting: equal / inverse-vol / explicit |
+| `tradebot/selection.py` | Cross-sectional selection: momentum top-K with hysteresis |
 | `tradebot/portfolio.py` | Cost-basis & realised-P&L accounting (backtest) |
 | `tradebot/backtest.py` | Event-driven backtester + performance metrics |
 | `tradebot/broker/` | `Broker` interface + Alpaca adapter (lazy SDK import) |
@@ -182,21 +188,36 @@ risk:
   max_daily_loss_pct: 0.03   # flatten + halt after a 3% daily drawdown
 ```
 
-## Portfolio allocation
+## Portfolio: selection + allocation
 
 By default every symbol gets the same fixed `max_position_pct` slug of equity.
-Add an optional `portfolio:` block to split capital *across* the book instead —
-weights flow through the same `RiskManager`, so the per-symbol and gross caps
-always apply on top:
+An optional `portfolio:` block turns the symbol list into a managed portfolio
+with two independent layers — *which* symbols to hold, and *how much* of each:
 
 ```yaml
+strategy:
+  name: buy_and_hold           # selector-only portfolio (momentum top-K)
 portfolio:
-  allocation: inverse_vol    # equal | inverse_vol | explicit
-  params: {window: 63}       # e.g. weights: {SPY: 0.6, QQQ: 0.4} for explicit
+  selector:
+    name: momentum
+    params: {lookback: 252, skip: 21, top_k: 5}   # 12-1 momentum, hold 5
+  allocation: inverse_vol      # equal | inverse_vol | explicit
+  params: {window: 63}
+risk:
+  rebalance_band_pct: 0.02     # skip drift trades < 2% of equity
 ```
 
-- **`equal`** — 1/N over the symbols the strategy wants held. The classic
-  hard-to-beat baseline.
+**Selection (which):** the `momentum` selector ranks the pool each bar by
+trailing `lookback`-bar return skipping the most recent `skip` bars (the
+classic "12-1" construction), and holds the top `top_k`. Hysteresis keeps a
+holding until it slips below `exit_rank` (default 1.5×K), so borderline names
+don't churn. Membership *gates* the per-symbol strategy: with `buy_and_hold`
+the selector is the sole signal; with e.g. `sma_crossover` a symbol must be
+selected *and* trending to be held. Symbols without a full lookback of history
+are never selected.
+
+**Allocation (how much):**
+- **`equal`** — 1/N over the held symbols. The classic hard-to-beat baseline.
 - **`inverse_vol`** — weight by 1/volatility (rolling stdev of daily returns
   over `window` bars), so risk rather than dollars is spread evenly. Symbols
   without enough history to measure get nothing.
@@ -204,9 +225,18 @@ portfolio:
 
 The whole book is sized in one order-independent pass: weights are capped
 per-name, scaled down proportionally if their total exceeds
-`max_gross_exposure`, and only then turned into share quantities. Weights obey
-the same one-bar shift as signals in backtests (decided on bar *t*, filled on
-*t+1*), and each rebalance's target weights are persisted to the SQLite log.
+`max_gross_exposure`, and only then turned into share quantities. A
+`rebalance_band_pct` no-trade band suppresses tiny drift trades (full exits
+always execute) — in the offline demo it cuts trade count ~10×. Selection and
+weights obey the same one-bar shift as signals in backtests (decided on bar
+*t*, filled on *t+1*), and each rebalance's target weights are persisted to
+the SQLite log.
+
+Try it offline, no credentials:
+
+```bash
+.venv/bin/python -m tradebot.cli demo --portfolio
+```
 
 ## Strategies
 

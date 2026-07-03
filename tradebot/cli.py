@@ -38,6 +38,9 @@ def cmd_demo(args: argparse.Namespace) -> int:
     from .risk import RiskConfig, RiskManager
     from .strategies import build_strategy
 
+    if args.portfolio:
+        return _demo_portfolio(args)
+
     df = synthetic_ohlcv(periods=750, drift=0.0005, volatility=0.012, seed=args.seed)
     strategy = build_strategy(
         args.strategy,
@@ -49,6 +52,44 @@ def cmd_demo(args: argparse.Namespace) -> int:
     print(f"(synthetic data, strategy={args.strategy}) — buy & hold for reference:")
     bh = df["close"].iloc[-1] / df["open"].iloc[0] - 1
     print(f"  buy & hold return: {round(bh, 4)}\n")
+    return 0
+
+
+def _demo_portfolio(args: argparse.Namespace) -> int:
+    """Offline showcase of the portfolio stack: momentum top-K selection over a
+    synthetic candidate pool, inverse-vol weighting, joint risk sizing."""
+    from .allocation import build_allocator
+    from .backtest import Backtester
+    from .data.synthetic import synthetic_ohlcv
+    from .risk import RiskConfig, RiskManager
+    from .selection import build_selector
+    from .strategies import build_strategy
+
+    # A varied candidate pool: different drifts/vols so the ranking has teeth.
+    pool = {
+        f"SYN{i}": synthetic_ohlcv(
+            periods=750, drift=drift, volatility=vol, seed=args.seed + i
+        )
+        for i, (drift, vol) in enumerate([
+            (0.0012, 0.010), (0.0008, 0.020), (0.0004, 0.012),
+            (0.0000, 0.015), (-0.0004, 0.018), (0.0010, 0.025),
+        ])
+    }
+    selector = build_selector("momentum", {"lookback": 126, "skip": 10, "top_k": 3})
+    allocator = build_allocator("inverse_vol", {"window": 63})
+    risk = RiskManager(RiskConfig(max_position_pct=0.5, max_gross_exposure=1.0,
+                                  allow_fractional=True, rebalance_band_pct=0.02))
+    bt = Backtester(
+        build_strategy("buy_and_hold"), risk, initial_cash=10_000.0,
+        allocator=allocator, selector=selector,
+    )
+    result = bt.run(pool)
+    _print_summary(result.summary())
+    print("(synthetic 6-symbol pool — momentum top-3, inverse-vol weights, "
+          "2% no-trade band)")
+    print("equal-weight buy & hold of the whole pool for reference:")
+    bh = sum(df["close"].iloc[-1] / df["open"].iloc[0] - 1 for df in pool.values()) / len(pool)
+    print(f"  pool buy & hold return: {round(bh, 4)}\n")
     return 0
 
 
@@ -68,6 +109,7 @@ def cmd_backtest(args: argparse.Namespace) -> int:
         commission=settings.commission,
         slippage_bps=settings.slippage_bps,
         allocator=settings.build_allocator(),
+        selector=settings.build_selector(),
     )
 
     if args.csv:
@@ -127,7 +169,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     broker, data, strategy, risk, storage = _build_live_components(settings)
     engine = Engine(settings, broker, data, strategy, risk, storage,
-                    allocator=settings.build_allocator())
+                    allocator=settings.build_allocator(),
+                    selector=settings.build_selector())
 
     mode = "LIVE (real money)" if settings.is_live else "paper"
     print(f"Running in {mode} mode on {settings.symbols} with {strategy.name}.")
@@ -150,10 +193,11 @@ def _run_dry(settings, args: argparse.Namespace) -> int:
     strategy = build_strategy(settings.strategy_name, settings.strategy_params)
     risk = RiskManager(settings.risk)
     storage = Storage(settings.db_path)
+    selector = settings.build_selector()
 
     replay = bool(args.replay or args.replay_csv)
     if replay:
-        data = _build_replay_data(settings, strategy, args)
+        data = _build_replay_data(settings, strategy, args, selector=selector)
     else:
         from .config import AlpacaCredentials
         from .data import get_alpaca_data
@@ -180,6 +224,7 @@ def _run_dry(settings, args: argparse.Namespace) -> int:
         settings, broker, data, strategy, risk, storage,
         mode_label="dry_run", enforce_live_ack=False,
         allocator=settings.build_allocator(),
+        selector=selector,
     )
 
     src = "replay" if replay else "live data"
@@ -202,11 +247,13 @@ def _run_dry(settings, args: argparse.Namespace) -> int:
     return 0
 
 
-def _build_replay_data(settings, strategy, args):
+def _build_replay_data(settings, strategy, args, selector=None):
     from .data.replay import ReplayData
     from .data.synthetic import load_csv, synthetic_ohlcv
 
     warmup = strategy.required_history + 2
+    if selector is not None:
+        warmup = max(warmup, selector.required_history + 2)
     if args.replay_csv:
         frames = {settings.symbols[0]: load_csv(args.replay_csv)}
     else:
@@ -540,7 +587,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     d = sub.add_parser("demo", help="offline backtest on synthetic data (no creds)")
     d.add_argument("--strategy", default="sma_crossover",
-                   choices=["sma_crossover", "rsi_reversion"])
+                   choices=["sma_crossover", "rsi_reversion", "buy_and_hold"])
+    d.add_argument("--portfolio", action="store_true",
+                   help="showcase the portfolio stack: momentum top-K selection "
+                        "+ inverse-vol weighting over a synthetic candidate pool")
     d.add_argument("--seed", type=int, default=42)
     d.set_defaults(func=cmd_demo)
 

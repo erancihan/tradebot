@@ -50,6 +50,7 @@ class Engine:
         mode_label: str | None = None,
         enforce_live_ack: bool = True,
         allocator=None,              # optional tradebot.allocation.Allocator
+        selector=None,               # optional tradebot.selection.Selector
     ) -> None:
         # The live gate is skipped for dry-runs (no real broker can be reached).
         if enforce_live_ack:
@@ -61,6 +62,7 @@ class Engine:
         self.risk = risk
         self.storage = storage
         self.allocator = allocator
+        self.selector = selector
         # Label used for logs and storage tagging (e.g. "dry_run").
         self._mode_label = mode_label or settings.mode
         self._session_start_equity: float | None = None
@@ -70,14 +72,18 @@ class Engine:
         return self._mode_label
 
     def _lookback_days(self) -> int:
-        # Ensure enough history for the strategy plus headroom for weekends/holidays.
-        return max(self.strategy.required_history * 2, 60)
+        # Ensure enough history for the strategy (and selector, if any) plus
+        # headroom for weekends/holidays.
+        needed = self.strategy.required_history
+        if self.selector is not None:
+            needed = max(needed, self.selector.required_history)
+        return max(needed * 2, 60)
 
     def _submit_delta(
-        self, symbol: str, target: int, desired: float, price: float
+        self, symbol: str, target: int, desired: float, price: float, equity: float
     ) -> RebalanceAction:
         current = self.broker.position(symbol).qty
-        delta = desired - current
+        delta = self.risk.material_delta(desired, current, price, equity)
         if not self.risk.config.allow_fractional:
             delta = float(round(delta))
 
@@ -146,7 +152,16 @@ class Engine:
             except Exception:
                 log.exception("Data/signal failed for %s; skipping it this pass", sym)
 
-        # 2) Size the whole book at once (order-independent). Live decisions
+        # 2) Cross-sectional gate: symbols outside the selection are forced
+        #    flat. Membership is recomputed from full history every pass
+        #    (prefix-stable, so bars remain the only state).
+        if self.selector is not None:
+            membership = self.selector.latest_targets(frames)
+            for sym in targets:
+                if not membership.get(sym):
+                    targets[sym] = 0
+
+        # 3) Size the whole book at once (order-independent). Live decisions
         #    use bars up to now, same as the strategy's latest_target.
         weights = None
         if self.allocator is not None:
@@ -155,12 +170,13 @@ class Engine:
                 self.storage.record_weights(weights, self.mode)
         desired = self.risk.allocate(targets, acct.equity, prices, weights)
 
-        # 3) Submit the deltas.
+        # 4) Submit the deltas.
         actions: list[RebalanceAction] = []
         for sym in targets:
             try:
                 actions.append(
-                    self._submit_delta(sym, targets[sym], desired[sym], prices[sym])
+                    self._submit_delta(sym, targets[sym], desired[sym],
+                                       prices[sym], acct.equity)
                 )
             except Exception:  # one bad symbol shouldn't kill the whole pass
                 log.exception("Rebalance failed for %s", sym)

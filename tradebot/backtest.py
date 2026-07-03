@@ -113,6 +113,7 @@ class Backtester:
         commission: float = 0.0,
         slippage_bps: float = 1.0,
         allocator=None,           # optional tradebot.allocation.Allocator
+        selector=None,            # optional tradebot.selection.Selector
     ) -> None:
         self.strategy = strategy
         self.risk = risk
@@ -120,6 +121,7 @@ class Backtester:
         self.commission = commission
         self.slippage_bps = slippage_bps
         self.allocator = allocator
+        self.selector = selector
 
     def run(self, data: dict[str, pd.DataFrame] | pd.DataFrame, symbol: str = "ASSET") -> BacktestResult:
         if isinstance(data, pd.DataFrame):
@@ -146,6 +148,12 @@ class Backtester:
         opens = {s: aligned[s]["open"] for s in data}
         closes = {s: aligned[s]["close"] for s in data}
 
+        # Cross-sectional membership gates the targets, on the same one-bar
+        # shift: selected using bars <= t, gating the fill at t+1.
+        member = None
+        if self.selector is not None:
+            member = self.selector.membership(aligned).shift(1).fillna(False)
+
         pf = Portfolio(cash=self.initial_cash)
         equity_points: list[float] = []
         slip = self.slippage_bps / 10_000.0
@@ -162,7 +170,10 @@ class Backtester:
                 price = float(opens[sym].loc[ts])
                 if not np.isfinite(price) or price <= 0:
                     continue
-                bar_targets[sym] = int(targets[sym].loc[ts])
+                target = int(targets[sym].loc[ts])
+                if member is not None and not bool(member[sym].loc[ts]):
+                    target = 0
+                bar_targets[sym] = target
                 bar_prices[sym] = price
 
             weights = None
@@ -174,7 +185,8 @@ class Backtester:
             desired = self.risk.allocate(bar_targets, equity, bar_prices, weights)
 
             for sym, want in desired.items():
-                delta = want - pf.position(sym).qty
+                price = bar_prices[sym]
+                delta = self.risk.material_delta(want, pf.position(sym).qty, price, equity)
                 if self.risk.config.allow_fractional:
                     if abs(delta) < 1e-9:
                         continue
@@ -182,7 +194,6 @@ class Backtester:
                     delta = float(round(delta))
                     if delta == 0:
                         continue
-                price = bar_prices[sym]
                 fill_price = price * (1 + slip) if delta > 0 else price * (1 - slip)
                 pf.execute(sym, delta, fill_price, commission=self.commission)
 

@@ -51,13 +51,27 @@ strategy:
 #     exit_level: 50
 #     allow_short: false
 
-# --- Portfolio allocation -------------------------------------------------------
-# Optional: how to split capital across the symbols the strategy wants held.
-# Omit this block entirely to keep the legacy sizing (every symbol gets the
-# fixed `max_position_pct` slug below). Weights always pass through the risk
-# caps, and the whole book is sized jointly (order-independent).
+# --- Portfolio: selection + allocation ------------------------------------------
+# Optional: turn the symbol list into a managed portfolio. Omit this block
+# entirely to keep the legacy sizing (every symbol gets the fixed
+# `max_position_pct` slug below).
+#
+#   selector    decides WHICH symbols may be held (cross-sectional gate);
+#               `momentum` ranks by trailing (lookback-skip) return, holds the
+#               top_k, and only drops a holding once it slips below exit_rank
+#               (hysteresis, default 1.5*top_k) to cut churn.
+#   allocation  decides HOW MUCH each held symbol gets. Weights always pass
+#               through the risk caps and the whole book is sized jointly
+#               (order-independent).
+#
+# Tip: `strategy: {name: buy_and_hold}` makes the selector the sole signal —
+# the classic momentum top-K portfolio. Any other strategy acts as an
+# additional per-symbol gate on top of membership.
 #
 # portfolio:
+#   selector:
+#     name: momentum
+#     params: {lookback: 252, skip: 21, top_k: 5}    # 12-1 momentum, hold 5
 #   allocation: inverse_vol   # equal | inverse_vol | explicit
 #   params:
 #     window: 63              # inverse_vol: rolling stdev window (daily bars)
@@ -70,3 +84,6 @@ risk:
   max_gross_exposure: 1.0     # at most 100% of equity deployed across all symbols
   max_daily_loss_pct: 0.03    # flatten + halt after a 3% daily drawdown
   allow_fractional: false     # whole shares only
+  rebalance_band_pct: 0.0     # no-trade band: skip drift trades smaller than
+                              # this fraction of equity (exits always execute);
+                              # try 0.01-0.02 with an allocator to cut churn

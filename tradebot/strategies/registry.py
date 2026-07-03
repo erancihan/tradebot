@@ -5,12 +5,14 @@ from __future__ import annotations
 from typing import Any
 
 from .base import Strategy
+from .buy_and_hold import BuyAndHold
 from .rsi_reversion import RsiReversion
 from .sma_crossover import SmaCrossover
 
 STRATEGIES: dict[str, type[Strategy]] = {
     SmaCrossover.name: SmaCrossover,
     RsiReversion.name: RsiReversion,
+    BuyAndHold.name: BuyAndHold,
 }
 
 

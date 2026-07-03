@@ -37,6 +37,7 @@ def simulate(
     risk: RiskManager,
     config: SimConfig,
     allocator=None,           # optional tradebot.allocation.Allocator
+    selector=None,            # optional tradebot.selection.Selector
 ) -> BacktestResult:
     if not frames:
         raise ValueError("No data provided to simulate")
@@ -53,6 +54,12 @@ def simulate(
     aligned = {s: frames[s].reindex(common) for s in symbols}
     opens = {s: aligned[s]["open"] for s in symbols}
     closes = {s: aligned[s]["close"] for s in symbols}
+
+    # Membership gate, precomputed exactly like the Backtester (selectors are
+    # prefix-stable, so this equals recomputing on each growing window).
+    member = None
+    if selector is not None:
+        member = selector.membership(aligned).shift(1).fillna(False)
 
     pf = Portfolio(cash=config.initial_cash)
     policy.reset()
@@ -73,7 +80,10 @@ def simulate(
             price = float(opens[s].iloc[i])
             if not np.isfinite(price) or price <= 0:
                 continue
-            bar_targets[s] = pending[s]
+            target = pending[s]
+            if member is not None and not bool(member[s].iloc[i]):
+                target = 0
+            bar_targets[s] = target
             bar_prices[s] = price
 
         weights = None
@@ -85,7 +95,8 @@ def simulate(
         desired = risk.allocate(bar_targets, equity, bar_prices, weights)
 
         for s, want in desired.items():
-            delta = want - pf.position(s).qty
+            price = bar_prices[s]
+            delta = risk.material_delta(want, pf.position(s).qty, price, equity)
             if fractional:
                 if abs(delta) < 1e-9:
                     continue
@@ -93,7 +104,6 @@ def simulate(
                 delta = float(round(delta))
                 if delta == 0:
                     continue
-            price = bar_prices[s]
             fill_price = price * (1 + slip) if delta > 0 else price * (1 - slip)
             pf.execute(s, delta, fill_price, commission=config.commission)
 

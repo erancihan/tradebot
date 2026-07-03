@@ -63,6 +63,10 @@ class Settings:
     #: fixed max_position_pct-per-symbol sizing.
     allocation_name: str | None = None
     allocation_params: dict[str, Any] = field(default_factory=dict)
+    #: Cross-sectional selector name (see tradebot.selection); None means every
+    #: configured symbol is always eligible (no membership gate).
+    selector_name: str | None = None
+    selector_params: dict[str, Any] = field(default_factory=dict)
     risk: RiskConfig = field(default_factory=RiskConfig)
     db_path: str = "tradebot.db"
     commission: float = 0.0
@@ -105,6 +109,14 @@ class Settings:
 
         return build_allocator(self.allocation_name, self.allocation_params)
 
+    def build_selector(self):
+        """Instantiate the configured selector, or None for no membership gate."""
+        if self.selector_name is None:
+            return None
+        from .selection import build_selector
+
+        return build_selector(self.selector_name, self.selector_params)
+
     # --- loading -------------------------------------------------------------
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Settings":
@@ -126,6 +138,8 @@ class Settings:
             strategy_params=strat.get("params", raw.get("strategy_params", {})) or {},
             allocation_name=portfolio.get("allocation"),
             allocation_params=portfolio.get("params", {}) or {},
+            selector_name=(portfolio.get("selector", {}) or {}).get("name"),
+            selector_params=(portfolio.get("selector", {}) or {}).get("params", {}) or {},
             risk=RiskConfig(**risk_raw),
             db_path=raw.get("db_path", "tradebot.db"),
             commission=float(raw.get("commission", 0.0)),

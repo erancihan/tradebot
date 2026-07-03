@@ -40,10 +40,11 @@ Keep these in sync when workflows or invariants change.
 ```
 trading-bot/
 ├── tradebot/                 # the Python package
-│   ├── strategies/           # Strategy ABC + sma_crossover, rsi_reversion, registry
+│   ├── strategies/           # Strategy ABC + sma_crossover, rsi_reversion, buy_and_hold
 │   ├── indicators.py         # pure pandas: sma/ema/rsi/rolling_volatility/crossover
-│   ├── risk.py               # RiskManager + RiskConfig (sizing, allocate(), caps, daily-loss)
+│   ├── risk.py               # RiskManager + RiskConfig (sizing, allocate(), caps, band, daily-loss)
 │   ├── allocation.py         # Allocator ABC + equal/inverse_vol/explicit + registry
+│   ├── selection.py          # Selector ABC + momentum top-K w/ hysteresis + registry
 │   ├── portfolio.py          # cost-basis + realised-PnL accounting (sim)
 │   ├── backtest.py           # Backtester + BacktestResult (metrics)
 │   ├── models.py             # Order/Fill/Position/Trade/Side, BAR_COLUMNS, utcnow
@@ -89,7 +90,10 @@ gitignored).
   only emit targets in `{-1, 0, +1}`. Don't let strategies size positions.
   Allocators (`allocation.py`) only *propose* weights; `RiskManager.allocate`
   caps them per-name, scales the book to the gross cap (order-independent), and
-  is the only place weights become share quantities.
+  is the only place weights become share quantities. Selectors (`selection.py`)
+  only *gate* membership (force non-members flat); they never size or weight.
+  The no-trade band lives in `RiskManager.material_delta` (full exits always
+  execute), shared by all three loops.
 - **Backtest == live.** Backtester and live `Engine` share the same `Strategy` +
   `RiskManager`. The arena's stepped `simulation.simulate` must stay consistent
   with `Backtester` — guarded by `tests/test_arena_simulation.py`. If you touch
@@ -201,6 +205,16 @@ build) on changes under `trading-bot/**`.
   is called at the *fill* bar `i` with `aligned.iloc[:i]` — bars strictly before
   the fill — over the same fillable-symbol set in both engines. Change one,
   change the other, or the lockstep test fails.
+- **Selectors must be prefix-stable** (verdict at `t` depends only on bars
+  `≤ t` + earlier verdicts, so a prefix recompute reproduces the prefix —
+  guarded by `test_membership_is_prefix_stable_no_lookahead`). That property is
+  load-bearing twice: the backtest/arena loops *precompute* `membership()` over
+  the full frame and `.shift(1)` it (fill bar `t+1` sees the verdict from `t`),
+  and the live engine keeps **no selector state** — it recomputes from full
+  fetched history every pass (bars are the source of truth, like the season).
+  Hysteresis state (`held`) lives inside the membership walk, derived from data
+  only — never from fills. Selector gating happens BEFORE the allocator is
+  consulted, so weights are distributed over members only.
 - **Season = bars are source of truth.** A live `Season` (`season.py`) persists
   only the accumulated bars (+ a standings snapshot per tick) to SQLite; each
   tick re-ranks the field with `run_tournament(..., frames=accumulated)`. No
@@ -231,7 +245,14 @@ the whole loop is dry-run-testable offline via `season run --simulate`,
 `RiskManager.target_qty` + joint order-independent `RiskManager.allocate` in
 all three execution loops; `allocation.py` allocator registry — `equal`,
 `inverse_vol`, `explicit` — wired via the `portfolio:` config block; target
-weights persisted to `target_weights` in SQLite).
+weights persisted to `target_weights` in SQLite) · **cross-sectional selector**
+(`selection.py` `MomentumSelector` — 12-1 style trailing-return rank, hold
+top-K, `exit_rank` hysteresis; gates strategy targets in all three loops with
+the one-bar shift; `buy_and_hold` strategy as the selector-only signal;
+`portfolio.selector` config block; `demo --portfolio` showcase) · **no-trade
+rebalancing band** (`RiskConfig.rebalance_band_pct` via
+`RiskManager.material_delta`, exits always execute; ~10× turnover cut in the
+demo).
 
 **Portfolio expansion — staged plan** (owner-approved 2026-07; investigation
 report in the session notes). Decisions locked: build the foundation first
@@ -240,18 +261,15 @@ candidate universe will come from a **live Alpaca liquidity screen** (owner
 decision — not a curated list, not index constituents). Honesty regime:
 live-forward paper; historical backtests over a current-membership universe
 must be labelled survivorship-biased. Remaining stages:
-1. **Cross-sectional selector** — rank a candidate pool by momentum (12-1
-   trailing return), hold top-K, weights from the existing allocators, no-trade
-   rebalancing bands for turnover. A *new layer*, not a Strategy (it sees the
-   whole cross-section; strategies stay per-symbol `{-1,0,+1}`). Ranking must
-   use only bars ≤ t — test it like the allocator shift.
-2. **Alpaca-backed universe** — `get_all_assets` (active+tradable US equities;
+1. **Alpaca-backed universe** — `get_all_assets` (active+tradable US equities;
    note: alpaca-py name, not `list_assets`) behind a lazy, creds-gated adapter
    + a liquidity screen (min price ~$5, rolling ADV floor — conservative, IEX
    volume is ~2% of consolidated) + batched multi-symbol bar fetch (page on
    `next_page_token`; the `limit` is aggregate across symbols). Persist a
    point-in-time universe snapshot per rebalance. Offline path = fixture
    universe.
+2. **Dashboard allocations view** — weights already persisted in
+   `target_weights`; follow routes→services→repository.
 3. **Overlays (only if justified)** — vol-targeting exposure dial (scale down,
    never lever up), coarse sector caps, walk-forward validation.
 Non-goals (do not re-propose): mean-variance/Markowitz optimizers (error

@@ -154,6 +154,44 @@ def test_engine_dry_run_with_allocator_splits_the_book():
         assert abs(pos.qty) * price <= 0.55 * equity
 
 
+def test_engine_dry_run_with_selector_holds_only_the_winner():
+    from tradebot.allocation import EqualWeight
+    from tradebot.selection import MomentumSelector
+
+    def linear(start, step, periods):
+        vals = [start + step * i for i in range(periods)]
+        idx = pd.date_range("2024-01-01", periods=periods, freq="1D", tz="UTC")
+        return pd.DataFrame({"open": vals, "high": vals, "low": vals,
+                             "close": vals, "volume": 1000.0}, index=idx)
+
+    settings = Settings(
+        mode="paper", symbols=["UP", "DOWN"], initial_cash=10_000, timeframe="1day",
+        strategy_name="buy_and_hold",
+        risk=RiskConfig(max_position_pct=1.0, max_gross_exposure=1.0,
+                        allow_fractional=True),
+    )
+    strategy = build_strategy(settings.strategy_name)
+    selector = MomentumSelector(lookback=20, skip=2, top_k=1)
+    frames = {"UP": linear(100, 1.0, 80), "DOWN": linear(200, -0.9, 80)}
+    data = ReplayData(frames, warmup=selector.required_history + 2)
+    broker = DryRunBroker(data, timeframe="1day", initial_cash=10_000, slippage_bps=0)
+    engine = Engine(
+        settings, broker, data, strategy, RiskManager(settings.risk),
+        mode_label="dry_run", enforce_live_ack=False,
+        allocator=EqualWeight(), selector=selector,
+    )
+
+    while True:
+        engine.rebalance()
+        if not data.has_next():
+            break
+        data.advance()
+
+    held = {s for s, p in broker.positions().items() if not p.is_flat}
+    assert held == {"UP"}                       # the loser never enters the book
+    assert broker.account().equity > 10_000     # and riding the winner paid
+
+
 def test_live_config_with_dry_run_skips_live_gate(monkeypatch):
     monkeypatch.delenv(LIVE_CONFIRM_ENV, raising=False)
     settings = Settings(mode="live", symbols=["X"])

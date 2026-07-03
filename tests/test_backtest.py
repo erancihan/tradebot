@@ -100,6 +100,57 @@ def test_allocator_never_sees_the_fill_bar():
     assert spy.seen == list(range(120))
 
 
+def _linear_frame(start: float, step: float, periods: int) -> pd.DataFrame:
+    values = np.array([start + step * i for i in range(periods)], dtype=float)
+    idx = pd.date_range("2024-01-01", periods=periods, freq="1D", tz="UTC")
+    return pd.DataFrame(
+        {"open": values, "high": values, "low": values,
+         "close": values, "volume": 1000.0},
+        index=idx,
+    )
+
+
+def test_selector_gates_the_book_to_the_winner():
+    from tradebot.allocation import EqualWeight
+    from tradebot.selection import MomentumSelector
+    from tradebot.strategies import BuyAndHold
+
+    # UP rises, DOWN falls hard. Momentum top-1 must keep the book out of DOWN,
+    # so buy-and-hold on the gated pool ends profitable.
+    pool = {"UP": _linear_frame(100, 1.0, 200), "DOWN": _linear_frame(200, -0.9, 200)}
+    risk = RiskManager(RiskConfig(max_position_pct=1.0, max_gross_exposure=1.0,
+                                  allow_fractional=True))
+    bt = Backtester(BuyAndHold(), risk, initial_cash=10_000, slippage_bps=0.0,
+                    allocator=EqualWeight(),
+                    selector=MomentumSelector(lookback=20, skip=2, top_k=1))
+    gated = bt.run(pool)
+    assert gated.total_return > 0
+
+    ungated = Backtester(BuyAndHold(), risk, initial_cash=10_000, slippage_bps=0.0,
+                         allocator=EqualWeight()).run(pool)
+    # Holding the loser too must do strictly worse.
+    assert gated.total_return > ungated.total_return
+
+
+def test_rebalance_band_cuts_turnover():
+    from tradebot.allocation import InverseVolatility
+    from tradebot.strategies import BuyAndHold
+
+    pool = {"A": synthetic_ohlcv(periods=300, seed=21),
+            "B": synthetic_ohlcv(periods=300, seed=22)}
+
+    def run(band):
+        risk = RiskManager(RiskConfig(max_position_pct=0.6, allow_fractional=True,
+                                      rebalance_band_pct=band))
+        bt = Backtester(BuyAndHold(), risk, initial_cash=10_000, slippage_bps=0.0,
+                        allocator=InverseVolatility(window=20))
+        return bt.run(pool)
+
+    # Inverse-vol weights drift every bar; the band should suppress most of the
+    # resulting micro-trades. (Trades book on position *reductions*.)
+    assert run(0.02).num_trades < run(0.0).num_trades
+
+
 def test_infer_periods_per_year_daily():
     idx = pd.date_range("2023-01-02", periods=10, freq="1D", tz="UTC")
     assert _infer_periods_per_year(idx) == 252.0

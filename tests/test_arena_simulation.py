@@ -30,6 +30,34 @@ def test_simulate_matches_backtester_for_vectorized_strategy():
     assert expected.num_trades == got.num_trades
 
 
+def test_simulate_matches_backtester_with_selector_and_allocator():
+    """Membership gating + joint allocation must stay lockstep in both engines."""
+    from tradebot.selection import MomentumSelector
+
+    frames = {
+        "A": synthetic_ohlcv(periods=250, seed=11),
+        "B": synthetic_ohlcv(periods=250, seed=12),
+        "C": synthetic_ohlcv(periods=250, seed=13),
+    }
+    cfg = RiskConfig(max_position_pct=0.6, max_gross_exposure=1.0,
+                     rebalance_band_pct=0.01)
+    selector = MomentumSelector(lookback=60, skip=5, top_k=2)
+
+    bt = Backtester(SmaCrossover(10, 30), RiskManager(cfg),
+                    initial_cash=10_000, commission=0.0, slippage_bps=1.0,
+                    allocator=EqualWeight(), selector=selector)
+    expected = bt.run(frames)
+
+    policy = VectorizedPolicy(lambda: SmaCrossover(10, 30))
+    got = simulate(policy, frames, RiskManager(cfg), SimConfig(10_000, 0.0, 1.0),
+                   allocator=EqualWeight(), selector=selector)
+
+    pd.testing.assert_series_equal(
+        expected.equity_curve, got.equity_curve, check_names=False
+    )
+    assert expected.num_trades == got.num_trades
+
+
 def test_simulate_matches_backtester_with_allocator():
     """The joint-allocation path must stay lockstep between both engines."""
     frames = {
