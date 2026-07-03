@@ -45,6 +45,7 @@ trading-bot/
 │   ├── risk.py               # RiskManager + RiskConfig (sizing, allocate(), caps, band, daily-loss)
 │   ├── allocation.py         # Allocator ABC + equal/inverse_vol/explicit + registry
 │   ├── selection.py          # Selector ABC + momentum top-K w/ hysteresis + registry
+│   ├── universe.py           # LiquidityScreen + AlpacaLiquidityUniverse (lazy, injectable)
 │   ├── portfolio.py          # cost-basis + realised-PnL accounting (sim)
 │   ├── backtest.py           # Backtester + BacktestResult (metrics)
 │   ├── models.py             # Order/Fill/Position/Trade/Side, BAR_COLUMNS, utcnow
@@ -252,25 +253,23 @@ the one-bar shift; `buy_and_hold` strategy as the selector-only signal;
 `portfolio.selector` config block; `demo --portfolio` showcase) · **no-trade
 rebalancing band** (`RiskConfig.rebalance_band_pct` via
 `RiskManager.material_delta`, exits always execute; ~10× turnover cut in the
-demo).
+demo) · **Alpaca-backed universe** (`universe.py`: `LiquidityScreen` — min
+price + rolling-ADV floor, ranked by ADV, `max_symbols` cap; pure pandas,
+offline-tested — and `AlpacaLiquidityUniverse`: most-actives shortlist →
+`get_all_assets` active+tradable filter → batched `history_many` bars → screen;
+all fetchers lazy AND constructor-injectable for offline tests; `universe:`
+config block replaces `symbols` at startup — replay ignores it; `tradebot
+universe` preview command; snapshots persisted to `universe_snapshots`).
 
 **Portfolio expansion — staged plan** (owner-approved 2026-07; investigation
 report in the session notes). Decisions locked: build the foundation first
-(done, above); support equal/inverse-vol/explicit weighting (done); the
-candidate universe will come from a **live Alpaca liquidity screen** (owner
-decision — not a curated list, not index constituents). Honesty regime:
-live-forward paper; historical backtests over a current-membership universe
-must be labelled survivorship-biased. Remaining stages:
-1. **Alpaca-backed universe** — `get_all_assets` (active+tradable US equities;
-   note: alpaca-py name, not `list_assets`) behind a lazy, creds-gated adapter
-   + a liquidity screen (min price ~$5, rolling ADV floor — conservative, IEX
-   volume is ~2% of consolidated) + batched multi-symbol bar fetch (page on
-   `next_page_token`; the `limit` is aggregate across symbols). Persist a
-   point-in-time universe snapshot per rebalance. Offline path = fixture
-   universe.
-2. **Dashboard allocations view** — weights already persisted in
-   `target_weights`; follow routes→services→repository.
-3. **Overlays (only if justified)** — vol-targeting exposure dial (scale down,
+(done); support equal/inverse-vol/explicit weighting (done); candidate universe
+from a **live Alpaca liquidity screen** (done — owner decision). Honesty
+regime: live-forward paper; historical backtests over a current-membership
+universe must be labelled survivorship-biased. Remaining stages:
+1. **Dashboard allocations view** — weights already persisted in
+   `target_weights` (+ `universe_snapshots`); follow routes→services→repository.
+2. **Overlays (only if justified)** — vol-targeting exposure dial (scale down,
    never lever up), coarse sector caps, walk-forward validation.
 Non-goals (do not re-propose): mean-variance/Markowitz optimizers (error
 maximizer), Black-Litterman, fundamentals/value screens (no Alpaca data),

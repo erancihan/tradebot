@@ -51,6 +51,12 @@ CREATE TABLE IF NOT EXISTS target_weights (
     weight  REAL NOT NULL,
     mode    TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS universe_snapshots (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts      TEXT NOT NULL,
+    symbols TEXT NOT NULL,      -- JSON array, point-in-time candidate list
+    mode    TEXT NOT NULL
+);
 """
 
 
@@ -123,6 +129,30 @@ class Storage:
             args + (row["ts"],),
         ).fetchall()
         return {r["symbol"]: r["weight"] for r in rows}
+
+    def record_universe(self, symbols: list[str], mode: str) -> None:
+        """Persist a resolved candidate universe (point-in-time paper trail)."""
+        import json
+
+        if not symbols:
+            return
+        self._conn.execute(
+            "INSERT INTO universe_snapshots (ts, symbols, mode) VALUES (?, ?, ?)",
+            (utcnow().isoformat(), json.dumps(list(symbols)), mode),
+        )
+        self._conn.commit()
+
+    def latest_universe(self, mode: str | None = None) -> list[str]:
+        """The most recently resolved universe (optionally per mode)."""
+        import json
+
+        where = "WHERE mode = ?" if mode else ""
+        args = (mode,) if mode else ()
+        row = self._conn.execute(
+            f"SELECT symbols FROM universe_snapshots {where} ORDER BY id DESC LIMIT 1",
+            args,
+        ).fetchone()
+        return json.loads(row["symbols"]) if row else []
 
     def record_equity(self, equity: float, cash: float, mode: str) -> None:
         self._conn.execute(

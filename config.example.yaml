@@ -11,9 +11,32 @@
 mode: paper
 
 # Symbols to trade. Liquid ETFs are a sane place to start.
+# (If a `universe:` block is set below, this list is replaced at startup by
+# the screened candidates — replay/offline runs keep using this list.)
 symbols:
   - SPY
   - QQQ
+
+# --- Universe (optional) --------------------------------------------------------
+# Discover the candidate pool from Alpaca instead of hand-typing `symbols`:
+# shortlist today's most-active names, keep active+tradable ones, then screen
+# by minimum price and rolling average dollar volume (ADV). Resolved once at
+# startup, printed, and snapshotted to SQLite (point-in-time paper trail).
+# Preview with: tradebot universe --config config.yaml   (needs free creds)
+#
+# NOTE: free IEX data reports ~2% of consolidated volume, so ADV floors are
+# conservative by construction. A universe screened today is survivorship-
+# biased for historical backtests — use it live-forward.
+#
+# universe:
+#   source: alpaca_liquidity
+#   params:
+#     candidates: 100           # most-actives shortlist size
+#     min_price: 5.0            # skip penny-stock pathologies
+#     min_dollar_volume: 1000000  # rolling ADV floor (IEX volume!)
+#     window: 20                # ADV window in trading days
+#     max_symbols: 20           # keep the top-N most liquid survivors
+#     # fractionable_only: true # require fractional-order support
 
 # Bar size: 1min | 5min | 15min | 1hour | 1day
 timeframe: 1day

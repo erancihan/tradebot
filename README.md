@@ -78,6 +78,7 @@ accident. The design reflects that:
 | `tradebot/risk.py` | Position sizing, joint book allocation, exposure cap, no-trade band, daily-loss breaker |
 | `tradebot/allocation.py` | Portfolio weighting: equal / inverse-vol / explicit |
 | `tradebot/selection.py` | Cross-sectional selection: momentum top-K with hysteresis |
+| `tradebot/universe.py` | Candidate discovery: Alpaca most-actives + liquidity screen |
 | `tradebot/portfolio.py` | Cost-basis & realised-P&L accounting (backtest) |
 | `tradebot/backtest.py` | Event-driven backtester + performance metrics |
 | `tradebot/broker/` | `Broker` interface + Alpaca adapter (lazy SDK import) |
@@ -237,6 +238,27 @@ Try it offline, no credentials:
 ```bash
 .venv/bin/python -m tradebot.cli demo --portfolio
 ```
+
+**Universe (which symbols even qualify):** instead of hand-typing `symbols`,
+an optional `universe:` block discovers the candidate pool from Alpaca at
+startup — today's most-active names, filtered to active + tradable assets,
+screened by minimum price (default $5) and rolling average dollar volume, and
+capped to the most liquid `max_symbols`. The resolved list replaces `symbols`
+for the session, is printed at startup, and is snapshotted to SQLite as a
+point-in-time paper trail. Preview it any time:
+
+```bash
+.venv/bin/python -m tradebot.cli universe --config config.yaml
+```
+
+Two honest caveats: Alpaca's free IEX feed reports only ~2% of consolidated
+volume (set ADV floors conservatively), and a universe screened *today* is
+survivorship-biased for historical backtests — use it live-forward (paper),
+not as evidence about the past.
+
+The full portfolio pipeline is then: **universe** (which symbols qualify) →
+**selector** (which to hold now) → **allocator** (how much of each) →
+**RiskManager** (final quantities under caps).
 
 ## Strategies
 

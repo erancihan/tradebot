@@ -67,6 +67,10 @@ class Settings:
     #: configured symbol is always eligible (no membership gate).
     selector_name: str | None = None
     selector_params: dict[str, Any] = field(default_factory=dict)
+    #: Universe source name (see tradebot.universe); None keeps the static
+    #: `symbols` list as the candidate pool.
+    universe_name: str | None = None
+    universe_params: dict[str, Any] = field(default_factory=dict)
     risk: RiskConfig = field(default_factory=RiskConfig)
     db_path: str = "tradebot.db"
     commission: float = 0.0
@@ -117,6 +121,14 @@ class Settings:
 
         return build_selector(self.selector_name, self.selector_params)
 
+    def build_universe(self):
+        """Instantiate the configured universe source, or None for the static list."""
+        if self.universe_name is None:
+            return None
+        from .universe import build_universe
+
+        return build_universe(self.universe_name, self.universe_params)
+
     # --- loading -------------------------------------------------------------
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Settings":
@@ -140,6 +152,8 @@ class Settings:
             allocation_params=portfolio.get("params", {}) or {},
             selector_name=(portfolio.get("selector", {}) or {}).get("name"),
             selector_params=(portfolio.get("selector", {}) or {}).get("params", {}) or {},
+            universe_name=(raw.get("universe", {}) or {}).get("source"),
+            universe_params=(raw.get("universe", {}) or {}).get("params", {}) or {},
             risk=RiskConfig(**risk_raw),
             db_path=raw.get("db_path", "tradebot.db"),
             commission=float(raw.get("commission", 0.0)),

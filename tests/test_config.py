@@ -59,6 +59,22 @@ def test_portfolio_selector_block_builds_selector():
     assert s.build_allocator() is not None
 
 
+def test_universe_block_builds_source():
+    s = Settings.from_dict({
+        "symbols": ["SPY"],
+        "universe": {"source": "alpaca_liquidity",
+                     "params": {"candidates": 40, "max_symbols": 10}},
+    })
+    uni = s.build_universe()
+    assert uni is not None
+    assert uni.candidates == 40
+    assert uni.screen.max_symbols == 10
+
+    plain = Settings.from_dict({"symbols": ["SPY"]})
+    assert plain.universe_name is None
+    assert plain.build_universe() is None
+
+
 def test_invalid_mode_rejected():
     with pytest.raises(ValueError):
         Settings(mode="yolo")

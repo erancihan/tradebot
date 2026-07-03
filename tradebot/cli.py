@@ -155,6 +155,31 @@ def _build_live_components(settings):
     return broker, data, strategy, risk, storage
 
 
+def _resolve_universe(settings) -> bool:
+    """Swap the static symbol list for the screened candidate universe.
+
+    Returns False (after printing why) when a configured universe can't be
+    resolved — never fall back silently to the static list.
+    """
+    uni = settings.build_universe()
+    if uni is None:
+        return True
+    try:
+        symbols = uni.resolve()
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return False
+    if not symbols:
+        print("Universe screen returned no symbols; loosen the thresholds "
+              "(min_price / min_dollar_volume) or raise `candidates`.",
+              file=sys.stderr)
+        return False
+    print(f"Universe ({settings.universe_name}): {len(symbols)} candidates: "
+          f"{', '.join(symbols)}")
+    settings.symbols = symbols
+    return True
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     from .config import Settings
     from .engine import Engine
@@ -167,7 +192,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     if args.dry_run:
         return _run_dry(settings, args)
 
+    if not _resolve_universe(settings):
+        return 2
     broker, data, strategy, risk, storage = _build_live_components(settings)
+    if settings.universe_name:
+        storage.record_universe(settings.symbols, settings.mode)
     engine = Engine(settings, broker, data, strategy, risk, storage,
                     allocator=settings.build_allocator(),
                     selector=settings.build_selector())
@@ -197,6 +226,11 @@ def _run_dry(settings, args: argparse.Namespace) -> int:
 
     replay = bool(args.replay or args.replay_csv)
     if replay:
+        # Replay generates frames for the configured symbols; a screened
+        # universe needs live data, so it does not apply here.
+        if settings.universe_name:
+            print("[DRY-RUN] `universe:` is ignored in replay mode "
+                  "(no live data to screen); using the configured symbols.")
         data = _build_replay_data(settings, strategy, args, selector=selector)
     else:
         from .config import AlpacaCredentials
@@ -211,6 +245,10 @@ def _run_dry(settings, args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 2
+        if not _resolve_universe(settings):
+            return 2
+        if settings.universe_name:
+            storage.record_universe(settings.symbols, "dry_run")
         data = get_alpaca_data(creds.api_key, creds.api_secret, feed=creds.feed)
 
     broker = DryRunBroker(
@@ -563,6 +601,34 @@ def cmd_arena_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_universe(args: argparse.Namespace) -> int:
+    """Resolve and print the screened candidate universe (needs Alpaca creds)."""
+    from .config import Settings
+
+    settings = Settings.from_yaml(args.config)
+    uni = settings.build_universe()
+    if uni is None:
+        print("No `universe:` block in the config — the static `symbols` list "
+              "is the candidate pool. See config.example.yaml.", file=sys.stderr)
+        return 2
+    try:
+        details = uni.resolve_details()
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    if not details:
+        print("Universe screen returned no symbols; loosen the thresholds.",
+              file=sys.stderr)
+        return 1
+    print(f"{'symbol':<8} {'price':>10} {'avg $ volume':>16}")
+    print("-" * 38)
+    for row in details:
+        print(f"{row['symbol']:<8} {row['price']:>10.2f} {row['adv']:>16,.0f}")
+    print(f"\n{len(details)} candidates pass the screen "
+          "(note: IEX volume understates consolidated liquidity).")
+    return 0
+
+
 def cmd_data_pull(args: argparse.Namespace) -> int:
     """Pull bars from Alpaca into the local cache for offline/repeatable use."""
     from .data.cache import BarCache, build_default_fetcher
@@ -737,6 +803,12 @@ def build_parser() -> argparse.ArgumentParser:
     ash.add_argument("run_id", nargs="?", type=int, help="run id (default: latest)")
     ash.add_argument("--db", default="arena.db")
     ash.set_defaults(func=cmd_arena_show)
+
+    u = sub.add_parser("universe",
+                       help="resolve & print the screened candidate universe "
+                            "(needs Alpaca creds)")
+    u.add_argument("--config", required=True)
+    u.set_defaults(func=cmd_universe)
 
     data = sub.add_parser("data", help="market-data utilities")
     dsub = data.add_subparsers(dest="data_command", required=True)

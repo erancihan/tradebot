@@ -68,6 +68,34 @@ class AlpacaData:
         start = start or (end - timedelta(days=365))
         return self._fetch(symbol, timeframe, start, end)
 
+    def history_many(
+        self,
+        symbols: list[str],
+        timeframe: str = "1day",
+        lookback: int = 365,
+        end: datetime | None = None,
+    ) -> dict[str, pd.DataFrame]:
+        """Fetch recent bars for many symbols in one batched request.
+
+        The SDK pages through ``next_page_token`` internally (the request
+        ``limit`` is aggregate across symbols, so never set one here). Symbols
+        with no bars in the window are simply absent from the result.
+        """
+        from alpaca.data.enums import DataFeed
+        from alpaca.data.requests import StockBarsRequest
+
+        end = end or datetime.now(timezone.utc)
+        start = end - timedelta(days=lookback)
+        req = StockBarsRequest(
+            symbol_or_symbols=list(symbols),
+            timeframe=self._timeframe(timeframe),
+            start=start,
+            end=end,
+            feed=DataFeed(self.feed),
+        )
+        df = self._client.get_stock_bars(req).df
+        return split_bars_frame(df, list(symbols))
+
     def _fetch(self, symbol: str, timeframe: str, start, end) -> pd.DataFrame:
         from alpaca.data.enums import DataFeed
         from alpaca.data.requests import StockBarsRequest
@@ -86,6 +114,29 @@ class AlpacaData:
         # Multi-index (symbol, timestamp) -> single symbol slice.
         if isinstance(df.index, pd.MultiIndex):
             df = df.xs(symbol, level="symbol")
-        df = df.rename_axis("timestamp")
-        df.index = pd.to_datetime(df.index, utc=True)
-        return df[[c for c in BAR_COLUMNS if c in df.columns]]
+        return _normalize(df)
+
+
+def _normalize(df: pd.DataFrame) -> pd.DataFrame:
+    """Canonical OHLCV frame: tz-aware timestamp index, standard columns."""
+    df = df.rename_axis("timestamp")
+    df.index = pd.to_datetime(df.index, utc=True)
+    return df[[c for c in BAR_COLUMNS if c in df.columns]]
+
+
+def split_bars_frame(df: pd.DataFrame, symbols: list[str]) -> dict[str, pd.DataFrame]:
+    """Split the SDK's (symbol, timestamp) MultiIndex frame per symbol."""
+    if df is None or df.empty:
+        return {}
+    if not isinstance(df.index, pd.MultiIndex):
+        # Flat index only happens for a single-symbol response.
+        return {symbols[0]: _normalize(df.copy())} if len(symbols) == 1 else {}
+    out: dict[str, pd.DataFrame] = {}
+    for sym in symbols:
+        try:
+            sub = df.xs(sym, level="symbol")
+        except KeyError:
+            continue
+        if not sub.empty:
+            out[sym] = _normalize(sub.copy())
+    return out

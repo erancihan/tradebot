@@ -42,6 +42,17 @@ def test_target_weights_round_trip(tmp_path):
         assert st.latest_weights("paper") == {"SPY": 0.5, "QQQ": 0.5}
 
 
+def test_universe_snapshot_round_trip(tmp_path):
+    db = str(tmp_path / "t.db")
+    with Storage(db) as st:
+        st.record_universe(["AAPL", "MSFT"], "paper")
+        st.record_universe(["AAPL", "NVDA", "TSLA"], "paper")   # newest wins
+        assert st.latest_universe("paper") == ["AAPL", "NVDA", "TSLA"]
+        assert st.latest_universe("dry_run") == []
+        st.record_universe([], "paper")                          # no-op
+        assert st.latest_universe("paper") == ["AAPL", "NVDA", "TSLA"]
+
+
 def test_engine_records_bars_when_storage_present(tmp_path):
     db = str(tmp_path / "t.db")
     df = synthetic_ohlcv(periods=60, seed=1)
