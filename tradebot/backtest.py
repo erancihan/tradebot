@@ -114,7 +114,10 @@ class Backtester:
         slippage_bps: float = 1.0,
         allocator=None,           # optional tradebot.allocation.Allocator
         selector=None,            # optional tradebot.selection.Selector
+        overlays=None,            # optional list of tradebot.overlays.Overlay
     ) -> None:
+        if overlays and allocator is None:
+            raise ValueError("overlays require an allocator (they transform its weights)")
         self.strategy = strategy
         self.risk = risk
         self.initial_cash = initial_cash
@@ -122,6 +125,7 @@ class Backtester:
         self.slippage_bps = slippage_bps
         self.allocator = allocator
         self.selector = selector
+        self.overlays = list(overlays or [])
 
     def run(self, data: dict[str, pd.DataFrame] | pd.DataFrame, symbol: str = "ASSET") -> BacktestResult:
         if isinstance(data, pd.DataFrame):
@@ -182,6 +186,8 @@ class Backtester:
                 # bars strictly before the fill bar.
                 history = {s: aligned[s].iloc[:i] for s in bar_targets}
                 weights = self.allocator.weights(bar_targets, history)
+                for overlay in self.overlays:
+                    weights = overlay.transform(weights, bar_targets, history)
             desired = self.risk.allocate(bar_targets, equity, bar_prices, weights)
 
             for sym, want in desired.items():

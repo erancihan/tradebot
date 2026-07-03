@@ -34,6 +34,9 @@ class Allocator(ABC):
     #: Name used in config (`portfolio.allocation`) and logs.
     name: str = "allocator"
 
+    #: Bars needed before the allocator can weight (used for warmup sizing).
+    required_history: int = 1
+
     @abstractmethod
     def weights(
         self, targets: dict[str, int], history: dict[str, pd.DataFrame]
@@ -92,6 +95,7 @@ class InverseVolatility(Allocator):
             raise ValueError(f"gross_target must be in (0, 1], got {gross_target}")
         self.window = window
         self.gross_target = gross_target
+        self.required_history = window + 1
 
     def weights(
         self, targets: dict[str, int], history: dict[str, pd.DataFrame]

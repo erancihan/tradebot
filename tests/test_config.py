@@ -59,6 +59,42 @@ def test_portfolio_selector_block_builds_selector():
     assert s.build_allocator() is not None
 
 
+def test_portfolio_overlays_block_builds_chain():
+    s = Settings.from_dict({
+        "symbols": ["A", "B"],
+        "portfolio": {
+            "allocation": "equal",
+            "overlays": [
+                {"name": "sector_cap",
+                 "params": {"max_sector_pct": 0.5, "sectors": {"A": "tech"}}},
+                {"name": "vol_target", "params": {"target_vol": 0.2}},
+            ],
+        },
+    })
+    chain = s.build_overlays()
+    assert [o.name for o in chain] == ["sector_cap", "vol_target"]
+
+
+def test_overlays_without_allocation_are_rejected():
+    import pytest as _pytest
+
+    s = Settings.from_dict({
+        "symbols": ["A"],
+        "portfolio": {"overlays": [{"name": "vol_target"}]},
+    })
+    with _pytest.raises(ValueError, match="allocation"):
+        s.build_overlays()
+
+    from tradebot.backtest import Backtester
+    from tradebot.overlays import VolTargetOverlay
+    from tradebot.risk import RiskConfig, RiskManager
+    from tradebot.strategies import SmaCrossover
+
+    with _pytest.raises(ValueError, match="allocator"):
+        Backtester(SmaCrossover(10, 30), RiskManager(RiskConfig()),
+                   overlays=[VolTargetOverlay()])
+
+
 def test_universe_block_builds_source():
     s = Settings.from_dict({
         "symbols": ["SPY"],

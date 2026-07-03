@@ -38,9 +38,13 @@ def simulate(
     config: SimConfig,
     allocator=None,           # optional tradebot.allocation.Allocator
     selector=None,            # optional tradebot.selection.Selector
+    overlays=None,            # optional list of tradebot.overlays.Overlay
 ) -> BacktestResult:
     if not frames:
         raise ValueError("No data provided to simulate")
+    if overlays and allocator is None:
+        raise ValueError("overlays require an allocator (they transform its weights)")
+    overlays = list(overlays or [])
 
     # Align every symbol on a shared timeline (intersection of indices).
     common = None
@@ -92,6 +96,8 @@ def simulate(
             # strictly before the fill bar.
             history = {s: aligned[s].iloc[:i] for s in bar_targets}
             weights = allocator.weights(bar_targets, history)
+            for overlay in overlays:
+                weights = overlay.transform(weights, bar_targets, history)
         desired = risk.allocate(bar_targets, equity, bar_prices, weights)
 
         for s, want in desired.items():

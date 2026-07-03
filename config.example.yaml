@@ -100,6 +100,15 @@ strategy:
 #     window: 63              # inverse_vol: rolling stdev window (daily bars)
 #     # gross_target: 1.0     # equal/inverse_vol: total fraction to deploy
 #     # weights: {SPY: 0.6, QQQ: 0.4}   # explicit only
+#   overlays:                 # optional risk transforms on the weights, in order
+#     # cap any one sector's total weight (unmapped symbols share one
+#     # conservative "other" bucket); sectors_file: CSV of symbol,sector rows
+#     - name: sector_cap
+#       params: {max_sector_pct: 0.5, sectors: {AAPL: tech, MSFT: tech}}
+#     # scale the whole book down when its realized vol runs above target
+#     # (never levers up); keep this one last so it measures the final book
+#     - name: vol_target
+#       params: {target_vol: 0.15, window: 20}
 
 # --- Risk management ----------------------------------------------------------
 risk:

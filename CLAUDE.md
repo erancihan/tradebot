@@ -22,7 +22,7 @@ entirely under `trading-bot/`. Four pillars:
 4. **Web dashboard** — FastAPI + TS/Tailwind/Alpine/ECharts; monitor + run sims.
 
 Status: feature-complete for the core vision **including the portfolio stack**
-(universe → selector → allocator → risk; see Roadmap). **~185 tests, all
+(universe → selector → allocator → risk; see Roadmap). **~205 tests, all
 offline & green** (web tests skip without fastapi); frontend has a strict
 `tsc` gate.
 
@@ -47,6 +47,8 @@ trading-bot/
 │   ├── allocation.py         # Allocator ABC + equal/inverse_vol/explicit + registry
 │   ├── selection.py          # Selector ABC + momentum top-K w/ hysteresis + registry
 │   ├── universe.py           # LiquidityScreen + AlpacaLiquidityUniverse (lazy, injectable)
+│   ├── overlays.py           # Overlay ABC + vol_target/sector_cap (reduce-only) + registry
+│   ├── walkforward.py        # fold-based out-of-sample evaluation (backtest --walk-forward)
 │   ├── portfolio.py          # cost-basis + realised-PnL accounting (sim)
 │   ├── backtest.py           # Backtester + BacktestResult (metrics)
 │   ├── models.py             # Order/Fill/Position/Trade/Side, BAR_COLUMNS, utcnow
@@ -264,21 +266,31 @@ universe` preview command; snapshots persisted to `universe_snapshots`) ·
 **dashboard allocations view** (`/api/allocations` + `/partials/allocations`
 + "Target allocations" card on the dashboard: weight bars for the latest
 rebalance + the resolved candidate universe as chips; server-rendered partial,
-refreshes via the existing partialLoader — zero new TS).
+refreshes via the existing partialLoader — zero new TS) · **overlays**
+(`overlays.py`: reduce-only weight transforms chained between allocator and
+RiskManager — `sector_cap` w/ inline map or CSV + conservative "other" bucket
+for unmapped names, `vol_target` exposure dial that scales down when realized
+book vol exceeds target and never levers up; `portfolio.overlays` config list;
+engine records POST-overlay weights) · **walk-forward evaluation**
+(`walkforward.py` + `backtest --walk-forward N`: contiguous out-of-sample
+folds, each warmed up with `required_warmup` — the max `required_history`
+across strategy/selector/allocator/overlays — per-fold metrics + dispersion).
 
-**Portfolio expansion — staged plan** (owner-approved 2026-07; investigation
-report in the session notes). Decisions locked: build the foundation first
-(done); support equal/inverse-vol/explicit weighting (done); candidate universe
-from a **live Alpaca liquidity screen** (done — owner decision); dashboard
-allocations view (done). Honesty regime: live-forward paper; historical
+**Portfolio expansion — DONE** (owner-approved 2026-07; investigation report in
+the session notes). All locked stages shipped: foundation → weighting schemes →
+momentum selector + band → Alpaca liquidity-screen universe → dashboard view →
+overlays + walk-forward. Honesty regime stands: live-forward paper; historical
 backtests over a current-membership universe must be labelled
-survivorship-biased. Remaining stages:
-1. **Overlays (only if justified)** — vol-targeting exposure dial (scale down,
-   never lever up), coarse sector caps, walk-forward validation.
+survivorship-biased.
 Non-goals (do not re-propose): mean-variance/Markowitz optimizers (error
 maximizer), Black-Litterman, fundamentals/value screens (no Alpaca data),
-shorting by default, yfinance as a real dependency, dashboard allocations view
-is pending (weights are already persisted; follow routes→services→repository).
+shorting by default, yfinance as a real dependency.
+
+**Next arc — algorithms research** (owner request 2026-07): build agents and
+algorithms that run ON this system. The arena is the harness (contestants →
+tournaments → league → season → promote to paper via the trading core). See
+the session plan; key rule: every new algo ships with offline tests + a
+walk-forward pass, and multiple-testing honesty (count what you tried).
 
 Deferred (decided, do not re-propose without a new ask):
 - **Container/gVisor containment** — the strongest, OS-level tier, for fully

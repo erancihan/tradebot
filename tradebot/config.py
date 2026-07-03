@@ -71,6 +71,9 @@ class Settings:
     #: `symbols` list as the candidate pool.
     universe_name: str | None = None
     universe_params: dict[str, Any] = field(default_factory=dict)
+    #: Overlay chain (see tradebot.overlays): list of {name, params} dicts,
+    #: applied to allocator weights in order. Requires an allocation scheme.
+    overlays: list[dict[str, Any]] = field(default_factory=list)
     risk: RiskConfig = field(default_factory=RiskConfig)
     db_path: str = "tradebot.db"
     commission: float = 0.0
@@ -129,6 +132,19 @@ class Settings:
 
         return build_universe(self.universe_name, self.universe_params)
 
+    def build_overlays(self) -> list:
+        """Instantiate the configured overlay chain (empty list when unset)."""
+        if not self.overlays:
+            return []
+        if self.allocation_name is None:
+            raise ValueError(
+                "portfolio.overlays requires an allocation scheme "
+                "(set portfolio.allocation, e.g. `equal`)"
+            )
+        from .overlays import build_overlay
+
+        return [build_overlay(o.get("name"), o.get("params")) for o in self.overlays]
+
     # --- loading -------------------------------------------------------------
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Settings":
@@ -154,6 +170,7 @@ class Settings:
             selector_params=(portfolio.get("selector", {}) or {}).get("params", {}) or {},
             universe_name=(raw.get("universe", {}) or {}).get("source"),
             universe_params=(raw.get("universe", {}) or {}).get("params", {}) or {},
+            overlays=list(portfolio.get("overlays", []) or []),
             risk=RiskConfig(**risk_raw),
             db_path=raw.get("db_path", "tradebot.db"),
             commission=float(raw.get("commission", 0.0)),

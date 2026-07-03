@@ -51,10 +51,13 @@ class Engine:
         enforce_live_ack: bool = True,
         allocator=None,              # optional tradebot.allocation.Allocator
         selector=None,               # optional tradebot.selection.Selector
+        overlays=None,               # optional list of tradebot.overlays.Overlay
     ) -> None:
         # The live gate is skipped for dry-runs (no real broker can be reached).
         if enforce_live_ack:
             settings.require_live_ack()  # hard gate before anything can trade
+        if overlays and allocator is None:
+            raise ValueError("overlays require an allocator (they transform its weights)")
         self.settings = settings
         self.broker = broker
         self.data = data_source
@@ -63,6 +66,7 @@ class Engine:
         self.storage = storage
         self.allocator = allocator
         self.selector = selector
+        self.overlays = list(overlays or [])
         # Label used for logs and storage tagging (e.g. "dry_run").
         self._mode_label = mode_label or settings.mode
         self._session_start_equity: float | None = None
@@ -72,11 +76,12 @@ class Engine:
         return self._mode_label
 
     def _lookback_days(self) -> int:
-        # Ensure enough history for the strategy (and selector, if any) plus
-        # headroom for weekends/holidays.
+        # Ensure enough history for every history-hungry component (strategy,
+        # selector, allocator, overlays) plus headroom for weekends/holidays.
         needed = self.strategy.required_history
-        if self.selector is not None:
-            needed = max(needed, self.selector.required_history)
+        for component in (self.selector, self.allocator, *self.overlays):
+            if component is not None:
+                needed = max(needed, component.required_history)
         return max(needed * 2, 60)
 
     def _submit_delta(
@@ -166,7 +171,10 @@ class Engine:
         weights = None
         if self.allocator is not None:
             weights = self.allocator.weights(targets, frames)
+            for overlay in self.overlays:
+                weights = overlay.transform(weights, targets, frames)
             if self.storage:
+                # Post-overlay: what the book actually targets.
                 self.storage.record_weights(weights, self.mode)
         desired = self.risk.allocate(targets, acct.equity, prices, weights)
 

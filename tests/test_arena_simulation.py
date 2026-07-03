@@ -58,6 +58,39 @@ def test_simulate_matches_backtester_with_selector_and_allocator():
     assert expected.num_trades == got.num_trades
 
 
+def test_simulate_matches_backtester_with_overlays():
+    """The full stack — selector + allocator + overlay chain — stays lockstep."""
+    from tradebot.overlays import SectorCapOverlay, VolTargetOverlay
+    from tradebot.selection import MomentumSelector
+
+    frames = {
+        "A": synthetic_ohlcv(periods=250, seed=31),
+        "B": synthetic_ohlcv(periods=250, seed=32),
+        "C": synthetic_ohlcv(periods=250, seed=33),
+    }
+    cfg = RiskConfig(max_position_pct=0.6, max_gross_exposure=1.0,
+                     rebalance_band_pct=0.01)
+    selector = MomentumSelector(lookback=60, skip=5, top_k=2)
+    overlays = [
+        SectorCapOverlay(max_sector_pct=0.5, sectors={"A": "tech", "B": "tech"}),
+        VolTargetOverlay(target_vol=0.10, window=20),
+    ]
+
+    bt = Backtester(SmaCrossover(10, 30), RiskManager(cfg),
+                    initial_cash=10_000, commission=0.0, slippage_bps=1.0,
+                    allocator=EqualWeight(), selector=selector, overlays=overlays)
+    expected = bt.run(frames)
+
+    got = simulate(VectorizedPolicy(lambda: SmaCrossover(10, 30)), frames,
+                   RiskManager(cfg), SimConfig(10_000, 0.0, 1.0),
+                   allocator=EqualWeight(), selector=selector, overlays=overlays)
+
+    pd.testing.assert_series_equal(
+        expected.equity_curve, got.equity_curve, check_names=False
+    )
+    assert expected.num_trades == got.num_trades
+
+
 def test_simulate_matches_backtester_with_allocator():
     """The joint-allocation path must stay lockstep between both engines."""
     frames = {

@@ -79,6 +79,8 @@ accident. The design reflects that:
 | `tradebot/allocation.py` | Portfolio weighting: equal / inverse-vol / explicit |
 | `tradebot/selection.py` | Cross-sectional selection: momentum top-K with hysteresis |
 | `tradebot/universe.py` | Candidate discovery: Alpaca most-actives + liquidity screen |
+| `tradebot/overlays.py` | Risk overlays: vol-targeting dial, sector caps (reduce-only) |
+| `tradebot/walkforward.py` | Walk-forward evaluation: per-fold out-of-sample metrics |
 | `tradebot/portfolio.py` | Cost-basis & realised-P&L accounting (backtest) |
 | `tradebot/backtest.py` | Event-driven backtester + performance metrics |
 | `tradebot/broker/` | `Broker` interface + Alpaca adapter (lazy SDK import) |
@@ -224,14 +226,30 @@ are never selected.
   without enough history to measure get nothing.
 - **`explicit`** — fixed per-symbol weights you choose; unlisted symbols get 0.
 
+**Overlays (optional risk transforms):** applied to the weights in configured
+order, and reduce-only by design — they can de-risk the book but never add
+exposure:
+- **`sector_cap`** — cap any one sector's total weight so a screen can't
+  become a single factor bet (unmapped symbols share one conservative
+  "other" bucket; map via inline `sectors:` or a `sectors_file:` CSV).
+- **`vol_target`** — scale the whole book down when its realized volatility
+  runs above `target_vol` (annualized); calm regimes are *never* levered up.
+  Keep it last in the chain so it measures the book it actually scales.
+
 The whole book is sized in one order-independent pass: weights are capped
 per-name, scaled down proportionally if their total exceeds
 `max_gross_exposure`, and only then turned into share quantities. A
 `rebalance_band_pct` no-trade band suppresses tiny drift trades (full exits
 always execute) — in the offline demo it cuts trade count ~10×. Selection and
 weights obey the same one-bar shift as signals in backtests (decided on bar
-*t*, filled on *t+1*), and each rebalance's target weights are persisted to
-the SQLite log.
+*t*, filled on *t+1*), and each rebalance's (post-overlay) target weights are
+persisted to the SQLite log.
+
+**Walk-forward evaluation:** don't trust one backtest number. `tradebot
+backtest --walk-forward N` splits the history into N contiguous folds after
+the pipeline's warmup and evaluates each independently, printing per-fold
+return/Sharpe/drawdown plus the mean/worst spread — dispersion across folds
+(one great fold carrying the rest) is the tell for regime-dependence or luck.
 
 Try it offline, no credentials:
 

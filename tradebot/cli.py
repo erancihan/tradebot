@@ -110,6 +110,7 @@ def cmd_backtest(args: argparse.Namespace) -> int:
         slippage_bps=settings.slippage_bps,
         allocator=settings.build_allocator(),
         selector=settings.build_selector(),
+        overlays=settings.build_overlays(),
     )
 
     if args.csv:
@@ -127,6 +128,24 @@ def cmd_backtest(args: argparse.Namespace) -> int:
         ds = get_alpaca_data(creds.api_key, creds.api_secret, feed=creds.feed)
         data = {s: ds.history(s, timeframe=settings.timeframe, lookback=args.lookback)
                 for s in settings.symbols}
+
+    if args.walk_forward:
+        from .walkforward import required_warmup, walk_forward
+
+        try:
+            wf = walk_forward(bt, data, folds=args.walk_forward)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        print(f"\n=== Walk-forward ({args.walk_forward} folds, "
+              f"{required_warmup(bt)} warmup bars each) ===")
+        print(wf.table())
+        print("\nEach fold is evaluated independently, out-of-sample for the "
+              "pipeline's decisions.\nDispersion across folds is the point: "
+              "one great fold carrying the rest is a red flag.\n"
+              "(If you tune settings until this table looks good, you are "
+              "data-snooping — count your attempts.)")
+        return 0
 
     result = bt.run(data)
     _print_summary(result.summary())
@@ -199,7 +218,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         storage.record_universe(settings.symbols, settings.mode)
     engine = Engine(settings, broker, data, strategy, risk, storage,
                     allocator=settings.build_allocator(),
-                    selector=settings.build_selector())
+                    selector=settings.build_selector(),
+                    overlays=settings.build_overlays())
 
     mode = "LIVE (real money)" if settings.is_live else "paper"
     print(f"Running in {mode} mode on {settings.symbols} with {strategy.name}.")
@@ -263,6 +283,7 @@ def _run_dry(settings, args: argparse.Namespace) -> int:
         mode_label="dry_run", enforce_live_ack=False,
         allocator=settings.build_allocator(),
         selector=selector,
+        overlays=settings.build_overlays(),
     )
 
     src = "replay" if replay else "live data"
@@ -666,6 +687,10 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--symbol", help="symbol label when using --csv")
     b.add_argument("--lookback", type=int, default=365, help="days of history (Alpaca)")
     b.add_argument("--out", help="write equity curve CSV here")
+    b.add_argument("--walk-forward", dest="walk_forward", type=int, default=None,
+                   metavar="N",
+                   help="evaluate over N independent contiguous folds instead of "
+                        "one run (regime-robustness check)")
     b.set_defaults(func=cmd_backtest)
 
     r = sub.add_parser("run", help="run the paper/live/dry-run trading loop")
