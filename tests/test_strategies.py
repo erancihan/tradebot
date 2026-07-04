@@ -178,6 +178,19 @@ def test_follow_the_leader_accepts_config_dicts_and_validates():
         FollowTheLeader(strategies=["not_a_strategy"])
 
 
+def test_meta_latest_target_is_tail_bounded():
+    """Live/arena path: metas compute the latest target on a bounded tail,
+    so per-bar cost stops growing with history (the timeout gotcha)."""
+    df = synthetic_ohlcv(periods=1200, seed=5)
+    for meta in (FollowTheLeader(window=30), EnsembleVote()):
+        tail = 2 * meta.required_history
+        assert len(df) > tail
+        expected = int(meta.target_positions(df.iloc[-tail:]).iloc[-1])
+        assert meta.latest_target(df) == expected
+        short = df.iloc[:100]     # shorter than the tail: unchanged behaviour
+        assert meta.latest_target(short) == int(meta.target_positions(short).iloc[-1])
+
+
 def test_ensemble_vote_requires_agreement():
     up = _frame_from_close(pd.Series(np.linspace(50, 200, 260)))
     # All-trend roster agrees on an uptrend -> long.

@@ -56,7 +56,26 @@ def _resolve(strategies) -> list[Strategy]:
     return resolved
 
 
-class FollowTheLeader(Strategy):
+class _TailBounded:
+    """Bound ``latest_target`` to a recent tail of the input.
+
+    The arena's growing-window replay calls ``latest_target`` once per bar,
+    so recomputing a whole roster over full history is O(bars²·subs) — a meta
+    strategy can blow a tournament time budget on nothing but rework. The
+    live engine already computes on ~2× ``required_history`` of fetched bars,
+    so the bounded tail *is* live semantics; only EMA-based subs differ
+    negligibly from the full-history backtest path (a known live-vs-backtest
+    reality for every EMA strategy).
+    """
+
+    def latest_target(self, bars: pd.DataFrame) -> int:
+        tail = 2 * self.required_history
+        if len(bars) > tail:
+            bars = bars.iloc[-tail:]
+        return super().latest_target(bars)
+
+
+class FollowTheLeader(_TailBounded, Strategy):
     """Greedy bandit: trade whatever sub-strategy is winning lately.
 
     ``window`` is the trailing evaluation span in bars. Until every score is
@@ -100,7 +119,7 @@ class FollowTheLeader(Strategy):
         return pd.Series(out, index=bars.index, dtype="int64")
 
 
-class EnsembleVote(Strategy):
+class EnsembleVote(_TailBounded, Strategy):
     """Majority vote: act only when the roster agrees.
 
     Long when at least ``min_agree`` sub-strategies target +1, short when at

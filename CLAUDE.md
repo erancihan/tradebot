@@ -253,10 +253,15 @@ build) on changes under `trading-bot/**`.
   `run_tournament` has no side effects (the season recompute loop depends on
   that).
 - **Meta strategies are expensive under the growing-window replay.** The arena
-  calls `latest_target` per bar per symbol; `FollowTheLeader` recomputes its
-  whole roster each call (and `bollinger_reversion` walks in Python), so cost
-  grows ~O(bars²·subs). On multi-symbol scenarios `meta_leader` can blow the
-  default 10s budget — raise `--time-budget` rather than assuming a bug.
+  calls `latest_target` per bar per symbol and a meta recomputes its whole
+  roster each call. `_TailBounded` (strategies/meta.py) caps that call to a
+  `2×required_history` tail — same bounded-history semantics the live engine
+  has always had — turning O(bars²·subs) into O(bars·subs). The constant is
+  still ~a roster-multiple of a plain contestant (profiled: each classic sub
+  costs 0.5–1.0 ms/call), so on multi-symbol scenarios (cross_sectional: 6
+  symbols × 500 bars ≈ 3000 calls) the metas need `--time-budget 20`; the
+  single-symbol scenarios fit the default 10s. Don't "fix" this by trimming
+  the roster to fit the budget — that's fitting to the harness.
 - **Season + over-budget contestants = thread pile-up.** The season recompute
   is O(history) *per tick* on `thread` isolation, and the soft runner cannot
   kill a running contestant — an over-budget algo leaks a busy daemon thread
@@ -390,7 +395,14 @@ drawdown but loses the worst-fold majority 2/5 — two losses are ~30bps
 selector-warmup drag, one real (vol_spike: the dial de-risked a spike the
 market rallied through). Journal: `xs_momentum` family at 55 attempts. Do NOT
 tune the gate or grid-search params to force a pass; the next iteration must
-be theory-driven. Promotion mechanics verified offline end-to-end: the exact
+be theory-driven. **Fold attribution (2026-07-04, don't re-chase):** the three
+worst-fold losses are (a) bull_trend: a 1-basis-point tie in fold 2 — noise,
+warmup drag sits in fold 1 which is NOT the worst fold, so a warmup-hold
+selector feature would not flip it; (b) cross_sectional: −1.35% vs −1.15% in a
+shared dip — the inherent cost of top-2 concentration (fold 4 shows the
+payoff: +19.9% vs +3.9%); (c) vol_spike: the dial's definitional trade-off.
+Conclusion: this candidate's remaining gaps are structural trade-offs, not
+bugs; new gate attempts need a *different idea*, not another parameter. Promotion mechanics verified offline end-to-end: the exact
 candidate stack ran as a core config through `run --replay` (+7% on the
 demo replay) and an 11-contestant replay season.
 
