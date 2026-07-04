@@ -69,6 +69,8 @@ trading-bot/
 ├── algos/                    # example arena contestants + how-to README
 ├── scenarios/                # arena scenario YAMLs incl. the regime library
 │                             #   (bull_trend/sideways_chop/crash_recovery/vol_spike)
+│                             #   + real-data pack (real_bear_2022/real_recovery_2023/
+│                             #   real_full_cycle — need one `data pull`, then offline)
 ├── frontend/                 # TS + Tailwind + esbuild source for the dashboard
 ├── tests/                    # pytest (offline; web tests importorskip fastapi)
 ├── pyproject.toml            # deps + extras: [dev], [live], [web]; scripts
