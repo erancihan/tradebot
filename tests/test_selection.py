@@ -2,7 +2,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from tradebot.selection import LowVolatilitySelector, MomentumSelector, build_selector
+from tradebot.selection import (
+    LowVolatilitySelector,
+    MomentumSelector,
+    RegimeSwitchSelector,
+    build_selector,
+)
 
 
 def _frame(closes) -> pd.DataFrame:
@@ -122,6 +127,50 @@ def test_ranked_selectors_are_prefix_stable():
             pd.testing.assert_frame_equal(full.iloc[:cut], prefix)
 
 
+def test_regime_switch_holds_momentum_when_calm():
+    """A calm pool (linear ramps, tiny vol) stays on the momentum leg."""
+    sel = RegimeSwitchSelector(lookback=20, skip=2, top_k=1, vol_window=10)
+    last = sel.membership(_pool(periods=40)).iloc[-1]
+    assert bool(last["UP"]) and not bool(last["FLAT"]) and not bool(last["DOWN"])
+
+
+def test_regime_switch_rotates_to_calm_names_in_a_storm():
+    """When the pool's realized vol spikes, rotate off the momentum winner
+    (the wild uptrend) and into the calmest name instead."""
+    rng = np.random.default_rng(3)
+    n = 60
+    surge = 100 + np.arange(n) * 1.5 + rng.normal(0, 6.0, n)   # up + wild
+    steady = 100 + rng.normal(0, 0.5, n)                       # flat + calm
+    crash = 100 - np.arange(n) * 1.0 + rng.normal(0, 6.0, n)   # down + wild
+    pool = {"SURGE": _frame(surge), "STEADY": _frame(steady), "CRASH": _frame(crash)}
+
+    sel = RegimeSwitchSelector(lookback=20, skip=1, top_k=1, vol_window=10,
+                               storm_vol=0.25)
+    last = sel.membership(pool).iloc[-1]
+    # Momentum alone would chase SURGE; the storm rotates the book to STEADY.
+    assert bool(last["STEADY"]) and not bool(last["SURGE"])
+
+    plain_momentum = MomentumSelector(lookback=20, skip=1, top_k=1)
+    assert bool(plain_momentum.membership(pool).iloc[-1]["SURGE"])
+
+
+def test_regime_switch_is_prefix_stable_across_the_switch():
+    """A pool that transitions calm -> storm must reproduce every prefix,
+    exercising the row-wise switch on both sides of the regime boundary."""
+    rng = np.random.default_rng(11)
+
+    def mixed(trend: float) -> list[float]:
+        noise = np.concatenate([rng.normal(0, 0.2, 40), rng.normal(0, 7.0, 40)])
+        return list(100 + np.arange(80) * trend + noise)
+
+    pool = {"A": _frame(mixed(1.0)), "B": _frame(mixed(0.0)), "C": _frame(mixed(-0.5))}
+    sel = RegimeSwitchSelector(lookback=20, skip=2, top_k=1, vol_window=10)
+    full = sel.membership(pool)
+    for cut in (30, 45, 60, 75):
+        prefix = sel.membership({s: f.iloc[:cut] for s, f in pool.items()})
+        pd.testing.assert_frame_equal(full.iloc[:cut], prefix)
+
+
 def test_selector_validation_and_registry():
     with pytest.raises(ValueError):
         MomentumSelector(lookback=10, skip=10)
@@ -137,5 +186,11 @@ def test_selector_validation_and_registry():
     lv = build_selector("low_vol", {"window": 21, "top_k": 3})
     assert isinstance(lv, LowVolatilitySelector)
     assert lv.required_history == 22
+    with pytest.raises(ValueError):
+        RegimeSwitchSelector(storm_vol=0.0)
+    rs = build_selector("regime_switch",
+                        {"lookback": 30, "skip": 5, "top_k": 2, "vol_window": 20})
+    assert isinstance(rs, RegimeSwitchSelector)
+    assert rs.required_history == 31              # max(lookback+1, vol_window+1)
     with pytest.raises(KeyError):
         build_selector("crystal_ball")

@@ -19,7 +19,18 @@ enough to implement without re-deriving decisions.
 - Every simulation surface shows start/final balance + simulated period
   (tests/conftest.py ledger, journal columns). Preserve this in new outputs.
 
-## Spec 1 — RegimeSwitchSelector (the next gate candidate)
+## Spec 1 — RegimeSwitchSelector (the next gate candidate) — DONE 2026-07-04
+
+**Status: BUILT and gated — verdict FAIL (one attempt, do not re-chase).**
+Shipped: `RegimeSwitchSelector` (`selection.py`, registry `regime_switch`) +
+tests + `algos/xs_regime.py` (family `xs_regime`), field count bumped 11 → 12.
+The gate failed for a *structural* reason, not a bug: 4/5 gauntlet scenarios are
+single-symbol, where a rotation selector is a no-op and the book degenerates to
+buy_and_hold (inheriting its crash drawdown); on the one multi-symbol scenario
+(`cross_sectional`) it wins decisively. Full fold attribution is in the CLAUDE.md
+arc-status block ("Second gate attempt — `xs_regime`"). The correct follow-up,
+if pursued, is a scenario-library change (multi-symbol crash/vol regimes), NOT
+param tuning. The design below is retained for the record.
 
 **Idea (theory-driven, one attempt):** defense by *rotation*, not scaling.
 Hold momentum top-K in calm regimes; when the pool's realized volatility

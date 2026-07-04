@@ -242,9 +242,10 @@ build) on changes under `trading-bot/**`.
   contestants already survived).
 - **`algos/` head-count is baked into a few tests.** The web/season fixtures run
   a tournament over the whole `algos/` dir; `test_web.py` (arena run entries,
-  season standings), `test_arena_season.py` (name set) and
-  `test_arena_journal.py` ("Journaled N") assert on the field. Adding/removing
-  an example contestant means updating those counts (currently 11).
+  season standings), `test_arena_season.py` (name set),
+  `test_arena_tournament.py` (name set) and `test_arena_journal.py`
+  ("Journaled N") assert on the field. Adding/removing an example contestant
+  means updating those counts (currently 12).
 - **Fold scorers assume fixed parameters.** `worst_fold`/`consistency` treat
   segments of the *realized* equity curve as out-of-sample folds. That's valid
   while contestants don't fit anything during a run. If a contestant ever
@@ -410,7 +411,27 @@ selector feature would not flip it; (b) cross_sectional: −1.35% vs −1.15% in
 shared dip — the inherent cost of top-2 concentration (fold 4 shows the
 payoff: +19.9% vs +3.9%); (c) vol_spike: the dial's definitional trade-off.
 Conclusion: this candidate's remaining gaps are structural trade-offs, not
-bugs; new gate attempts need a *different idea*, not another parameter. Promotion mechanics verified offline end-to-end: the exact
+bugs; new gate attempts need a *different idea*, not another parameter.
+**Second gate attempt — `xs_regime` (RegimeSwitchSelector), 2026-07-04: FAIL,
+one attempt, do not re-chase.** The idea was defense by *rotation* not scaling:
+hold momentum top-2 in calm regimes, rotate into the 2 calmest names when the
+pool's realized vol proxy (equal-weight mean vol, annualized, > 0.25) spikes.
+Gate vs buy_and_hold over the 5 synthetic scenarios: beats mean return
+(30.63% vs 28.04%) and completes everywhere, but loses the worst-fold majority
+2/5 and blows the drawdown limit (−48.25% on crash_recovery). **Structural
+attribution:** four of the five gauntlet scenarios (bull_trend, sideways_chop,
+crash_recovery, vol_spike) are **single-symbol `[DEMO]`** — a rotation selector
+is definitionally a *no-op* there (top-2 over a 1-name pool selects that name in
+both regimes; there is no calmer name to flee to), so the book degenerates to
+buy_and_hold and inherits its −48% crash drawdown and its warmup-drag near-ties
+in worst fold. On the ONE scenario with a real cross-section (`cross_sectional`,
+6 names) the mechanism fires and wins decisively: 40.69% vs 22.57% return,
+worst-fold +0.006 vs −0.011, drawdown −13.24%. So the idea is sound *where it
+can act*; it fails the gauntlet because 4/5 gate scenarios have no cross-section
+to rotate within. The correct next step (if pursued) is a scenario-library
+change — multi-symbol crash/vol regimes that contain calm names to rotate into —
+NOT tuning `storm_vol`/`vol_window` (that would fit the harness). Left as the
+honest result. Promotion mechanics verified offline end-to-end: the exact
 candidate stack ran as a core config through `run --replay` (+7% on the
 demo replay) and an 11-contestant replay season.
 
