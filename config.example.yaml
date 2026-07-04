@@ -83,7 +83,9 @@ strategy:
 #   selector    decides WHICH symbols may be held (cross-sectional gate);
 #               `momentum` ranks by trailing (lookback-skip) return, holds the
 #               top_k, and only drops a holding once it slips below exit_rank
-#               (hysteresis, default 1.5*top_k) to cut churn.
+#               (hysteresis, default 1.5*top_k) to cut churn. Set reverse: true
+#               for short-term reversal (hold the losers; use a short lookback).
+#               `low_vol` holds the top_k *calmest* names (rolling stdev window).
 #   allocation  decides HOW MUCH each held symbol gets. Weights always pass
 #               through the risk caps and the whole book is sized jointly
 #               (order-independent).

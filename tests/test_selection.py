@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from tradebot.selection import MomentumSelector, build_selector
+from tradebot.selection import LowVolatilitySelector, MomentumSelector, build_selector
 
 
 def _frame(closes) -> pd.DataFrame:
@@ -93,6 +93,35 @@ def test_ties_break_deterministically():
     assert sel.latest_targets(pool) == {"AAA": 1, "ZZZ": 0}   # alphabetical
 
 
+def test_reverse_momentum_holds_the_losers():
+    sel = MomentumSelector(lookback=20, skip=2, top_k=1, reverse=True)
+    assert sel.latest_targets(_pool()) == {"UP": 0, "FLAT": 0, "DOWN": 1}
+
+
+def test_low_vol_selects_the_calmest():
+    rng = np.random.default_rng(7)
+    base = 100 + np.arange(60) * 0.1
+    pool = {
+        "CALM": _frame(base + rng.normal(0, 0.05, 60)),
+        "WILD": _frame(base + rng.normal(0, 5.0, 60)),
+    }
+    sel = LowVolatilitySelector(window=20, top_k=1)
+    assert sel.latest_targets(pool) == {"CALM": 1, "WILD": 0}
+    # Nothing is selected before a full window of returns exists.
+    member = sel.membership(pool)
+    assert not member.iloc[:20].to_numpy().any()
+
+
+def test_ranked_selectors_are_prefix_stable():
+    pool = _pool(periods=50)
+    for sel in (MomentumSelector(lookback=15, skip=3, top_k=2, reverse=True),
+                LowVolatilitySelector(window=12, top_k=2)):
+        full = sel.membership(pool)
+        for cut in (20, 33, 47):
+            prefix = sel.membership({s: f.iloc[:cut] for s, f in pool.items()})
+            pd.testing.assert_frame_equal(full.iloc[:cut], prefix)
+
+
 def test_selector_validation_and_registry():
     with pytest.raises(ValueError):
         MomentumSelector(lookback=10, skip=10)
@@ -100,8 +129,13 @@ def test_selector_validation_and_registry():
         MomentumSelector(top_k=0)
     with pytest.raises(ValueError):
         MomentumSelector(top_k=5, exit_rank=3)
+    with pytest.raises(ValueError):
+        LowVolatilitySelector(window=1)
     sel = build_selector("momentum", {"lookback": 30, "skip": 5, "top_k": 2})
     assert isinstance(sel, MomentumSelector)
     assert sel.required_history == 31
+    lv = build_selector("low_vol", {"window": 21, "top_k": 3})
+    assert isinstance(lv, LowVolatilitySelector)
+    assert lv.required_history == 22
     with pytest.raises(KeyError):
         build_selector("crystal_ball")

@@ -1,0 +1,26 @@
+# Regime library: a six-name pool with a persistent cross-sectional spread —
+# two leaders, two average names, two laggards. This is the scenario where
+# *selection* matters: a portfolio contestant that ranks the pool (momentum,
+# low-vol) can find the spread; a per-symbol algo treats every name alike.
+name: cross_sectional
+source: synthetic
+symbols: [AAA, BBB, CCC, DDD, EEE, FFF]
+initial_cash: 10000
+commission: 0.0
+slippage_bps: 1.0
+seed: 71
+periods: 500
+drift: 0.0002
+volatility: 0.014
+
+symbol_overrides:
+  AAA: {drift: 0.0012}                    # persistent leader
+  BBB: {drift: 0.0008}                    # second leader
+  EEE: {drift: -0.0004}                   # laggard
+  FFF: {drift: -0.0008, volatility: 0.02} # volatile loser
+
+# Per-name cap leaves room to spread across the pool; gross stays fully capped.
+risk:
+  max_position_pct: 0.6
+  max_gross_exposure: 1.0
+  max_daily_loss_pct: 1.0

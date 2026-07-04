@@ -35,6 +35,10 @@ class Scenario:
     # [{periods: 250, drift: 0.0006, volatility: 0.008}, ...] — the price path
     # is continuous across segments, so crash/recovery scenarios are one series.
     regimes: list[dict] = field(default_factory=list)
+    # per-symbol drift/volatility overrides for the plain synthetic source:
+    # {AAA: {drift: 0.001}, ...} — gives the pool a cross-sectional spread so
+    # selection has something real to find. Ignored when `regimes` is set.
+    symbol_overrides: dict[str, dict] = field(default_factory=dict)
     # csv params: {symbol: path}
     csv_paths: dict[str, str] = field(default_factory=dict)
     # alpaca params (pulled once, then cached + replayed)
@@ -53,8 +57,8 @@ class Scenario:
         risk = RiskConfig(**(raw.pop("risk", {}) or {}))
         known = {
             "name", "symbols", "source", "initial_cash", "commission", "slippage_bps",
-            "periods", "seed", "drift", "volatility", "regimes", "csv_paths",
-            "timeframe", "start", "end", "cache_dir",
+            "periods", "seed", "drift", "volatility", "regimes", "symbol_overrides",
+            "csv_paths", "timeframe", "start", "end", "cache_dir",
         }
         kwargs = {k: v for k, v in raw.items() if k in known}
         return cls(risk=risk, **kwargs)
@@ -72,13 +76,15 @@ class Scenario:
                     sym: synthetic_regime_ohlcv(self.regimes, seed=self.seed + i)
                     for i, sym in enumerate(self.symbols)
                 }
-            return {
-                sym: synthetic_ohlcv(
+            frames = {}
+            for i, sym in enumerate(self.symbols):
+                ov = self.symbol_overrides.get(sym, {})
+                frames[sym] = synthetic_ohlcv(
                     periods=self.periods, seed=self.seed + i,
-                    drift=self.drift, volatility=self.volatility,
+                    drift=float(ov.get("drift", self.drift)),
+                    volatility=float(ov.get("volatility", self.volatility)),
                 )
-                for i, sym in enumerate(self.symbols)
-            }
+            return frames
         if self.source == "csv":
             missing = [s for s in self.symbols if s not in self.csv_paths]
             if missing:

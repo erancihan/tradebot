@@ -49,49 +49,31 @@ class Selector(ABC):
         return {s: int(bool(last.get(s, False))) for s in frames}
 
 
-class MomentumSelector(Selector):
-    """Classic cross-sectional momentum: hold the top-K trailing performers.
+class RankedSelector(Selector):
+    """Shared machinery: score the pool each bar, hold the top-K with hysteresis.
 
-    Each bar, candidates are scored by their ``lookback``-bar return *skipping*
-    the most recent ``skip`` bars (the standard "12-1" construction — recent
-    bars are excluded to dodge short-term reversal). The best ``top_k`` are
-    held, with hysteresis to control turnover: a current holding is only
-    dropped once its rank slips below ``exit_rank`` (default 1.5×K), so names
-    hovering at the boundary don't churn in and out every bar.
-
-    Symbols without a full ``lookback`` of history are unmeasurable and never
-    selected — don't hold what you can't rank.
+    Subclasses implement :meth:`scores` (higher = better). Each bar the best
+    ``top_k`` are held; a current holding is only dropped once its rank slips
+    below ``exit_rank`` (default 1.5×K), so names hovering at the boundary
+    don't churn in and out every bar. Symbols with a NaN score are
+    unmeasurable and never selected — don't hold what you can't rank.
+    The walk is causal (bar ``t`` uses scores at ``t`` and earlier verdicts),
+    so every subclass is prefix-stable by construction.
     """
 
-    name = "momentum"
-
-    def __init__(
-        self,
-        lookback: int = 252,
-        skip: int = 21,
-        top_k: int = 5,
-        exit_rank: int | None = None,
-    ) -> None:
-        if lookback <= skip:
-            raise ValueError(f"lookback ({lookback}) must exceed skip ({skip})")
-        if skip < 0:
-            raise ValueError(f"skip must be >= 0, got {skip}")
+    def __init__(self, top_k: int, exit_rank: int | None) -> None:
         if top_k < 1:
             raise ValueError(f"top_k must be >= 1, got {top_k}")
         if exit_rank is None:
             exit_rank = top_k + max(top_k // 2, 1)
         if exit_rank < top_k:
             raise ValueError(f"exit_rank ({exit_rank}) must be >= top_k ({top_k})")
-        self.lookback = lookback
-        self.skip = skip
         self.top_k = top_k
         self.exit_rank = exit_rank
-        self.required_history = lookback + 1
 
+    @abstractmethod
     def scores(self, frames: dict[str, pd.DataFrame]) -> pd.DataFrame:
-        """Momentum score matrix: return from bar ``t-lookback`` to ``t-skip``."""
-        closes = pd.DataFrame({s: f["close"] for s, f in frames.items()}).sort_index()
-        return closes.shift(self.skip) / closes.shift(self.lookback) - 1.0
+        """Score matrix (index = bars, columns = symbols); higher = better."""
 
     def membership(self, frames: dict[str, pd.DataFrame]) -> pd.DataFrame:
         scores = self.scores(frames)
@@ -115,9 +97,80 @@ class MomentumSelector(Selector):
         valid = row.dropna()
         return sorted(valid.index, key=lambda s: (-valid[s], s))
 
+    @staticmethod
+    def _closes(frames: dict[str, pd.DataFrame]) -> pd.DataFrame:
+        return pd.DataFrame({s: f["close"] for s, f in frames.items()}).sort_index()
+
+
+class MomentumSelector(RankedSelector):
+    """Classic cross-sectional momentum: hold the top-K trailing performers.
+
+    Each bar, candidates are scored by their ``lookback``-bar return *skipping*
+    the most recent ``skip`` bars (the standard "12-1" construction — recent
+    bars are excluded to dodge short-term reversal).
+
+    ``reverse=True`` flips the ranking to hold the biggest *losers* — the
+    short-term reversal construction (use a short lookback, e.g.
+    ``lookback=15, skip=1``, where mean reversion dominates momentum).
+    """
+
+    name = "momentum"
+
+    def __init__(
+        self,
+        lookback: int = 252,
+        skip: int = 21,
+        top_k: int = 5,
+        exit_rank: int | None = None,
+        reverse: bool = False,
+    ) -> None:
+        super().__init__(top_k, exit_rank)
+        if lookback <= skip:
+            raise ValueError(f"lookback ({lookback}) must exceed skip ({skip})")
+        if skip < 0:
+            raise ValueError(f"skip must be >= 0, got {skip}")
+        self.lookback = lookback
+        self.skip = skip
+        self.reverse = reverse
+        self.required_history = lookback + 1
+
+    def scores(self, frames: dict[str, pd.DataFrame]) -> pd.DataFrame:
+        """Momentum score matrix: return from bar ``t-lookback`` to ``t-skip``."""
+        closes = self._closes(frames)
+        momentum = closes.shift(self.skip) / closes.shift(self.lookback) - 1.0
+        return -momentum if self.reverse else momentum
+
+
+class LowVolatilitySelector(RankedSelector):
+    """Low-volatility anomaly: hold the K calmest names.
+
+    Scores each symbol by (negated) realized volatility of close-to-close
+    returns over ``window`` bars, so the *least* volatile names rank best.
+    """
+
+    name = "low_vol"
+
+    def __init__(
+        self,
+        window: int = 63,
+        top_k: int = 5,
+        exit_rank: int | None = None,
+    ) -> None:
+        super().__init__(top_k, exit_rank)
+        if window < 2:
+            raise ValueError(f"window must be >= 2, got {window}")
+        self.window = window
+        self.required_history = window + 1
+
+    def scores(self, frames: dict[str, pd.DataFrame]) -> pd.DataFrame:
+        closes = self._closes(frames)
+        vol = closes.pct_change().rolling(self.window, min_periods=self.window).std()
+        return -vol
+
 
 SELECTORS: dict[str, type[Selector]] = {
     MomentumSelector.name: MomentumSelector,
+    LowVolatilitySelector.name: LowVolatilitySelector,
 }
 
 

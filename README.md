@@ -77,7 +77,7 @@ accident. The design reflects that:
 | `tradebot/strategies/` | `Strategy` interface + crossover, RSI, Donchian, MACD, Bollinger, buy-and-hold |
 | `tradebot/risk.py` | Position sizing, joint book allocation, exposure cap, no-trade band, daily-loss breaker |
 | `tradebot/allocation.py` | Portfolio weighting: equal / inverse-vol / explicit |
-| `tradebot/selection.py` | Cross-sectional selection: momentum top-K with hysteresis |
+| `tradebot/selection.py` | Cross-sectional selection: momentum/reversal + low-vol top-K with hysteresis |
 | `tradebot/universe.py` | Candidate discovery: Alpaca most-actives + liquidity screen |
 | `tradebot/overlays.py` | Risk overlays: vol-targeting dial, sector caps (reduce-only) |
 | `tradebot/walkforward.py` | Walk-forward evaluation: per-fold out-of-sample metrics |
@@ -214,10 +214,13 @@ risk:
 trailing `lookback`-bar return skipping the most recent `skip` bars (the
 classic "12-1" construction), and holds the top `top_k`. Hysteresis keeps a
 holding until it slips below `exit_rank` (default 1.5×K), so borderline names
-don't churn. Membership *gates* the per-symbol strategy: with `buy_and_hold`
-the selector is the sole signal; with e.g. `sma_crossover` a symbol must be
-selected *and* trending to be held. Symbols without a full lookback of history
-are never selected.
+don't churn. `reverse: true` flips the ranking into short-term reversal (hold
+the biggest recent losers — use a short lookback). The `low_vol` selector
+holds the `top_k` *calmest* names by rolling realized volatility instead.
+Membership *gates* the per-symbol strategy: with `buy_and_hold` the selector
+is the sole signal; with e.g. `sma_crossover` a symbol must be selected *and*
+trending to be held. Symbols without a full lookback of history are never
+selected.
 
 **Allocation (how much):**
 - **`equal`** — 1/N over the held symbols. The classic hard-to-beat baseline.
@@ -345,6 +348,27 @@ from tradebot.strategies import Strategy
 class MyTrend(Strategy):
     def target_positions(self, bars): ...   # Series in {-1,0,+1}
 ```
+
+```python
+# cross-sectional: a whole portfolio competes as ONE entry
+from tradebot.arena import PortfolioAlgo, register
+from tradebot.allocation import InverseVolatility
+from tradebot.selection import MomentumSelector
+from tradebot.strategies import BuyAndHold
+
+@register(name="momo_book", tags=("portfolio",))
+class MomoBook(PortfolioAlgo):
+    def __init__(self):
+        super().__init__(strategy=BuyAndHold(),                       # selector-only book
+                         selector=MomentumSelector(lookback=60, skip=5, top_k=2),
+                         allocator=InverseVolatility(window=30))
+```
+
+A `PortfolioAlgo` composes the *same* strategy/selector/allocator/overlay stack
+the backtester and live engine run (a test keeps them in lockstep), so a
+portfolio entry that wins the arena is directly promotable to paper trading.
+The `scenarios/cross_sectional.yaml` scenario gives the pool a persistent
+leader/laggard spread — the environment where selection skill shows up.
 
 Every contestant runs through the **same simulation core** (which a test proves
 matches the `Backtester`), over an identical `Scenario` — same data, capital, and

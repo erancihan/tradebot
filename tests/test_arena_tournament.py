@@ -12,7 +12,8 @@ def test_tournament_over_example_algos_ranks_everyone():
     assert outcome.load_errors == []
     names = {e.name for e in outcome.leaderboard.entries}
     assert {"sma_trend", "rsi_dip", "buy_and_hold",
-            "donchian", "macd_cross", "bollinger_dip"} <= names
+            "donchian", "macd_cross", "bollinger_dip",
+            "xs_momentum", "xs_reversal"} <= names
     assert all(e.ok for e in outcome.leaderboard.entries)
     assert outcome.leaderboard.entries[0].rank == 1
     # Ranking is consistent with the chosen metric (descending total return).

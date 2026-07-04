@@ -24,8 +24,9 @@ entirely under `trading-bot/`. Four pillars:
 Status: feature-complete for the core vision **including the portfolio stack**
 (universe → selector → allocator → risk; see Roadmap); the **algorithms-research
 arc** is underway (regime scenario library + robustness scorers + classic
-strategy roster + experiment journal shipped). **~230 tests, all offline &
-green** (web tests skip without fastapi); frontend has a strict `tsc` gate.
+strategy roster + experiment journal + cross-sectional portfolio contestants
+shipped). **~240 tests, all offline & green** (web tests skip without
+fastapi); frontend has a strict `tsc` gate.
 
 ## Agent skills
 
@@ -47,7 +48,8 @@ trading-bot/
 │   ├── indicators.py         # pure pandas: sma/ema/rsi/macd/bollinger/rolling_volatility/crossover
 │   ├── risk.py               # RiskManager + RiskConfig (sizing, allocate(), caps, band, daily-loss)
 │   ├── allocation.py         # Allocator ABC + equal/inverse_vol/explicit + registry
-│   ├── selection.py          # Selector ABC + momentum top-K w/ hysteresis + registry
+│   ├── selection.py          # Selector/RankedSelector ABCs + momentum (reverse=reversal)
+│   │                         #   + low_vol top-K w/ hysteresis + registry
 │   ├── universe.py           # LiquidityScreen + AlpacaLiquidityUniverse (lazy, injectable)
 │   ├── overlays.py           # Overlay ABC + vol_target/sector_cap (reduce-only) + registry
 │   ├── walkforward.py        # fold-based out-of-sample evaluation (backtest --walk-forward)
@@ -232,8 +234,9 @@ build) on changes under `trading-bot/**`.
   contestants already survived).
 - **`algos/` head-count is baked into a few tests.** The web/season fixtures run
   a tournament over the whole `algos/` dir; `test_web.py` (arena run entries,
-  season standings) and `test_arena_season.py` (name set) assert on the field.
-  Adding/removing an example contestant means updating those counts (currently 6).
+  season standings), `test_arena_season.py` (name set) and
+  `test_arena_journal.py` ("Journaled N") assert on the field. Adding/removing
+  an example contestant means updating those counts (currently 8).
 - **Fold scorers assume fixed parameters.** `worst_fold`/`consistency` treat
   segments of the *realized* equity curve as out-of-sample folds. That's valid
   while contestants don't fit anything during a run. If a contestant ever
@@ -332,9 +335,23 @@ idea so attempts accumulate against the family (default: the contestant name).
 `tradebot arena journal [--family X]` prints the ledger + a multiple-testing
 reminder once any family passes one attempt. `ArenaStore.record_attempts` /
 `journal_summary` / `journal_entries`.
-*Next stages:* cross-sectional contestants on the selector/allocator stack ·
-adaptive/meta algos (bandit over sub-strategies, follow-the-league-leader) ·
-the pass-gate runbook + first promotion to a paper season.
+*Stage 3 — cross-sectional contestants (DONE):* **`PortfolioAlgo`** third
+contestant interface (`arena/interfaces.py`) — a whole book (strategy +
+selector + allocator + optional overlays) competes as ONE entry, `kind=
+"portfolio"`; `adapters.simulation_args` hands the stack to `simulate`, which
+already ran it (lockstep with the Backtester guarded by
+`test_arena_portfolio.py`). Sizing stays with the tournament's shared
+RiskManager. New selectors: `MomentumSelector(reverse=True)` = short-term
+reversal (hold the losers), `LowVolatilitySelector` (`low_vol`) — both on the
+shared `RankedSelector` walk (prefix-stable by construction).
+`Scenario.symbol_overrides` gives the plain-synthetic pool a per-symbol
+drift/vol spread (`scenarios/cross_sectional.yaml`; ignored when `regimes`
+set). Examples: `algos/xs_momentum.py`, `algos/xs_reversal.py`. Verified:
+xs_momentum finds the persistent leaders and beats buy_and_hold on the spread
+scenario.
+*Next stages:* adaptive/meta algos (bandit over sub-strategies,
+follow-the-league-leader) · the pass-gate runbook + first promotion to a
+paper season.
 
 Deferred (decided, do not re-propose without a new ask):
 - **Container/gVisor containment** — the strongest, OS-level tier, for fully

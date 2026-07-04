@@ -79,3 +79,24 @@ def policy_for(contestant: Contestant) -> Policy:
     if contestant.kind == "event":
         return EventPolicy(contestant.factory)
     raise ValueError(f"Unknown contestant kind: {contestant.kind!r}")
+
+
+def simulation_args(contestant: Contestant) -> tuple[Policy, dict]:
+    """Policy plus extra ``simulate()`` kwargs for any contestant kind.
+
+    Per-symbol contestants trade each symbol independently. A ``portfolio``
+    contestant additionally brings its own selector/allocator/overlay stack —
+    the same objects the Backtester composes — which the sim core applies with
+    the identical one-bar shift, so the whole book competes as one entry.
+    """
+    if contestant.kind == "portfolio":
+        spec = contestant.make()
+        # Strategies are stateless (pure functions of bars), so handing the
+        # spec's instance out through a factory is round-safe.
+        policy = VectorizedPolicy(lambda: spec.strategy)
+        return policy, {
+            "allocator": spec.allocator,
+            "selector": spec.selector,
+            "overlays": spec.overlays,
+        }
+    return policy_for(contestant), {}

@@ -32,7 +32,7 @@ from typing import Protocol
 import pandas as pd
 
 from ..risk import RiskManager
-from .adapters import policy_for
+from .adapters import simulation_args
 from .contestant import Contestant
 from .result import ERROR, OK, TIMEOUT, ContestantResult
 from .scoring import Scorer
@@ -81,7 +81,8 @@ class InProcessRunner:
 
         def work() -> None:
             try:
-                box["result"] = simulate(policy_for(contestant), frames, risk, config)
+                policy, extra = simulation_args(contestant)
+                box["result"] = simulate(policy, frames, risk, config, **extra)
             except Exception as exc:  # noqa: BLE001 - reported via box, isolated
                 box["error"] = exc
 
@@ -132,7 +133,8 @@ def _subprocess_work(contestant, frames, risk_config, config, result_queue,
         apply_hardening(no_write=harden, isolate_network=harden,
                         max_open_files=256 if harden else 0, seccomp=seccomp)
     try:
-        result = simulate(policy_for(contestant), frames, RiskManager(risk_config), config)
+        policy, extra = simulation_args(contestant)
+        result = simulate(policy, frames, RiskManager(risk_config), config, **extra)
         result_queue.put(("ok", result))
     except BaseException as exc:  # noqa: BLE001 - incl. MemoryError; isolate
         result_queue.put(("error", f"{type(exc).__name__}: {exc}"))

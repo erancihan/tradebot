@@ -89,6 +89,31 @@ def test_scenario_regimes_override_flat_synthetic_params(tmp_path):
     assert not frames["A"].equals(frames["B"])
 
 
+def test_symbol_overrides_give_the_pool_a_spread(tmp_path):
+    p = tmp_path / "xs.yaml"
+    p.write_text(
+        "name: xs\nsource: synthetic\nsymbols: [WIN, MID, LOSE, WILD]\n"
+        "periods: 400\nseed: 9\ndrift: 0.0002\nvolatility: 0.012\n"
+        "symbol_overrides:\n"
+        "  WIN: {drift: 0.002}\n"
+        "  LOSE: {drift: -0.002}\n"
+        "  WILD: {volatility: 0.03}\n"
+    )
+    sc = Scenario.from_yaml(p)
+    frames = sc.build_frames()
+    assert set(frames) == {"WIN", "MID", "LOSE", "WILD"}
+    # Each override is judged against the same-seed baseline (identical noise
+    # draws), where the drift/vol effect is guaranteed rather than luck.
+    base = {s: synthetic_ohlcv(periods=400, seed=9 + i, drift=0.0002,
+                               volatility=0.012)
+            for i, s in enumerate(sc.symbols)}
+    assert frames["WIN"]["close"].iloc[-1] > base["WIN"]["close"].iloc[-1]
+    assert frames["LOSE"]["close"].iloc[-1] < base["LOSE"]["close"].iloc[-1]
+    assert frames["MID"].equals(base["MID"])              # untouched symbol
+    wild_vol = frames["WILD"]["close"].pct_change().std()
+    assert wild_vol > 1.5 * base["WILD"]["close"].pct_change().std()
+
+
 def test_shipped_scenario_library_loads_and_builds():
     yamls = sorted(SCENARIOS_DIR.glob("*.yaml"))
     names = {p.stem for p in yamls}

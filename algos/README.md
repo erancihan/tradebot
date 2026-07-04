@@ -41,6 +41,28 @@ class MyStrategy(Strategy):
         ...  # pandas Series in {-1, 0, +1}, indexed like bars
 ```
 
+**Cross-sectional** (`PortfolioAlgo`) — a whole book competes as one entry.
+Compose the same stack the trading core runs (per-symbol strategy + selector
++ allocator + optional reduce-only overlays); sizing stays with the shared
+RiskManager, so portfolio and per-symbol entries are directly comparable:
+
+```python
+from tradebot.arena import PortfolioAlgo, register
+from tradebot.allocation import InverseVolatility
+from tradebot.selection import MomentumSelector
+from tradebot.strategies import BuyAndHold
+
+@register(name="momo_book", author="you", tags=("portfolio",))
+class MomoBook(PortfolioAlgo):
+    def __init__(self):
+        super().__init__(strategy=BuyAndHold(),      # selector-only book
+                         selector=MomentumSelector(lookback=60, skip=5, top_k=2),
+                         allocator=InverseVolatility(window=30))
+```
+
+Run these on a multi-symbol scenario — `scenarios/cross_sectional.yaml` gives
+the pool a persistent leader/laggard spread so selection has something to find.
+
 ## Rules of the game
 
 - A **fresh instance** is created per round — keep per-round state on `self`.

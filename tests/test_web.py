@@ -161,7 +161,7 @@ def test_arena_page_and_api(client):
     runs = client.get("/api/arena/runs").json()
     assert len(runs) >= 1
     detail = client.get(f"/api/arena/runs/{runs[0]['id']}").json()
-    assert len(detail["entries"]) == 6            # every algos/ contestant
+    assert len(detail["entries"]) == 8            # every algos/ contestant
     assert detail["curves"] and detail["curves"][0]["equity"]
 
 
@@ -169,7 +169,7 @@ def test_seasons_api(client):
     seasons = client.get("/api/seasons").json()
     assert len(seasons) >= 1
     detail = client.get(f"/api/seasons/{seasons[0]['id']}").json()
-    assert len(detail["latest"]) == 6             # every algos/ contestant
+    assert len(detail["latest"]) == 8             # every algos/ contestant
     assert detail["curves"] and len(detail["curves"][0]["total_return"]) >= 1
 
 

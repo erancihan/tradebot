@@ -42,6 +42,20 @@ class MyVec(Strategy):
         ...   # pandas Series in {-1, 0, +1}
 ```
 
+**Cross-sectional** (`PortfolioAlgo`) — a whole book as one entry: compose
+strategy + selector + allocator (+ reduce-only overlays), the same stack the
+Backtester/live engine run (kept in lockstep by `tests/test_arena_portfolio.py`).
+Use `BuyAndHold` as the strategy for selector-only books; run on a multi-symbol
+scenario (`scenarios/cross_sectional.yaml` has a built-in spread):
+```python
+from tradebot.arena import PortfolioAlgo, register
+
+@register(name="my_book", tags=("portfolio",))
+class MyBook(PortfolioAlgo):
+    def __init__(self):
+        super().__init__(strategy=..., selector=..., allocator=..., overlays=[...])
+```
+
 Rules: contestant **names must be unique**; the factory is called with no args
 (set defaults in `__init__`); crashes are isolated (an exception DQs only that
 contestant). Position **sizing** is applied by the arena's shared `RiskManager`.
