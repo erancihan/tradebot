@@ -498,6 +498,15 @@ def cmd_arena_gate(args: argparse.Namespace) -> int:
     return 0 if report.passed else 1
 
 
+def _balance(row) -> str:
+    """'10,000 -> 12,458 (+24.6%)' from a journal row; '-' when not recorded."""
+    if not row or row.get("start_balance") is None or row.get("final_balance") is None:
+        return "-"
+    start, final = row["start_balance"], row["final_balance"]
+    pct = f" ({final / start - 1.0:+.1%})" if start else ""
+    return f"{start:,.0f} -> {final:,.0f}{pct}"
+
+
 def cmd_arena_journal(args: argparse.Namespace) -> int:
     """The multiple-testing ledger: how many attempts each algo family has burned."""
     from .arena.store import ArenaStore
@@ -511,13 +520,14 @@ def cmd_arena_journal(args: argparse.Namespace) -> int:
             print(f"\nExperiment journal — family {args.family!r}, "
                   f"{len(rows)} attempt(s), newest first")
             header = (f"{'#':>4}  {'when (UTC)':<19} {'name':<20} {'scenario':<16} "
-                      f"{'metric':<12} {'score':>10}  status")
+                      f"{'metric':<12} {'score':>10}  {'balance':<26} status")
             print(header)
             print("-" * len(header))
             for r in rows:
                 score = f"{r['score']:.3f}" if r["score"] is not None else "-"
                 print(f"{r['id']:>4}  {r['ts'][:19]:<19} {r['name']:<20} "
-                      f"{r['scenario']:<16} {r['metric']:<12} {score:>10}  {r['status']}")
+                      f"{r['scenario']:<16} {r['metric']:<12} {score:>10}  "
+                      f"{_balance(r):<26} {r['status']}")
             return 0
 
         rows = store.journal_summary()
@@ -527,7 +537,7 @@ def cmd_arena_journal(args: argparse.Namespace) -> int:
             return 0
         print("\nExperiment journal — attempts per algorithm family")
         header = (f"{'family':<20} {'attempts':>8} {'variants':>8} {'scenarios':>9}  "
-                  f"{'best score (metric @ scenario)':<38} last tried")
+                  f"{'best score (metric @ scenario)':<38} {'balance':<26} last tried")
         print(header)
         print("-" * len(header))
         for r in rows:
@@ -535,7 +545,8 @@ def cmd_arena_journal(args: argparse.Namespace) -> int:
             best_s = (f"{best['score']:.3f} ({best['metric']} @ {best['scenario']})"
                       if best else "-")
             print(f"{r['family']:<20} {r['attempts']:>8} {r['variants']:>8} "
-                  f"{r['scenarios']:>9}  {best_s:<38} {r['last_ts'][:10]}")
+                  f"{r['scenarios']:>9}  {best_s:<38} {_balance(best):<26} "
+                  f"{r['last_ts'][:10]}")
         if any(r["attempts"] > 1 for r in rows):
             print("\nA best-of-N result overstates skill: the more attempts a family has,")
             print("the stricter the bar its winner must clear (survive the regime gauntlet")

@@ -44,15 +44,17 @@ CREATE TABLE IF NOT EXISTS arena_results (
 );
 CREATE INDEX IF NOT EXISTS idx_results_run ON arena_results(run_id);
 CREATE TABLE IF NOT EXISTS experiments (
-    id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts       TEXT NOT NULL,
-    family   TEXT NOT NULL,
-    name     TEXT NOT NULL,
-    scenario TEXT NOT NULL,
-    metric   TEXT NOT NULL,
-    score    REAL,
-    status   TEXT NOT NULL,
-    run_id   INTEGER          -- arena_runs.id when the run was --save'd
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts            TEXT NOT NULL,
+    family        TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    scenario      TEXT NOT NULL,
+    metric        TEXT NOT NULL,
+    score         REAL,
+    status        TEXT NOT NULL,
+    start_balance REAL,       -- scores rank; balances tell the money story
+    final_balance REAL,
+    run_id        INTEGER     -- arena_runs.id when the run was --save'd
 );
 CREATE INDEX IF NOT EXISTS idx_experiments_family ON experiments(family);
 """
@@ -100,6 +102,12 @@ class ArenaStore:
         self._conn.row_factory = sqlite3.Row
         with closing(self._conn.cursor()) as cur:
             cur.executescript(_SCHEMA)
+        # Additive column migration for journals created before balances were
+        # recorded (CREATE IF NOT EXISTS won't touch an existing table).
+        cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(experiments)")}
+        for col in ("start_balance", "final_balance"):
+            if col not in cols:
+                self._conn.execute(f"ALTER TABLE experiments ADD COLUMN {col} REAL")
         self._conn.commit()
 
     def record_run(self, scenario, metric: str, outcome) -> int:
@@ -135,11 +143,16 @@ class ArenaStore:
         entries = outcome.leaderboard.entries
         for r in entries:
             family = getattr(r.contestant, "family", "") or r.name
+            start = final = None
+            if r.result is not None:
+                start = float(r.result.initial_cash)
+                final = float(r.result.final_equity)
             self._conn.execute(
                 "INSERT INTO experiments (ts, family, name, scenario, metric,"
-                " score, status, run_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                " score, status, start_balance, final_balance, run_id)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (ts, family, r.name, scenario.name, metric,
-                 _clean(r.score), r.status, run_id),
+                 _clean(r.score), r.status, _clean(start), _clean(final), run_id),
             )
         self._conn.commit()
         return len(entries)
@@ -154,8 +167,8 @@ class ArenaStore:
         out = []
         for row in rows:
             best = self._conn.execute(
-                "SELECT name, scenario, metric, score FROM experiments"
-                " WHERE family = ? AND score IS NOT NULL"
+                "SELECT name, scenario, metric, score, start_balance, final_balance"
+                " FROM experiments WHERE family = ? AND score IS NOT NULL"
                 " ORDER BY score DESC LIMIT 1",
                 (row["family"],),
             ).fetchone()

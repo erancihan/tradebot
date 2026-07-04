@@ -135,6 +135,8 @@ make web                # build frontend + serve dashboard at :8000
 ```
 CLI: `tradebot {backtest,run,status,demo,arena,data}` and `tradebot-web`.
 `run --dry-run`/`--replay` = forward-test; `arena {list,run,validate,history,show}`.
+`make test` ends with a **simulated balances** ledger (start → final per money
+test; `tests/conftest.py` wraps `Backtester.run` + arena `simulate`).
 
 Frontend (`trading-bot/frontend/`):
 ```bash
@@ -350,7 +352,9 @@ mean-reverters top the chop by `consistency`, buy_and_hold sinks in
 crash_recovery by `worst_fold`).
 *Stage 2 — experiment journal (DONE):* every `arena run` journals one attempt
 per contestant into the arena DB's `experiments` table (`--no-journal` opts
-out; failures count too). `@register(..., family=...)` groups variants of one
+out; failures count too). Each attempt records its **start/final balance**
+next to the score (additive-column migration handles pre-balance DBs on
+open); `arena journal` prints both — scores rank, dollars tell the story. `@register(..., family=...)` groups variants of one
 idea so attempts accumulate against the family (default: the contestant name).
 `tradebot arena journal [--family X]` prints the ledger + a multiple-testing
 reminder once any family passes one attempt. `ArenaStore.record_attempts` /
