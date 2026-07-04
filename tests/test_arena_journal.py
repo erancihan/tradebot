@@ -55,9 +55,12 @@ def test_attempts_are_grouped_by_family(tmp_path):
     assert summary["lonesome"]["attempts"] == 2
     best = summary["donchian"]["best"]
     assert best is not None and best["name"].startswith("donchian")
-    # Scores rank, balances tell the money story: both are recorded.
+    # Scores rank, balances tell the money story: both are recorded,
+    # along with the simulated data window.
     assert best["start_balance"] == 10_000.0
     assert best["final_balance"] > 0
+    assert best["start_date"].startswith("2023-01")     # synthetic epoch
+    assert best["end_date"] > best["start_date"]
 
 
 def test_failures_still_burn_an_attempt(tmp_path):
@@ -79,6 +82,7 @@ def test_failures_still_burn_an_attempt(tmp_path):
     assert len(rows) == 1
     assert rows[0]["status"] == "error" and rows[0]["score"] is None
     assert rows[0]["start_balance"] is None and rows[0]["final_balance"] is None
+    assert rows[0]["start_date"] is None and rows[0]["end_date"] is None
     assert summary[0]["family"] == "boom" and summary[0]["best"] is None
 
 
@@ -119,12 +123,14 @@ def test_cli_run_journals_by_default(tmp_path, capsys):
     assert "attempts per algorithm family" in out
     assert "donchian" in out and "macd_cross" in out
     assert "10,000 -> " in out                    # balance change beside the score
+    assert "2023-01-02 -> " in out                # ...and the simulated window
 
-    # Family detail view lists individual attempts (with balances).
+    # Family detail view lists individual attempts (with balances + period).
     assert main(["arena", "journal", "--db", db, "--family", "donchian"]) == 0
     out = capsys.readouterr().out
     assert "family 'donchian'" in out and "default" in out
     assert "balance" in out and "10,000 -> " in out
+    assert "simulated period" in out and "2023-01-02 -> " in out
 
     # A second run trips the multiple-testing reminder.
     assert main(["arena", "run", "--algos", str(ALGOS_DIR), "--score", "sharpe",

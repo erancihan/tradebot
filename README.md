@@ -392,10 +392,10 @@ per contestant (status and score included — failures count) into the arena DB;
 `--no-journal` opts out. Variants declare a shared family
 (`@register(name="donchian_55_20", family="donchian")`) so attempts accumulate
 against the *idea*, not each name. `tradebot arena journal` shows the ledger —
-each attempt records its **balance change** (`10,000 -> 12,261 (+22.6%)`)
-alongside the ranking score, because a score ranks but only dollars tell the
-story — and the more attempts a family has burned, the stricter the bar its
-winner must clear.
+each attempt records its **balance change** (`10,000 -> 12,261 (+22.6%)`) and
+the **simulated period** (`2023-01-02 -> 2024-12-30`) alongside the ranking
+score — a score ranks, but dollars-over-what-window tells the story — and the
+more attempts a family has burned, the stricter the bar its winner must clear.
 
 **The promotion runbook (arena → paper).** An algorithm *earns* its way to
 real (paper) trading; nothing is promoted off one leaderboard:

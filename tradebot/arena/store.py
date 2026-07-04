@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS experiments (
     status        TEXT NOT NULL,
     start_balance REAL,       -- scores rank; balances tell the money story
     final_balance REAL,
+    start_date    TEXT,       -- simulated data window (first/last bar)
+    end_date      TEXT,
     run_id        INTEGER     -- arena_runs.id when the run was --save'd
 );
 CREATE INDEX IF NOT EXISTS idx_experiments_family ON experiments(family);
@@ -105,9 +107,10 @@ class ArenaStore:
         # Additive column migration for journals created before balances were
         # recorded (CREATE IF NOT EXISTS won't touch an existing table).
         cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(experiments)")}
-        for col in ("start_balance", "final_balance"):
+        for col, kind in (("start_balance", "REAL"), ("final_balance", "REAL"),
+                          ("start_date", "TEXT"), ("end_date", "TEXT")):
             if col not in cols:
-                self._conn.execute(f"ALTER TABLE experiments ADD COLUMN {col} REAL")
+                self._conn.execute(f"ALTER TABLE experiments ADD COLUMN {col} {kind}")
         self._conn.commit()
 
     def record_run(self, scenario, metric: str, outcome) -> int:
@@ -143,16 +146,20 @@ class ArenaStore:
         entries = outcome.leaderboard.entries
         for r in entries:
             family = getattr(r.contestant, "family", "") or r.name
-            start = final = None
+            start = final = first = last = None
             if r.result is not None:
                 start = float(r.result.initial_cash)
                 final = float(r.result.final_equity)
+                curve = r.result.equity_curve
+                if len(curve):
+                    first = str(curve.index[0])
+                    last = str(curve.index[-1])
             self._conn.execute(
                 "INSERT INTO experiments (ts, family, name, scenario, metric,"
-                " score, status, start_balance, final_balance, run_id)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (ts, family, r.name, scenario.name, metric,
-                 _clean(r.score), r.status, _clean(start), _clean(final), run_id),
+                " score, status, start_balance, final_balance, start_date,"
+                " end_date, run_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (ts, family, r.name, scenario.name, metric, _clean(r.score),
+                 r.status, _clean(start), _clean(final), first, last, run_id),
             )
         self._conn.commit()
         return len(entries)
@@ -167,7 +174,8 @@ class ArenaStore:
         out = []
         for row in rows:
             best = self._conn.execute(
-                "SELECT name, scenario, metric, score, start_balance, final_balance"
+                "SELECT name, scenario, metric, score, start_balance,"
+                " final_balance, start_date, end_date"
                 " FROM experiments WHERE family = ? AND score IS NOT NULL"
                 " ORDER BY score DESC LIMIT 1",
                 (row["family"],),

@@ -21,3 +21,6 @@ def test_backtests_are_recorded_with_start_and_final_balance():
     assert entry["start"] == 12_345.0
     assert entry["final"] == result.final_equity
     assert entry["trades"] == result.num_trades
+    # The simulated data window is recorded too (synthetic starts 2023-01-02).
+    assert entry["first"] == str(result.equity_curve.index[0])[:10]
+    assert entry["last"] == str(result.equity_curve.index[-1])[:10]

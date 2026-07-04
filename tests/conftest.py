@@ -7,7 +7,7 @@ suite executes — every ``Backtester.run`` and every (in-process) arena
 shows its dollars:
 
     test_uptrend_with_always_long_is_profitable
-        UP        10,000.00 -> 20,876.91   (+108.8%, 3 trades)
+        UP    10,000.00 -> 20,876.91  (+108.8%, 3 trades)  2023-01-02 -> 2024-05-15
 
 Recording is automatic (the entry points are wrapped for the session); tests
 need no changes. Subprocess-isolated arena runs execute in forked children,
@@ -36,11 +36,14 @@ def _record(symbols, result) -> None:
     node = _CURRENT[0]
     if not node:
         return
+    curve = result.equity_curve
     _LEDGER.setdefault(node, []).append({
         "symbols": ",".join(symbols),
         "start": float(result.initial_cash),
         "final": float(result.final_equity),
         "trades": result.num_trades,
+        "first": str(curve.index[0])[:10] if len(curve) else "?",
+        "last": str(curve.index[-1])[:10] if len(curve) else "?",
     })
 
 
@@ -81,11 +84,13 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         tr.line(node)
         if len(runs) > 4:
             finals = sorted(r["final"] for r in runs)
+            first = min(r["first"] for r in runs)
+            last = max(r["last"] for r in runs)
             tr.line(f"    {len(runs)} sims from {runs[0]['start']:,.2f} -> "
-                    f"[{finals[0]:,.2f} ... {finals[-1]:,.2f}]")
+                    f"[{finals[0]:,.2f} ... {finals[-1]:,.2f}]   {first} -> {last}")
             continue
         for r in runs:
             pct = r["final"] / r["start"] - 1.0 if r["start"] else 0.0
             symbols = r["symbols"] if len(r["symbols"]) <= 20 else r["symbols"][:17] + "..."
             tr.line(f"    {symbols:<20} {r['start']:>12,.2f} -> {r['final']:>12,.2f}"
-                    f"   ({pct:+.1%}, {r['trades']} trades)")
+                    f"   ({pct:+.1%}, {r['trades']} trades)   {r['first']} -> {r['last']}")
