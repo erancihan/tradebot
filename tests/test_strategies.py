@@ -6,6 +6,8 @@ from tradebot.data.synthetic import synthetic_ohlcv
 from tradebot.strategies import (
     BollingerReversion,
     DonchianBreakout,
+    EnsembleVote,
+    FollowTheLeader,
     MacdTrend,
     RsiReversion,
     SmaCrossover,
@@ -141,6 +143,55 @@ def test_bollinger_rejects_bad_params():
         BollingerReversion(num_std=0)
 
 
+def test_follow_the_leader_rides_the_winning_sub():
+    # A clean monotonic uptrend: the trend-followers win the trailing window,
+    # so the meta must be long by the end (and flat before measurability).
+    df = _frame_from_close(pd.Series(np.linspace(50, 200, 260)))
+    meta = FollowTheLeader(window=30)
+    target = meta.target_positions(df)
+    assert set(np.unique(target)).issubset({-1, 0, 1})
+    assert (target.iloc[:meta.window] == 0).all()
+    assert target.iloc[-1] == 1
+
+
+def test_follow_the_leader_is_prefix_stable():
+    df = synthetic_ohlcv(periods=220, seed=21)
+    meta = FollowTheLeader(window=25)
+    full = meta.target_positions(df)
+    for cut in (120, 170, 210):
+        prefix = meta.target_positions(df.iloc[:cut])
+        pd.testing.assert_series_equal(full.iloc[:cut], prefix)
+
+
+def test_follow_the_leader_accepts_config_dicts_and_validates():
+    meta = FollowTheLeader(window=20, strategies=[
+        {"name": "sma_crossover", "params": {"fast": 5, "slow": 15}},
+        {"name": "rsi_reversion"},
+    ])
+    assert len(meta.strategies) == 2
+    assert meta.required_history > 20
+    with pytest.raises(ValueError):
+        FollowTheLeader(window=1)
+    with pytest.raises(ValueError):
+        FollowTheLeader(strategies=[])
+    with pytest.raises(ValueError):
+        FollowTheLeader(strategies=["not_a_strategy"])
+
+
+def test_ensemble_vote_requires_agreement():
+    up = _frame_from_close(pd.Series(np.linspace(50, 200, 260)))
+    # All-trend roster agrees on an uptrend -> long.
+    trendy = EnsembleVote(strategies=[SmaCrossover(5, 15), SmaCrossover(10, 30),
+                                      MacdTrend()])
+    assert trendy.target_positions(up).iloc[-1] == 1
+    # Demanding unanimity including a mean-reverter (flat in a grind) -> flat.
+    strict = EnsembleVote(strategies=[SmaCrossover(5, 15), SmaCrossover(10, 30),
+                                      BollingerReversion(20, 2.0)], min_agree=3)
+    assert strict.target_positions(up).iloc[-1] == 0
+    with pytest.raises(ValueError):
+        EnsembleVote(min_agree=99)
+
+
 def test_new_strategies_pass_a_walk_forward_smoke():
     """House rule: every new algo ships with a walk-forward pass (offline)."""
     from tradebot.backtest import Backtester
@@ -148,7 +199,8 @@ def test_new_strategies_pass_a_walk_forward_smoke():
     from tradebot.walkforward import walk_forward
 
     df = synthetic_ohlcv(periods=400, seed=9)
-    for strategy in (DonchianBreakout(), MacdTrend(), BollingerReversion()):
+    for strategy in (DonchianBreakout(), MacdTrend(), BollingerReversion(),
+                     FollowTheLeader(window=30), EnsembleVote()):
         bt = Backtester(strategy, RiskManager(RiskConfig(max_position_pct=0.95)),
                         initial_cash=10_000, slippage_bps=1.0)
         wf = walk_forward(bt, df, folds=3)
@@ -163,5 +215,7 @@ def test_registry_builds_known_strategies():
     assert isinstance(d, DonchianBreakout) and d.entry == 30
     assert isinstance(build_strategy("macd_trend"), MacdTrend)
     assert isinstance(build_strategy("bollinger_reversion"), BollingerReversion)
+    assert isinstance(build_strategy("follow_leader", {"window": 30}), FollowTheLeader)
+    assert isinstance(build_strategy("ensemble_vote"), EnsembleVote)
     with pytest.raises(KeyError):
         build_strategy("does_not_exist")

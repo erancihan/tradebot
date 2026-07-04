@@ -82,7 +82,7 @@ def test_cli_run_journals_by_default(tmp_path, capsys):
     db = str(tmp_path / "arena.db")
     assert main(["arena", "run", "--algos", str(ALGOS_DIR), "--score", "total_return",
                  "--isolation", "thread", "--db", db]) == 0
-    assert "Journaled 8 attempt(s)" in capsys.readouterr().out
+    assert "Journaled 11 attempt(s)" in capsys.readouterr().out
 
     assert main(["arena", "journal", "--db", db]) == 0
     out = capsys.readouterr().out

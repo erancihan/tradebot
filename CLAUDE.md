@@ -23,10 +23,11 @@ entirely under `trading-bot/`. Four pillars:
 
 Status: feature-complete for the core vision **including the portfolio stack**
 (universe → selector → allocator → risk; see Roadmap); the **algorithms-research
-arc** is underway (regime scenario library + robustness scorers + classic
-strategy roster + experiment journal + cross-sectional portfolio contestants
-shipped). **~240 tests, all offline & green** (web tests skip without
-fastapi); frontend has a strict `tsc` gate.
+arc's tooling is COMPLETE** (regime scenario library + robustness scorers +
+classic roster + experiment journal + cross-sectional portfolio contestants +
+meta strategies + promotion pass gate; no contestant has passed the gate yet —
+see Roadmap arc status). **~250 tests, all offline & green** (web tests skip
+without fastapi); frontend has a strict `tsc` gate.
 
 ## Agent skills
 
@@ -44,7 +45,8 @@ Keep these in sync when workflows or invariants change.
 trading-bot/
 ├── tradebot/                 # the Python package
 │   ├── strategies/           # Strategy ABC + sma_crossover, rsi_reversion, buy_and_hold,
-│   │                         #   donchian_breakout, macd_trend, bollinger_reversion
+│   │                         #   donchian_breakout, macd_trend, bollinger_reversion,
+│   │                         #   meta.py (follow_leader bandit + ensemble_vote)
 │   ├── indicators.py         # pure pandas: sma/ema/rsi/macd/bollinger/rolling_volatility/crossover
 │   ├── risk.py               # RiskManager + RiskConfig (sizing, allocate(), caps, band, daily-loss)
 │   ├── allocation.py         # Allocator ABC + equal/inverse_vol/explicit + registry
@@ -74,12 +76,14 @@ trading-bot/
 ```
 
 `tradebot/arena/`: `api.py` (@register), `loader.py` (importlib discovery),
-`interfaces.py` (Algo/Action/Context), `adapters.py` (Policy), `simulation.py`
-(stepped core), `scenario.py`, `runner.py`, `scoring.py`, `result.py`,
-`tournament.py`, `league.py` (standings over a season), `season.py` (durable,
-resumable real-time league + feeds + daemon), `market.py` (US market-hours +
-partial-bar helpers), `sandbox.py` (`--harden`: no-write + net isolation),
-`store.py`.
+`interfaces.py` (Algo/Action/Context/PortfolioAlgo), `adapters.py` (Policy +
+simulation_args), `simulation.py` (stepped core), `scenario.py`, `runner.py`,
+`scoring.py` (incl. worst_fold/consistency), `gate.py` (promotion pass gate),
+`result.py`, `tournament.py`, `league.py` (standings over a season),
+`season.py` (durable, resumable real-time league + feeds + daemon),
+`market.py` (US market-hours + partial-bar helpers), `sandbox.py`
+(`--harden`: no-write + net isolation), `store.py` (runs + experiments
+journal).
 
 `tradebot/web/`: `app.py` (factory), `repository.py` (read-only SQLite),
 `services/` (metrics, account, jobs), `routes/` (pages, partials, api),
@@ -236,7 +240,7 @@ build) on changes under `trading-bot/**`.
   a tournament over the whole `algos/` dir; `test_web.py` (arena run entries,
   season standings), `test_arena_season.py` (name set) and
   `test_arena_journal.py` ("Journaled N") assert on the field. Adding/removing
-  an example contestant means updating those counts (currently 8).
+  an example contestant means updating those counts (currently 11).
 - **Fold scorers assume fixed parameters.** `worst_fold`/`consistency` treat
   segments of the *realized* equity curve as out-of-sample folds. That's valid
   while contestants don't fit anything during a run. If a contestant ever
@@ -248,6 +252,17 @@ build) on changes under `trading-bot/**`.
   or they'll litter the CWD. Journaling is CLI-layer only — the library
   `run_tournament` has no side effects (the season recompute loop depends on
   that).
+- **Meta strategies are expensive under the growing-window replay.** The arena
+  calls `latest_target` per bar per symbol; `FollowTheLeader` recomputes its
+  whole roster each call (and `bollinger_reversion` walks in Python), so cost
+  grows ~O(bars²·subs). On multi-symbol scenarios `meta_leader` can blow the
+  default 10s budget — raise `--time-budget` rather than assuming a bug.
+- **Season + over-budget contestants = thread pile-up.** The season recompute
+  is O(history) *per tick* on `thread` isolation, and the soft runner cannot
+  kill a running contestant — an over-budget algo leaks a busy daemon thread
+  *every tick* until the loop crawls. Keep season fields to affordable
+  contestants (or short replays); the 10-min season replay timeout seen on
+  2026-07-04 was exactly this with `meta_leader` in the field.
 
 ## Roadmap
 
@@ -349,9 +364,35 @@ drift/vol spread (`scenarios/cross_sectional.yaml`; ignored when `regimes`
 set). Examples: `algos/xs_momentum.py`, `algos/xs_reversal.py`. Verified:
 xs_momentum finds the persistent leaders and beats buy_and_hold on the spread
 scenario.
-*Next stages:* adaptive/meta algos (bandit over sub-strategies,
-follow-the-league-leader) · the pass-gate runbook + first promotion to a
-paper season.
+*Stage 4 — adaptive/meta algos (DONE):* `strategies/meta.py` —
+`FollowTheLeader` (greedy bandit: per bar, trade the sub-strategy with the
+best trailing-window P&L, computed with the same one-bar shift as execution;
+prefix-stable; ties → roster order) and `EnsembleVote` (long/short only when
+`min_agree` sub-strategies agree; default strict majority; long wins the
+impossible tie). Both accept `strategies:` as instances or `{name, params}`
+dicts (lazy registry import avoids the cycle); default roster = mixed
+trend/reversion four. Contestants: `algos/meta_leader.py`, `meta_vote.py`.
+*Stage 5 — pass gate + runbook (DONE):* `arena/gate.py` `evaluate_gate` +
+`tradebot arena gate --candidate X --scenarios ...` — judges a candidate vs a
+baseline (default `buy_and_hold`) over a scenario gauntlet; checks: completes
+everywhere · beats baseline mean return · `worst_fold` >= baseline in a
+strict majority · drawdown never worse than `--max-drawdown` (default 35%).
+Exit code = verdict; runs are journaled; the family's attempt count prints
+with the verdict. Runbook in README (validate → gate → walk-forward → replay
+dry-run → paper/season).
+**Arc status (2026-07-04): tooling complete; NO contestant has passed the
+gate yet — that is the honest result, not a bug.** Gauntlet outcomes: classics
+protect drawdown but concede too much return vs buy_and_hold; raw
+`xs_momentum` beats mean return but takes a −48% momentum-crash drawdown;
+`xs_momentum_vt` (the vol-dialed variant, one theory-driven iteration: target
+= benchmark vol so the dial only acts on true spikes) passes mean-return +
+drawdown but loses the worst-fold majority 2/5 — two losses are ~30bps
+selector-warmup drag, one real (vol_spike: the dial de-risked a spike the
+market rallied through). Journal: `xs_momentum` family at 55 attempts. Do NOT
+tune the gate or grid-search params to force a pass; the next iteration must
+be theory-driven. Promotion mechanics verified offline end-to-end: the exact
+candidate stack ran as a core config through `run --replay` (+7% on the
+demo replay) and an 11-contestant replay season.
 
 Deferred (decided, do not re-propose without a new ask):
 - **Container/gVisor containment** — the strongest, OS-level tier, for fully

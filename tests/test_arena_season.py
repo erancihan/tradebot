@@ -47,7 +47,8 @@ def test_step_accumulates_then_ranks(tmp_path):
         assert {s.name for s in snap.standings} <= {
             "sma_trend", "rsi_dip", "buy_and_hold",
             "donchian", "macd_cross", "bollinger_dip",
-            "xs_momentum", "xs_reversal",
+            "xs_momentum", "xs_momentum_vt", "xs_reversal",
+            "meta_leader", "meta_vote",
         }
 
 

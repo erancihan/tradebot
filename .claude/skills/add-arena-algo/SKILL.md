@@ -70,12 +70,21 @@ tradebot arena history && tradebot arena show
 ```
 
 Then run the **regime gauntlet** — one scenario proves nothing. `scenarios/`
-ships `bull_trend`, `sideways_chop`, `crash_recovery`, `vol_spike`; rank with a
-robustness metric (`worst_fold` = worst quarter of the run, `consistency` =
-mean fold return − dispersion):
+ships `bull_trend`, `sideways_chop`, `crash_recovery`, `vol_spike`,
+`cross_sectional`; rank with a robustness metric (`worst_fold` = worst quarter
+of the run, `consistency` = mean fold return − dispersion):
 ```bash
 tradebot arena run --algos ./algos --scenario scenarios/crash_recovery.yaml --score worst_fold
 ```
+
+To judge a candidate for promotion, use the **pass gate** (exit code =
+verdict; checks completes-everywhere, beats-baseline mean return, worst-fold
+majority, drawdown bound; prints the family's journal attempt count):
+```bash
+tradebot arena gate --algos ./algos --candidate my_algo --scenarios scenarios/*.yaml
+```
+Do not tune the gate or grid-search params to force a pass — iterations must
+be theory-driven, and the journal counts every one (see the README runbook).
 House rules: every new algo ships with offline tests **and** a walk-forward
 pass (`tradebot.walkforward.walk_forward` smoke in tests), and every variant
 counts — `arena run` journals one attempt per contestant automatically

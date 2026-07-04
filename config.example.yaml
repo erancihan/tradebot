@@ -56,7 +56,9 @@ db_path: tradebot.db
 
 # --- Strategy -----------------------------------------------------------------
 # Available: sma_crossover, rsi_reversion, buy_and_hold, donchian_breakout,
-#            macd_trend, bollinger_reversion
+#            macd_trend, bollinger_reversion, follow_leader, ensemble_vote
+# (the meta strategies take `strategies: [{name, params}, ...]` to pick their
+#  roster; defaults to a mixed trend/mean-reversion four)
 strategy:
   name: sma_crossover
   params:

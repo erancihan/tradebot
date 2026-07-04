@@ -462,6 +462,42 @@ def cmd_arena_validate(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def cmd_arena_gate(args: argparse.Namespace) -> int:
+    """Promotion pass gate: judge one candidate against a baseline over a gauntlet."""
+    from .arena.gate import evaluate_gate
+    from .arena.scenario import Scenario
+    from .arena.store import ArenaStore
+    from .arena.tournament import run_tournament
+
+    runs = []
+    for path in args.scenarios:
+        scenario = Scenario.from_yaml(path)
+        print(f"  gauntlet: {scenario.name} ...", flush=True)
+        outcome = run_tournament(
+            args.algos, scenario, metric="worst_fold",
+            time_budget_s=args.time_budget, isolation=args.isolation,
+        )
+        for e in outcome.load_errors:
+            print(f"  ! load error: {e.path}: {e.message}", file=sys.stderr)
+        runs.append((scenario, outcome))
+
+    report = evaluate_gate(args.candidate, args.baseline,
+                           [(sc.name, out) for sc, out in runs],
+                           max_drawdown_limit=args.max_drawdown)
+
+    with ArenaStore(args.db) as store:
+        if args.journal:
+            for scenario, outcome in runs:
+                store.record_attempts(scenario, "worst_fold", outcome)
+        summary = {r["family"]: r for r in store.journal_summary()}
+        fam = report.family or args.candidate
+        if fam in summary:
+            report.attempts = summary[fam]["attempts"]
+
+    print(report.table())
+    return 0 if report.passed else 1
+
+
 def cmd_arena_journal(args: argparse.Namespace) -> int:
     """The multiple-testing ledger: how many attempts each algo family has burned."""
     from .arena.store import ArenaStore
@@ -875,6 +911,24 @@ def build_parser() -> argparse.ArgumentParser:
     sr.add_argument("--ignore-market-hours", dest="ignore_market_hours",
                     action="store_true", help="(live) step even when the market is closed")
     sr.set_defaults(func=cmd_season_run)
+
+    ag = asub.add_parser("gate", help="promotion pass gate: candidate vs baseline "
+                                      "over a scenario gauntlet (exit code = verdict)")
+    ag.add_argument("--algos", required=True, nargs="+", help="algo files and/or folders")
+    ag.add_argument("--candidate", required=True, help="contestant name to judge")
+    ag.add_argument("--baseline", default="buy_and_hold",
+                    help="benchmark contestant every idea must beat (default buy_and_hold)")
+    ag.add_argument("--scenarios", required=True, nargs="+",
+                    help="scenario YAMLs forming the gauntlet (use the regime library)")
+    ag.add_argument("--max-drawdown", dest="max_drawdown", type=float, default=0.35,
+                    help="fail if any scenario drawdown is worse than this (default 0.35)")
+    ag.add_argument("--time-budget", dest="time_budget", type=float, default=10.0,
+                    help="per-contestant wall-clock budget in seconds (default 10)")
+    ag.add_argument("--isolation", choices=["process", "thread", "auto"], default="process")
+    ag.add_argument("--no-journal", dest="journal", action="store_false", default=True,
+                    help="skip journaling the gauntlet runs as attempts")
+    ag.add_argument("--db", default="arena.db", help="arena results DB (default arena.db)")
+    ag.set_defaults(func=cmd_arena_gate)
 
     aj = asub.add_parser("journal",
                          help="attempts-per-family ledger (multiple-testing honesty)")

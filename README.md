@@ -295,6 +295,10 @@ The full portfolio pipeline is then: **universe** (which symbols qualify) →
   when price reverts to the middle band; optional short side above the upper.
 - **`buy_and_hold`** — always long; the benchmark every idea has to beat, and
   the signal to use when a portfolio selector should be the only decision-maker.
+- **`follow_leader`** — meta: each bar, trade whatever sub-strategy earned the
+  most over the trailing `window` (a greedy bandit over a mixed roster).
+- **`ensemble_vote`** — meta: long/short only when at least `min_agree`
+  sub-strategies agree; disagreement means flat.
 
 Add your own by subclassing `Strategy` and implementing
 `target_positions(bars) -> Series` (values in `{-1, 0, +1}`), then register it in
@@ -390,6 +394,37 @@ per contestant (status and score included — failures count) into the arena DB;
 against the *idea*, not each name. `tradebot arena journal` shows the ledger —
 the more attempts a family has burned, the stricter the bar its winner must
 clear.
+
+**The promotion runbook (arena → paper).** An algorithm *earns* its way to
+real (paper) trading; nothing is promoted off one leaderboard:
+
+```bash
+# 1. write it, smoke-test it
+tradebot arena validate algos/my_algo.py
+
+# 2. the gauntlet: candidate vs buy_and_hold across the regime library.
+#    Exit code is the verdict (0 pass / 1 fail); every run is journaled.
+tradebot arena gate --algos ./algos --candidate my_algo \
+  --scenarios scenarios/bull_trend.yaml scenarios/sideways_chop.yaml \
+              scenarios/crash_recovery.yaml scenarios/vol_spike.yaml \
+              scenarios/cross_sectional.yaml
+
+# 3. out-of-sample folds on the config you'd actually trade
+tradebot backtest --config my.yaml --walk-forward 4
+
+# 4. offline forward-test of that exact config (live loop, simulated fills)
+tradebot run --config my.yaml --replay
+
+# 5. paper: the real-time loop and/or a live paper season
+tradebot run --config my.yaml
+tradebot arena season create --name paper1 --symbols ... --algos ./algos
+```
+
+The gate checks four things: the candidate completes every scenario, beats
+the baseline's mean return net of costs, is at least as robust (`worst_fold`)
+in a majority of regimes, and never breaches the drawdown bound. The verdict
+prints alongside the family's journal attempt count — a gate passed on the
+20th try means much less than one passed on the 2nd.
 
 **Regime scenario library.** `scenarios/` ships stress environments built from
 piecewise synthetic regimes (the price path is continuous across segment
