@@ -78,19 +78,55 @@ commands in each file's header; cached bars replay offline afterwards).
   time-budget or process-isolated recompute (acceptable follow-up work:
   plumb `isolation=` through `SeasonConfig`).
 
-## Spec 4 — backlog seams (build only on explicit ask)
+## Spec 4 — backlog (build only on explicit ask; designs locked here)
 
-- **Bracket/stop orders**: seam is `broker/base.py Broker` ABC +
-  `engine.Engine._submit_delta`. Keep `RiskManager` the sizing authority;
-  brackets are exit *placement*, not sizing. Dry-run broker must simulate
-  triggers off bar highs/lows to stay offline-testable.
-- **Websocket streaming**: seam is `data/` (new `AlpacaStream` alongside
-  `AlpacaData`); engine keeps polling as fallback; season's live feed is the
-  first consumer. All tests offline via an injected fake stream.
-- **Notifications**: post-fill + circuit-breaker hooks in `Engine`; a simple
-  webhook/email adapter; never block the trade loop on delivery.
-- **Container isolation for the arena**: deferred by owner decision — do not
-  build without a new ask (rationale recorded in CLAUDE.md).
+### 4a. Bracket / stop-loss / take-profit orders
+- Config: `risk: {stop_loss_pct, take_profit_pct}` (both optional, fractions
+  of entry price). They live on `RiskConfig` — risk stays centralised;
+  strategies still emit only {-1, 0, +1}.
+- `models.py`: `Order` gains optional `stop_loss: float | None` and
+  `take_profit: float | None` *price* fields (absolute prices, computed by
+  the engine from entry price × config at submit time).
+- `Broker` ABC: extend `submit(order)` semantics only — no new methods.
+  `AlpacaBroker` maps to `order_class="bracket"` (lazy SDK import as ever).
+  `DryRunBroker` simulates triggers each loop pass from the bar's high/low
+  (stop fires before target on the same bar — pessimistic, deterministic),
+  emitting a synthetic exit fill; this keeps the whole feature offline-testable.
+- Engine seam: `Engine._submit_delta` attaches bracket prices on *entries
+  that increase |position|*; reductions/exits never carry brackets. Backtester
+  parity is explicitly NOT required (brackets are a live-execution concern);
+  document that divergence in CLAUDE.md invariants when built.
+- Tests: DryRunBroker trigger unit tests (gap-through-stop, same-bar both,
+  no-trigger) + a replay dry-run showing a stopped-out position.
+
+### 4b. Websocket streaming data
+- New `data/stream.py`: `AlpacaStream` wrapping `alpaca-py`'s
+  `StockDataStream` (lazy import), interface
+  `run(symbols, on_bar: Callable[[str, pd.DataFrame], None])` delivering
+  1-bar frames in canonical `BAR_COLUMNS` shape; plus `FakeStream(frames)`
+  for tests (replays a dict of frames bar by bar, no network).
+- First consumer: the season's live feed (`season.py LiveSeasonFeed` gains a
+  `stream=` alternative to polling). The `Engine` keeps polling — do NOT
+  rewrite the rebalance loop; streaming is a data-arrival optimisation, and
+  bars remain the source of truth (dedupe by PK is already idempotent).
+- Tests: FakeStream-driven season tick test; no `[live]` extra imports at
+  module top (import isolation invariant).
+
+### 4c. Notifications (fills + circuit breaker)
+- New `notify.py`: `Notifier` protocol with `send(event: dict) -> None`;
+  `WebhookNotifier(url)` POSTing JSON via stdlib `urllib` (no new deps);
+  `LogNotifier` default. Config block: `notify: {webhook_url: ...}`.
+- Engine hooks (constructor-injected, default `LogNotifier`): after each
+  submitted order (symbol, side, qty, price, mode) and on the daily-loss
+  halt. Delivery failures are logged and swallowed — never block or crash
+  the trade loop. Season daemon may reuse the same notifier for standings.
+- Tests: injected recording notifier in a replay dry-run (fill events seen,
+  halt event on a forced breaker trip); webhook adapter tested against a
+  local `http.server` thread — still offline.
+
+### 4d. Container isolation for the arena
+Deferred by owner decision — do not build without a new ask (rationale and
+the `ContainerRunner` seam are recorded in CLAUDE.md's Deferred section).
 
 ## Non-goals (owner-locked, do not re-propose)
 
