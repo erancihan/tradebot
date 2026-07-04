@@ -315,6 +315,7 @@ tradebot arena season run 1 --replay                       # advance it offline 
 tradebot arena season run 1 --simulate                     # dry-run the live daemon offline (market clock + replay)
 tradebot arena history                                     # list past tournaments
 tradebot arena show  [run_id]                              # reprint a saved leaderboard
+tradebot arena journal                                     # attempts per algo family (data-snooping ledger)
 tradebot arena validate algos/my_algo.py                   # smoke-test one file
 ```
 
@@ -356,6 +357,15 @@ split the realized equity curve into contiguous folds and score the worst fold
 (regime-dependence penalty). Scenarios are reproducible YAML; synthetic and CSV
 sources work fully offline. See [`algos/README.md`](algos/README.md) for the
 contestant guide.
+
+**The experiment journal.** Trying twenty variants and reporting the best one
+is how backtests lie. Every `arena run` automatically journals one *attempt*
+per contestant (status and score included — failures count) into the arena DB;
+`--no-journal` opts out. Variants declare a shared family
+(`@register(name="donchian_55_20", family="donchian")`) so attempts accumulate
+against the *idea*, not each name. `tradebot arena journal` shows the ledger —
+the more attempts a family has burned, the stricter the bar its winner must
+clear.
 
 **Regime scenario library.** `scenarios/` ships stress environments built from
 piecewise synthetic regimes (the price path is continuous across segment

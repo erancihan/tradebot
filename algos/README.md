@@ -69,5 +69,20 @@ tradebot arena run --algos ./algos --scenario scenarios/sideways_chop.yaml  --sc
 
 `worst_fold` scores the *worst* quarter of the run (a crash fold can't hide
 behind a recovery rally); `consistency` penalises lumpy, regime-dependent
-earnings. House rule: count every variant you tried — 20 attempts make one
-"winner" meaningless.
+earnings.
+
+**Every attempt is counted.** Each `arena run` journals one attempt per
+contestant into the arena DB (opt out with `--no-journal`). Variants of one
+idea should share a `family` so they count against it together:
+
+```python
+@register(name="donchian_55_20", family="donchian")   # variant #2 of the idea
+```
+
+```bash
+tradebot arena journal                     # attempts per family
+tradebot arena journal --family donchian   # every attempt for one family
+```
+
+Twenty attempts make one "winner" meaningless — the journal is what keeps a
+best-of-20 from being sold as skill.

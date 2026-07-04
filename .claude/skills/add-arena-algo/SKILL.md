@@ -63,9 +63,12 @@ mean fold return − dispersion):
 tradebot arena run --algos ./algos --scenario scenarios/crash_recovery.yaml --score worst_fold
 ```
 House rules: every new algo ships with offline tests **and** a walk-forward
-pass (`tradebot.walkforward.walk_forward` smoke in tests), and count every
-variant you tried (multiple-testing honesty). Adding an example contestant to
-`algos/` changes the field size some tests assert on — see the CLAUDE.md gotcha.
+pass (`tradebot.walkforward.walk_forward` smoke in tests), and every variant
+counts — `arena run` journals one attempt per contestant automatically
+(`--no-journal` to opt out; `tradebot arena journal` shows the ledger). Give
+variants of one idea a shared `@register(..., family="idea")` so attempts
+accumulate against the family. Adding an example contestant to `algos/`
+changes the field size some tests assert on — see the CLAUDE.md gotcha.
 
 ## Extending the arena itself
 

@@ -59,8 +59,9 @@ def test_a_crashing_contestant_is_isolated(tmp_path):
     assert "boom" in by["bad_algo"].error
 
 
-def test_cli_arena_run_prints_leaderboard(capsys):
-    rc = main(["arena", "run", "--algos", str(ALGOS_DIR), "--score", "total_return"])
+def test_cli_arena_run_prints_leaderboard(tmp_path, capsys):
+    rc = main(["arena", "run", "--algos", str(ALGOS_DIR), "--score", "total_return",
+               "--db", str(tmp_path / "arena.db")])
     assert rc == 0
     out = capsys.readouterr().out
     assert "Leaderboard" in out

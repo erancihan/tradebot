@@ -24,8 +24,8 @@ entirely under `trading-bot/`. Four pillars:
 Status: feature-complete for the core vision **including the portfolio stack**
 (universe → selector → allocator → risk; see Roadmap); the **algorithms-research
 arc** is underway (regime scenario library + robustness scorers + classic
-strategy roster shipped). **~225 tests, all offline & green** (web tests skip
-without fastapi); frontend has a strict `tsc` gate.
+strategy roster + experiment journal shipped). **~230 tests, all offline &
+green** (web tests skip without fastapi); frontend has a strict `tsc` gate.
 
 ## Agent skills
 
@@ -239,6 +239,12 @@ build) on changes under `trading-bot/**`.
   while contestants don't fit anything during a run. If a contestant ever
   optimizes in-run, its early folds become in-sample — use `walkforward.py`
   with true refits instead.
+- **`arena run` writes the journal by default.** Every CLI tournament records
+  attempts into `--db` (default `./arena.db`). Tests that invoke
+  `main(["arena", "run", ...])` must pass `--db <tmp_path>` (or `--no-journal`)
+  or they'll litter the CWD. Journaling is CLI-layer only — the library
+  `run_tournament` has no side effects (the season recompute loop depends on
+  that).
 
 ## Roadmap
 
@@ -319,10 +325,16 @@ tests + a walk-forward smoke pass). Verified end-to-end: the library
 discriminates as theory predicts (trend-followers top the bull scenario,
 mean-reverters top the chop by `consistency`, buy_and_hold sinks in
 crash_recovery by `worst_fold`).
-*Next stages:* experiment journal (attempts counter per algo family) ·
-cross-sectional contestants on the selector/allocator stack · adaptive/meta
-algos (bandit over sub-strategies, follow-the-league-leader) · the pass-gate
-runbook + first promotion to a paper season.
+*Stage 2 — experiment journal (DONE):* every `arena run` journals one attempt
+per contestant into the arena DB's `experiments` table (`--no-journal` opts
+out; failures count too). `@register(..., family=...)` groups variants of one
+idea so attempts accumulate against the family (default: the contestant name).
+`tradebot arena journal [--family X]` prints the ledger + a multiple-testing
+reminder once any family passes one attempt. `ArenaStore.record_attempts` /
+`journal_summary` / `journal_entries`.
+*Next stages:* cross-sectional contestants on the selector/allocator stack ·
+adaptive/meta algos (bandit over sub-strategies, follow-the-league-leader) ·
+the pass-gate runbook + first promotion to a paper season.
 
 Deferred (decided, do not re-propose without a new ask):
 - **Container/gVisor containment** — the strongest, OS-level tier, for fully

@@ -43,6 +43,18 @@ CREATE TABLE IF NOT EXISTS arena_results (
     equity_json   TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_results_run ON arena_results(run_id);
+CREATE TABLE IF NOT EXISTS experiments (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts       TEXT NOT NULL,
+    family   TEXT NOT NULL,
+    name     TEXT NOT NULL,
+    scenario TEXT NOT NULL,
+    metric   TEXT NOT NULL,
+    score    REAL,
+    status   TEXT NOT NULL,
+    run_id   INTEGER          -- arena_runs.id when the run was --save'd
+);
+CREATE INDEX IF NOT EXISTS idx_experiments_family ON experiments(family);
 """
 
 
@@ -111,6 +123,53 @@ class ArenaStore:
             )
         self._conn.commit()
         return run_id
+
+    def record_attempts(self, scenario, metric: str, outcome, run_id: int | None = None) -> int:
+        """Journal one experiment row per contestant (the data-snooping ledger).
+
+        Every evaluation counts as an attempt — including failures. Attempts are
+        grouped by the contestant's ``family`` (default: its name), so trying
+        ten variants of one idea shows up as ten attempts against that idea.
+        """
+        ts = utcnow().isoformat()
+        entries = outcome.leaderboard.entries
+        for r in entries:
+            family = getattr(r.contestant, "family", "") or r.name
+            self._conn.execute(
+                "INSERT INTO experiments (ts, family, name, scenario, metric,"
+                " score, status, run_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (ts, family, r.name, scenario.name, metric,
+                 _clean(r.score), r.status, run_id),
+            )
+        self._conn.commit()
+        return len(entries)
+
+    def journal_summary(self) -> list[dict]:
+        """Attempts per family, most-tried first, with each family's best score."""
+        rows = self._conn.execute(
+            "SELECT family, COUNT(*) AS attempts, COUNT(DISTINCT name) AS variants,"
+            " COUNT(DISTINCT scenario) AS scenarios, MAX(ts) AS last_ts"
+            " FROM experiments GROUP BY family ORDER BY attempts DESC, family"
+        ).fetchall()
+        out = []
+        for row in rows:
+            best = self._conn.execute(
+                "SELECT name, scenario, metric, score FROM experiments"
+                " WHERE family = ? AND score IS NOT NULL"
+                " ORDER BY score DESC LIMIT 1",
+                (row["family"],),
+            ).fetchone()
+            d = dict(row)
+            d["best"] = dict(best) if best else None
+            out.append(d)
+        return out
+
+    def journal_entries(self, family: str) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM experiments WHERE family = ? ORDER BY id DESC",
+            (family,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     def list_runs(self) -> list[dict]:
         rows = self._conn.execute(

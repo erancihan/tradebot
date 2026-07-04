@@ -402,12 +402,18 @@ def cmd_arena_run(args: argparse.Namespace) -> int:
     for e in outcome.load_errors:
         print(f"  ! load error: {e.path}: {e.message}", file=sys.stderr)
 
-    if args.save:
+    if args.save or args.journal:
         from .arena.store import ArenaStore
 
         with ArenaStore(args.db) as store:
-            run_id = store.record_run(scenario, args.score, outcome)
-        print(f"Saved as run #{run_id} in {args.db}")
+            run_id = None
+            if args.save:
+                run_id = store.record_run(scenario, args.score, outcome)
+                print(f"Saved as run #{run_id} in {args.db}")
+            if args.journal:
+                n = store.record_attempts(scenario, args.score, outcome, run_id=run_id)
+                print(f"Journaled {n} attempt(s) in {args.db} — "
+                      "review with `tradebot arena journal`.")
 
     if args.out:
         import json
@@ -454,6 +460,51 @@ def cmd_arena_validate(args: argparse.Namespace) -> int:
         ok = False
         print(f"  FAIL  {e.path}: {e.message}", file=sys.stderr)
     return 0 if ok else 1
+
+
+def cmd_arena_journal(args: argparse.Namespace) -> int:
+    """The multiple-testing ledger: how many attempts each algo family has burned."""
+    from .arena.store import ArenaStore
+
+    with ArenaStore(args.db) as store:
+        if args.family:
+            rows = store.journal_entries(args.family)
+            if not rows:
+                print(f"No attempts recorded for family {args.family!r} in {args.db}.")
+                return 0
+            print(f"\nExperiment journal — family {args.family!r}, "
+                  f"{len(rows)} attempt(s), newest first")
+            header = (f"{'#':>4}  {'when (UTC)':<19} {'name':<20} {'scenario':<16} "
+                      f"{'metric':<12} {'score':>10}  status")
+            print(header)
+            print("-" * len(header))
+            for r in rows:
+                score = f"{r['score']:.3f}" if r["score"] is not None else "-"
+                print(f"{r['id']:>4}  {r['ts'][:19]:<19} {r['name']:<20} "
+                      f"{r['scenario']:<16} {r['metric']:<12} {score:>10}  {r['status']}")
+            return 0
+
+        rows = store.journal_summary()
+        if not rows:
+            print(f"No attempts journaled yet in {args.db}. "
+                  "`tradebot arena run` journals automatically.")
+            return 0
+        print("\nExperiment journal — attempts per algorithm family")
+        header = (f"{'family':<20} {'attempts':>8} {'variants':>8} {'scenarios':>9}  "
+                  f"{'best score (metric @ scenario)':<38} last tried")
+        print(header)
+        print("-" * len(header))
+        for r in rows:
+            best = r["best"]
+            best_s = (f"{best['score']:.3f} ({best['metric']} @ {best['scenario']})"
+                      if best else "-")
+            print(f"{r['family']:<20} {r['attempts']:>8} {r['variants']:>8} "
+                  f"{r['scenarios']:>9}  {best_s:<38} {r['last_ts'][:10]}")
+        if any(r["attempts"] > 1 for r in rows):
+            print("\nA best-of-N result overstates skill: the more attempts a family has,")
+            print("the stricter the bar its winner must clear (survive the regime gauntlet")
+            print("and a walk-forward, not one lucky leaderboard).")
+    return 0
 
 
 def _format_standings(snap) -> str:
@@ -760,6 +811,9 @@ def build_parser() -> argparse.ArgumentParser:
                          "process isolation only")
     ar.add_argument("--out", help="write the leaderboard to this JSON file")
     ar.add_argument("--save", action="store_true", help="persist this run to the arena DB")
+    ar.add_argument("--no-journal", dest="journal", action="store_false", default=True,
+                    help="skip the experiment journal (attempts are recorded by "
+                         "default — the multiple-testing ledger)")
     ar.add_argument("--db", default="arena.db", help="arena results DB (default arena.db)")
     ar.set_defaults(func=cmd_arena_run)
 
@@ -821,6 +875,12 @@ def build_parser() -> argparse.ArgumentParser:
     sr.add_argument("--ignore-market-hours", dest="ignore_market_hours",
                     action="store_true", help="(live) step even when the market is closed")
     sr.set_defaults(func=cmd_season_run)
+
+    aj = asub.add_parser("journal",
+                         help="attempts-per-family ledger (multiple-testing honesty)")
+    aj.add_argument("--family", help="list every attempt for one family")
+    aj.add_argument("--db", default="arena.db", help="arena results DB (default arena.db)")
+    aj.set_defaults(func=cmd_arena_journal)
 
     ah = asub.add_parser("history", help="list past saved tournaments")
     ah.add_argument("--db", default="arena.db")

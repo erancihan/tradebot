@@ -23,8 +23,14 @@ def registered() -> list[Contestant]:
     return list(_REGISTRY)
 
 
-def register(name: str | None = None, *, author: str = "", tags=()):
-    """Register a contestant class (an ``Algo`` or a ``Strategy`` subclass)."""
+def register(name: str | None = None, *, author: str = "", tags=(), family: str | None = None):
+    """Register a contestant class (an ``Algo`` or a ``Strategy`` subclass).
+
+    ``family`` groups variants of one idea (e.g. ``donchian_20_10`` and
+    ``donchian_55_20`` both under ``family="donchian"``) so the experiment
+    journal counts attempts against the family, not each name separately.
+    Defaults to the contestant name.
+    """
     # Imported lazily to avoid a hard import cycle at package import time.
     from ..strategies.base import Strategy
 
@@ -48,6 +54,7 @@ def register(name: str | None = None, *, author: str = "", tags=()):
             kind=kind,
             author=author,
             tags=tuple(tags),
+            family=family or resolved,
         )
         _REGISTRY.append(contestant)
         cls._arena_contestant = contestant  # back-reference, handy for tooling
