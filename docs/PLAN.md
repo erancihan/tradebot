@@ -638,10 +638,19 @@ half (the gate journals only the candidate's family, not the whole field), and
 the full re-derivation of all four recorded gate verdicts. **Result:
 `xs_momentum_vt` PASSES the real-data gate** and the recorded attributions were
 exactly inverted — see the re-derived record in CLAUDE.md.
-Still open in this stage: M2 (gate warmup discipline), M3 (length-normalized,
-de-duplicated aggregation — the three real scenarios are nested, so the mean
-double-counts 2022–23), M8's durability half (commit a ledger export), M9
-(provenance stamp on every journal row). Re-run all four
+M3 and M9 have since landed too. **M3 reversed the PASS**: judged on mean CAGR
+instead of mean total return, `xs_momentum_vt` fails the real gate 8.79% vs
+9.18%. Averaging total returns over 292-, 270- and 647-bar windows has no
+interpretation, and the baseline's 2023 rally sits in the shortest one, so
+normalizing for time rewards it. The gate now also prints `WINDOWS OVERLAP`
+when scenarios are carved from one pulled price path — but only for provider
+data, since synthetic scenarios share an epoch by construction while being
+independent draws. M9 stamps `ENGINE_VERSION` on every journal row so pre- and
+post-fix numbers can never be compared silently.
+
+Still open in this stage: M2 (gate warmup discipline — the fix is to pull each
+real window with `required_warmup` extra bars, which belongs with Stage 5's
+pack) and M8's durability half (commit a ledger export). Re-run all four
 gate verdicts, the synthetic gauntlet, the walk-forwards and the balance ledger
 on the fixed engine. Rewrite the arc-status block with corrected numbers and
 **explicit retraction** of invalidated attributions — not a quiet amendment.

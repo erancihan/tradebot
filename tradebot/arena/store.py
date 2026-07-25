@@ -17,6 +17,15 @@ from pathlib import Path
 from ..models import utcnow
 from .result import render_table
 
+#: Identifies the *instrument* that produced a journalled number, so results
+#: from before and after a correctness fix are never silently compared. Bump it
+#: whenever a change alters what the execution loops compute. History:
+#:   e1  original loops
+#:   e2  2026-07-25 — sizing marked at the fill bar's open, not its close
+#:                    (`backtest._sizing_marks`); targets computed after
+#:                    alignment; `exit_rank` no longer freezes on small pools.
+ENGINE_VERSION = "e2"
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS arena_runs (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,7 +65,8 @@ CREATE TABLE IF NOT EXISTS experiments (
     final_balance REAL,
     start_date    TEXT,       -- simulated data window (first/last bar)
     end_date      TEXT,
-    run_id        INTEGER     -- arena_runs.id when the run was --save'd
+    run_id        INTEGER,    -- arena_runs.id when the run was --save'd
+    engine        TEXT        -- instrument version; see ENGINE_VERSION
 );
 CREATE INDEX IF NOT EXISTS idx_experiments_family ON experiments(family);
 """
@@ -108,7 +118,8 @@ class ArenaStore:
         # recorded (CREATE IF NOT EXISTS won't touch an existing table).
         cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(experiments)")}
         for col, kind in (("start_balance", "REAL"), ("final_balance", "REAL"),
-                          ("start_date", "TEXT"), ("end_date", "TEXT")):
+                          ("start_date", "TEXT"), ("end_date", "TEXT"),
+                          ("engine", "TEXT")):
             if col not in cols:
                 self._conn.execute(f"ALTER TABLE experiments ADD COLUMN {col} {kind}")
         self._conn.commit()
@@ -170,9 +181,11 @@ class ArenaStore:
             self._conn.execute(
                 "INSERT INTO experiments (ts, family, name, scenario, metric,"
                 " score, status, start_balance, final_balance, start_date,"
-                " end_date, run_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " end_date, run_id, engine)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (ts, family, r.name, scenario.name, metric, _clean(r.score),
-                 r.status, _clean(start), _clean(final), first, last, run_id),
+                 r.status, _clean(start), _clean(final), first, last, run_id,
+                 ENGINE_VERSION),
             )
         self._conn.commit()
         return len(entries)

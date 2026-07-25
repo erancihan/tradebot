@@ -482,7 +482,11 @@ def cmd_arena_gate(args: argparse.Namespace) -> int:
         runs.append((scenario, outcome))
 
     report = evaluate_gate(args.candidate, args.baseline,
-                           [(sc.name, out) for sc, out in runs],
+                           # Pass the Scenario, not just its name: the return
+                           # aggregation needs `source`/`symbols` to tell a
+                           # genuinely duplicated price path from two synthetic
+                           # draws that merely share an epoch.
+                           [(sc, out) for sc, out in runs],
                            max_drawdown_limit=args.max_drawdown)
 
     fam = report.family or args.candidate

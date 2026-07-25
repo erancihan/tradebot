@@ -30,6 +30,55 @@ from .scoring import fold_returns, get_scorer
 _SENSITIVITY_FOLDS = (3, 4, 5, 6, 7, 8)
 
 
+def _overlapping_spans(ok_rows: list[dict]) -> list[tuple[str, str]]:
+    """Pairs of scenarios that are partly the same underlying price path.
+
+    Only meaningful for *provider* data. Two synthetic scenarios share the same
+    calendar by construction (they are generated onto one epoch) while being
+    entirely independent draws, so comparing dates alone flags every synthetic
+    pair as a duplicate. Real scenarios carved from one pulled span — the real
+    pack nests two windows inside a third — genuinely are one path counted
+    several times, and only there does the mean double-count.
+    """
+    dated = [r for r in ok_rows
+             if r.get("span") and r.get("source") not in (None, "synthetic")]
+    clashes = []
+    for i, a in enumerate(dated):
+        lo_a, hi_a = a["span"]
+        for b in dated[i + 1:]:
+            lo_b, hi_b = b["span"]
+            shared = set(a.get("symbols") or ()) & set(b.get("symbols") or ())
+            if shared and lo_a <= hi_b and lo_b <= hi_a:
+                clashes.append((a["scenario"], b["scenario"]))
+    return clashes
+
+
+def _return_check(ok_rows: list[dict]) -> GateCheck:
+    """Does the candidate beat the baseline on return, in commensurable units?
+
+    Judged on the mean **CAGR**, not the mean total return. Averaging total
+    returns over windows of different lengths has no interpretation — a 647-bar
+    window and a 270-bar window contribute equally while representing very
+    different amounts of compounding. Length-normalizing is a units fix: it can
+    make passing easier or harder, and which one is not known in advance.
+
+    Overlapping windows are reported rather than silently reweighted. Scenarios
+    carved from one span (the real pack nests two windows inside a third) make
+    the mean count one path several times; de-duplicating them automatically
+    would be a judgement about which window is canonical, which belongs to
+    whoever writes the gauntlet.
+    """
+    cand = sum(r["cand_cagr"] for r in ok_rows) / len(ok_rows)
+    base = sum(r["base_cagr"] for r in ok_rows) / len(ok_rows)
+    detail = f"cand {cand:.2%} vs base {base:.2%} (mean CAGR)"
+    clashes = _overlapping_spans(ok_rows)
+    if clashes:
+        pairs = ", ".join(f"{a}~{b}" for a, b in clashes[:3])
+        more = "" if len(clashes) <= 3 else f" +{len(clashes) - 3} more"
+        detail += f"; WINDOWS OVERLAP: {pairs}{more} — the mean double-counts"
+    return GateCheck("beats baseline mean return (net of costs)", cand > base, detail)
+
+
 def _fold_sensitivity(ok_rows: list[dict]) -> str:
     """How the worst-fold win count moves with the fold partition.
 
@@ -119,14 +168,24 @@ def evaluate_gate(
     outcomes: list[tuple[str, object]],
     max_drawdown_limit: float = 0.35,
 ) -> GateReport:
-    """Judge ``candidate`` against ``baseline`` over (scenario_name, outcome) pairs."""
+    """Judge ``candidate`` against ``baseline`` over (scenario, outcome) pairs.
+
+    Each pair's first element may be a bare scenario *name* or a ``Scenario``.
+    Passing the object lets the aggregation see `source` and `symbols`, which is
+    what distinguishes "two windows carved from one pulled price path" (the mean
+    double-counts) from "two independent synthetic draws that merely share an
+    epoch" (it does not).
+    """
     if not outcomes:
         raise ValueError("gate needs at least one scenario outcome")
     worst_fold = get_scorer("worst_fold")
     report = GateReport(candidate, baseline, max_drawdown_limit)
 
     all_ok = True
-    for scenario_name, outcome in outcomes:
+    for scenario_obj, outcome in outcomes:
+        scenario_name = getattr(scenario_obj, "name", scenario_obj)
+        source = getattr(scenario_obj, "source", None)
+        symbols = tuple(getattr(scenario_obj, "symbols", ()) or ())
         cand = _find(outcome, candidate)
         base = _find(outcome, baseline)
         if cand is None:
@@ -143,9 +202,16 @@ def evaluate_gate(
                 "error": f"{who}: {failed.status.upper()} {failed.error or ''}".strip(),
             })
             continue
+        curve = cand.result.equity_curve
         report.rows.append({
             "scenario": scenario_name, "ok": True,
             "cand_return": cand.total_return,
+            # Length-normalized, so windows of different lengths are
+            # commensurable — see the aggregation note in `_return_check`.
+            "cand_cagr": cand.result.cagr,
+            "base_cagr": base.result.cagr,
+            "span": (str(curve.index[0]), str(curve.index[-1])) if len(curve) else None,
+            "source": source, "symbols": symbols,
             "cand_worst_fold": worst_fold(cand.result),
             "cand_max_drawdown": cand.max_drawdown,
             "base_return": base.total_return,
@@ -164,12 +230,7 @@ def evaluate_gate(
         "completes every scenario", all_ok, f"{len(ok_rows)}/{n} clean"))
 
     if ok_rows:
-        cand_mean = sum(r["cand_return"] for r in ok_rows) / len(ok_rows)
-        base_mean = sum(r["base_return"] for r in ok_rows) / len(ok_rows)
-        report.checks.append(GateCheck(
-            "beats baseline mean return (net of costs)",
-            cand_mean > base_mean,
-            f"cand {cand_mean:.2%} vs base {base_mean:.2%}"))
+        report.checks.append(_return_check(ok_rows))
 
         wins = sum(1 for r in ok_rows
                    if r["cand_worst_fold"] >= r["base_worst_fold"])

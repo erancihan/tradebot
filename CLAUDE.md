@@ -615,15 +615,24 @@ into. Still NOT param tuning. Design: `docs/PLAN.md` §4.
 
 Everything above this heading is superseded. Re-run on the fixed engine
 (sizing mark corrected, `exit_rank` freeze fixed, targets computed after
-alignment). **`xs_momentum_vt` PASSES the real-data gate — the first contestant
-ever to pass anything.** Two bugs were suppressing it.
+alignment). **Still NO contestant passes the gate** — but for completely
+different reasons than the old record gave, and much more narrowly.
 
-| gauntlet | candidate | mean ret | baseline | worst-fold | deepest DD | verdict |
+| gauntlet | candidate | mean CAGR | baseline | worst-fold | deepest DD | verdict |
 |---|---|---|---|---|---|---|
-| real (3) | `xs_momentum_vt` | **14.79%** | 11.71% | 2/3 | −18.97% | **PASS** |
-| real (3) | `xs_regime` | 11.20% | 11.71% | 2/3 | −24.72% | FAIL (return) |
-| synthetic (5) | `xs_momentum_vt` | 23.18% | 16.90% | **4/5** | −36.38% | FAIL (drawdown) |
-| synthetic (5) | `xs_regime` | 20.36% | 16.90% | **5/5** | −52.86% | FAIL (drawdown) |
+| real (3) | `xs_momentum_vt` | 8.79% | 9.18% | 2/3 | −18.97% | FAIL (return, by 0.39pp) |
+| synthetic (5) | `xs_momentum_vt` | **10.41%** | 6.84% | **4/5** | −36.38% | FAIL (drawdown, by 1.38pp) |
+| synthetic (5) | `xs_regime` | 20.36%* | 16.90%* | **5/5** | −52.86% | FAIL (drawdown) |
+
+\* pre-M3 figures (mean total return); the others are mean CAGR.
+
+**A PASS appeared and then vanished, and the vanishing is the honest part.**
+Judged on mean *total return* — the original aggregation — `xs_momentum_vt`
+passed the real gate 14.79% vs 11.71%. Under M3's length-normalization it fails
+8.79% vs 9.18%. Averaging total returns over windows of 292, 270 and 647 bars
+has no interpretation: the baseline's huge 2023 rally sits in the *shortest*
+window, so normalizing for time rewards it. The units fix made passing harder,
+which is exactly why it is admissible under the plan's own good-faith test.
 
 **The recorded attributions were exactly inverted.** The old record said
 `xs_momentum_vt` "passes mean-return + drawdown but loses the worst-fold
@@ -642,23 +651,28 @@ it inert: momentum picked one pair and held it for all 587 live bars. It now
 makes 42 membership changes and uses all three pairs, so the gauntlet actually
 tests cross-sectional selection for the first time.
 
-**Do not over-read the PASS.** It is a real result and it is not yet a
-promotion:
+**How close it is, and what still stands between it and a promotion:**
+- Real gauntlet: fails return by **0.39pp** of CAGR. Synthetic: fails drawdown
+  by **1.38pp**. Both are inside any reasonable error bar, which is the point of
+  M4 — these are point estimates with no interval, so "nearly passed" and
+  "nearly failed" are the same statement. Do not read either as a near-miss to
+  be nudged over.
 - The three real scenarios are **nested** — `real_bear_2022` (292 bars) and
   `real_recovery_2023` (270) are both fully contained in `real_full_cycle`
-  (647). "Mean over 3" is one path counted three times with 2022–23
-  double-weighted (M3).
-- It is a point estimate with no interval on a 3.08pp margin (M4).
-- Fold sensitivity is now printed and is stable here (`k=3..8: 3:2 4:2 5:2 6:3
-  7:2 8:2`), which is the one thing that *does* hold up (M6).
+  (647). The gate now prints `WINDOWS OVERLAP` when it detects this, but does
+  not silently reweight: picking a canonical window is the gauntlet author's
+  call, not the gate's.
+- Fold sensitivity is printed and holds up on the real pack (`k=3..8: 3:2 4:2
+  5:2 6:3 7:2 8:2`); on synthetic it is shakier (`3:5 4:4 5:3 6:5 7:4 8:3` —
+  the 4/5 win count is 3/5 at k=5 and k=8, one step from failing that criterion
+  too).
 - The pool is still three correlated equity-beta ETFs. The Stage 4/5 library
   remains the right next move.
-- `xs_momentum` family: 16 attempts on synthetic, 6 on real, under the
-  corrected counting (the gate no longer charges the whole field).
 
-Per the README runbook, a gate pass is followed by walk-forward, then a replay
-dry-run, then paper. **Do not tune the −35% drawdown limit** to convert the
-synthetic FAIL; that bound is doing its job.
+**Do not tune the −35% drawdown limit or revert M3** to convert either FAIL.
+Both bounds are doing their job. The attempt counter climbs every time a
+gauntlet is re-run (`xs_momentum` is at 42 after this session's re-derivations),
+and that is working as intended — it is measuring exactly what it should.
 
 Deferred (decided, do not re-propose without a new ask):
 - **Container/gVisor containment** — the strongest, OS-level tier, for fully
