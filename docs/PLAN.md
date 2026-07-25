@@ -667,8 +667,17 @@ the fixed 8-name pool, three scenarios including the `xs_crash_haven` /
 Rules 1, 2 and 5 — mirror-pair single-parameter identity, parameter provenance
 in the YAML headers, and the degeneracy assertion. The new scenarios run
 92–94% selector-active against 0% for the single-symbol scenarios they replace.
+**The library is NOT yet usable as a gauntlet, and this is load-bearing:**
+2 of its 3 schedules are crashes, so it rewards defensive books ~2:1. Gating
+`xs_momentum_vt` over it returns PASS while the candidate loses −22.41% in the
+one bull scenario against the baseline's +1.21%. That is Rule 1 failing — the
+library cannot yet punish every mechanism it rewards — and it is exactly the
+kind of flattering gauntlet the rules exist to prevent. Each YAML carries a
+warning banner.
+
 Still open: the remaining four schedules (vol-spike mirror pair, momentum
-crash, chop dispersion), the canary bracket (Rule 4), `--seeds N` with median
+crash, chop dispersion) — needed for balance before ANY verdict is read from
+this set — plus the canary bracket (Rule 4), `--seeds N` with median
 aggregation and an `UNSTABLE` verdict (Rule 6), the gate's "selector active %"
 column, and library content-hash journaling (Rule 3). Ship as **one
 pre-registration commit before any candidate runs against it.** Canaries go in

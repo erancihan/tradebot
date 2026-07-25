@@ -33,15 +33,16 @@ _SENSITIVITY_FOLDS = (3, 4, 5, 6, 7, 8)
 def _overlapping_spans(ok_rows: list[dict]) -> list[tuple[str, str]]:
     """Pairs of scenarios that are partly the same underlying price path.
 
-    Only meaningful for *provider* data. Two synthetic scenarios share the same
-    calendar by construction (they are generated onto one epoch) while being
-    entirely independent draws, so comparing dates alone flags every synthetic
-    pair as a duplicate. Real scenarios carved from one pulled span — the real
-    pack nests two windows inside a third — genuinely are one path counted
-    several times, and only there does the mean double-count.
+    Only meaningful for *provider* data. Generated scenarios (`synthetic`,
+    `factor`) share a calendar by construction — they are drawn onto one epoch —
+    while being different worlds, so comparing dates alone flags every generated
+    pair as a duplicate. Scenarios carved from one pulled span genuinely are one
+    path counted several times (the real pack nests two windows inside a third),
+    and only there does the mean double-count.
     """
+    generated = (None, "synthetic", "factor")
     dated = [r for r in ok_rows
-             if r.get("span") and r.get("source") not in (None, "synthetic")]
+             if r.get("span") and r.get("source") not in generated]
     clashes = []
     for i, a in enumerate(dated):
         lo_a, hi_a = a["span"]

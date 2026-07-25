@@ -371,6 +371,16 @@ Building CI is Stage 6 in `docs/PLAN.md`.
   `cross_sectional` 98%, `real_full_cycle` 38%, `real_bear_2022` **0%**,
   `bull_trend` **0%**. Run that check on any scenario before reading a verdict
   from it.
+- **The factor library is INCOMPLETE and must not be gated on yet.** Three of
+  the seven planned schedules exist and **two of those three are crashes**, so
+  the set rewards defensive books roughly 2:1. Gating `xs_momentum_vt` over
+  them returns PASS while that candidate loses −22.41% in the one bull scenario
+  against the baseline's +1.21% — the verdict is an artifact of the imbalance,
+  not evidence. The whole point of the mirror-pair rule is that the library must
+  be able to *punish* every mechanism it rewards; with 2/3 crashes it cannot.
+  Use these scenarios for mechanism testing (they are the only ones that
+  genuinely exercise selection) until the vol-spike pair, momentum crash and
+  chop-dispersion schedules land. Each YAML carries the same warning.
 - **The factor library builds the pool jointly, not as independent walks.**
   `synthetic_factor_panel` draws one market factor per bar and gives each symbol
   a beta, an alpha and idiosyncratic noise. The older `cross_sectional.yaml`
