@@ -14,7 +14,7 @@ enough to implement without re-deriving decisions.
   share a `family`; never tune the gate or grid-search params to force a pass
   (the fold-attribution record in CLAUDE.md explains why the current best
   candidate fails — do not re-chase it).
-- The `algos/` head-count (currently 11) is baked into tests listed in the
+- The `algos/` head-count (currently 12) is baked into tests listed in the
   CLAUDE.md gotcha. CLI arena tests must pass `--db <tmp>` or `--no-journal`.
 - Every simulation surface shows start/final balance + simulated period
   (tests/conftest.py ledger, journal columns). Preserve this in new outputs.
