@@ -6,6 +6,14 @@ lockstep engines, offline-first), the gotchas, and the honest research record.
 This document only specifies work that has NOT been built yet, precisely
 enough to implement without re-deriving decisions.
 
+> **⚠ Superseded in part, 2026-07-25.** A full-codebase audit found 16 confirmed
+> defects, including a look-ahead in the *sizing* path of both execution loops
+> that puts the entire recorded research record under retraction. **`docs/PLAN.md`
+> is now the ordering authority** for what to do next; it supersedes the
+> "next move" guidance in Spec 1 and Spec 2 below. The Spec 4 backlog designs
+> (4a bracket orders, 4b streaming, 4c notifications) are unaffected and still
+> apply as written.
+
 ## Working agreements (all models)
 
 - Definition of done is in CLAUDE.md — tests + offline path + invariants +

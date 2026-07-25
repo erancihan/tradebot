@@ -13,8 +13,8 @@ then skim `README.md` for the user-facing tour.
 ## What this is
 
 A **paper-trading-first** equities trading bot in Python, built on Alpaca
-(commission-free, free paper trading + IEX data, $0 minimum). Greenfield, lives
-entirely under `trading-bot/`. Four pillars:
+(commission-free, free paper trading + IEX data, $0 minimum). Greenfield; the
+repo root *is* the project root. Four pillars:
 
 1. **Trading core** — strategies, risk, backtester, broker/data adapters, CLI.
 2. **Dry-run** — real-time loop with *simulated* fills against a virtual account.
@@ -29,9 +29,19 @@ meta strategies + promotion pass gate; no contestant has passed the gate yet —
 see Roadmap arc status). **~260 tests, all offline & green** (web tests skip
 without fastapi); frontend has a strict `tsc` gate.
 
+> **⚠ 2026-07-25 — the research record is under retraction.** A full audit found
+> a look-ahead in the *sizing* path of both execution loops: `backtest.py:167`
+> marks the equity used to size a fill at bar `i`'s **close**, then fills at bar
+> `i`'s **open** (`:191`). Reproduced directly — perturbing only bar 60's close
+> moves the quantity filled at that bar's unchanged open from 96.455539 to
+> 81.893842. Every recorded gate verdict, fold attribution and balance ledger
+> came out of that loop, and the bias does not cancel between candidate and
+> baseline. **Do not cite the arc-status numbers below until they are
+> re-derived.** Full scope, backlog and staged plan: `docs/PLAN.md`.
+
 ## Agent skills
 
-Project-scoped Claude Code skills live in `trading-bot/.claude/skills/`:
+Project-scoped Claude Code skills live in `.claude/skills/`:
 - **tradebot-dev** — orientation + the dev/test/build loop and the pre-commit
   checklist. Start here.
 - **add-strategy** — add a pluggable trading strategy.
@@ -42,7 +52,7 @@ Keep these in sync when workflows or invariants change.
 ## Layout
 
 ```
-trading-bot/
+.                             # repo root == project root
 ├── tradebot/                 # the Python package
 │   ├── strategies/           # Strategy ABC + sma_crossover, rsi_reversion, buy_and_hold,
 │   │                         #   donchian_breakout, macd_trend, bollinger_reversion,
@@ -51,7 +61,8 @@ trading-bot/
 │   ├── risk.py               # RiskManager + RiskConfig (sizing, allocate(), caps, band, daily-loss)
 │   ├── allocation.py         # Allocator ABC + equal/inverse_vol/explicit + registry
 │   ├── selection.py          # Selector/RankedSelector ABCs + momentum (reverse=reversal)
-│   │                         #   + low_vol top-K w/ hysteresis + registry
+│   │                         #   + low_vol top-K w/ hysteresis + regime_switch
+│   │                         #   (RegimeSwitchSelector: momentum/low-vol composite) + registry
 │   ├── universe.py           # LiquidityScreen + AlpacaLiquidityUniverse (lazy, injectable)
 │   ├── overlays.py           # Overlay ABC + vol_target/sector_cap (reduce-only) + registry
 │   ├── walkforward.py        # fold-based out-of-sample evaluation (backtest --walk-forward)
@@ -73,6 +84,11 @@ trading-bot/
 │                             #   real_full_cycle — need one `data pull`, then offline)
 ├── frontend/                 # TS + Tailwind + esbuild source for the dashboard
 ├── tests/                    # pytest (offline; web tests importorskip fastapi)
+├── docs/                     # DESIGN-HANDOFF.md (locked backlog designs)
+│                             #   + PLAN.md (audit findings + staged plan) — READ BOTH
+├── data/cache/               # pulled bars + *.coverage.json manifests (gitignored)
+├── config.example.yaml       # annotated settings incl. portfolio: block
+├── .env.example              # ALPACA_API_KEY / ALPACA_API_SECRET / ALPACA_DATA_FEED
 ├── pyproject.toml            # deps + extras: [dev], [live], [web]; scripts
 └── Makefile                  # install / test / demo / dryrun / arena / web
 ```
@@ -83,14 +99,14 @@ simulation_args), `simulation.py` (stepped core), `scenario.py`, `runner.py`,
 `scoring.py` (incl. worst_fold/consistency), `gate.py` (promotion pass gate),
 `result.py`, `tournament.py`, `league.py` (standings over a season),
 `season.py` (durable, resumable real-time league + feeds + daemon),
-`market.py` (US market-hours + partial-bar helpers), `sandbox.py`
+`market.py` (US market-hours + partial-bar helpers), `contestant.py`, `sandbox.py`
 (`--harden`: no-write + net isolation), `store.py` (runs + experiments
 journal).
 
 `tradebot/web/`: `app.py` (factory), `repository.py` (read-only SQLite),
-`services/` (metrics, account, jobs), `routes/` (pages, partials, api),
-`schemas.py` (Pydantic), `templates/` (Jinja, componentised), `static/` (built,
-gitignored).
+`services/` (metrics, account, jobs), `routes/` (pages, partials, api, sse),
+`schemas.py` (Pydantic), `dependencies.py`, `server.py`, `templates/` (Jinja,
+componentised), `static/` (built, gitignored).
 
 ## Invariants — do not break these
 
@@ -101,6 +117,14 @@ gitignored).
   `t+1`). The arena feeds a *growing window* so the future is physically invisible.
   Allocation weights obey the same shift: at fill bar `t+1` the allocator only
   sees bars `≤ t` (guarded by `test_allocator_never_sees_the_fill_bar`).
+  **CURRENTLY VIOLATED — see the retraction banner above and B1 in
+  `docs/PLAN.md`.** The *sizing* path leaks the fill bar: `backtest.py:167` and
+  `arena/simulation.py:77` mark equity at bar `i`'s close and hand it to
+  `risk.allocate`/`material_delta`, which size fills at bar `i`'s open. Every
+  individual shift is correct; the composition is not. Note *why* the existing
+  guards missed it: they are lockstep tests, and **a lockstep test can never
+  catch an error made identically in both loops.** Every shift needs one
+  absolute, single-engine guard (B9).
 - **Risk is centralised.** All sizing/limits go through `RiskManager`; strategies
   only emit targets in `{-1, 0, +1}`. Don't let strategies size positions.
   Allocators (`allocation.py`) only *propose* weights; `RiskManager.allocate`
@@ -126,7 +150,6 @@ gitignored).
 
 Python (works offline; no creds needed for tests/demos):
 ```bash
-cd trading-bot
 make install            # venv .venv + pip install -e ".[dev]"
 make install-web        # adds [web] extra + npm install (for the dashboard)
 make test               # pytest (web tests skip if fastapi absent)
@@ -135,12 +158,13 @@ make dryrun             # offline forward-test (replay)
 make arena              # run the example competition
 make web                # build frontend + serve dashboard at :8000
 ```
-CLI: `tradebot {backtest,run,status,demo,arena,data}` and `tradebot-web`.
-`run --dry-run`/`--replay` = forward-test; `arena {list,run,validate,history,show}`.
+CLI: `tradebot {backtest,run,status,demo,arena,data,universe}` and `tradebot-web`.
+`run --dry-run`/`--replay` = forward-test;
+`arena {list,run,validate,history,show,league,season,gate,journal}`.
 `make test` ends with a **simulated balances** ledger (start → final per money
 test; `tests/conftest.py` wraps `Backtester.run` + arena `simulate`).
 
-Frontend (`trading-bot/frontend/`):
+Frontend (`frontend/`):
 ```bash
 npm run typecheck       # strict tsc --noEmit (CI gate)
 npm run build           # -> tradebot/web/static/{js,css} (minified, gitignored)
@@ -149,8 +173,12 @@ npm run watch:js        # dev rebuild on change
 Stack: TypeScript, Alpine.js, Apache ECharts, Tailwind, esbuild. Built assets are
 gitignored — reproduce with `npm run build`.
 
-CI: `.github/workflows/trading-bot-ci.yml` runs pytest + (npm ci, typecheck,
-build) on changes under `trading-bot/**`.
+**CI: there is none.** This file previously claimed a
+`.github/workflows/trading-bot-ci.yml`; no `.github/` directory exists and none
+ever has. The two mechanical gates in the Definition of done (`make test`,
+`npm run typecheck`) are therefore manual — and `frontend/node_modules` is not
+installed by default, so the typecheck gate cannot run until `make install-web`.
+Building CI is Stage 6 in `docs/PLAN.md`.
 
 ## Conventions
 
@@ -227,11 +255,19 @@ build) on changes under `trading-bot/**`.
   guarded by `test_membership_is_prefix_stable_no_lookahead`). That property is
   load-bearing twice: the backtest/arena loops *precompute* `membership()` over
   the full frame and `.shift(1)` it (fill bar `t+1` sees the verdict from `t`),
-  and the live engine keeps **no selector state** — it recomputes from full
-  fetched history every pass (bars are the source of truth, like the season).
-  Hysteresis state (`held`) lives inside the membership walk, derived from data
-  only — never from fills. Selector gating happens BEFORE the allocator is
-  consulted, so weights are distributed over members only.
+  and the live engine keeps **no selector state**. Hysteresis state (`held`)
+  lives inside the membership walk, derived from data only — never from fills.
+  Selector gating happens BEFORE the allocator is consulted, so weights are
+  distributed over members only.
+  **CORRECTION (2026-07-25):** this section used to claim the live engine
+  "recomputes from full fetched history every pass". It does not —
+  `engine.py:146` fetches only `lookback=self._lookback_days()` and `:164` runs
+  the selector on that truncated window. Prefix-stability licenses recomputing a
+  *prefix*; it says nothing about truncating the *head* of a path-dependent
+  hysteresis walk, so the live book can hold a different set of names than the
+  backtest that validated it. B6 in `docs/PLAN.md` — the fix is to feed the
+  selector the full accumulated history from `Storage`, which is what this
+  sentence always assumed.
 - **Season = bars are source of truth.** A live `Season` (`season.py`) persists
   only the accumulated bars (+ a standings snapshot per tick) to SQLite; each
   tick re-ranks the field with `run_tournament(..., frames=accumulated)`. No
@@ -274,8 +310,10 @@ build) on changes under `trading-bot/**`.
   contestants (or short replays); the 10-min season replay timeout seen on
   2026-07-04 was exactly this with `meta_leader` in the field.
 - **Cache coverage is recorded, not inferred.** `BarCache` writes a
-  `*.coverage.json` manifest beside each CSV listing the windows actually pulled
+  `*.coverage.json` manifest beside each CSV listing the windows *requested*
   from a provider, and a request inside a pulled window is served from disk.
+  (The original wording here said "actually pulled". It records the **ask**, not
+  the response — see the B4 caveat two bullets down.)
   Judging coverage by observed bar timestamps (the old rule) is wrong for real
   calendars: asking for `2021-12-01` yields a first daily bar stamped at the
   `05:00` UTC open (`min > start`), and `real_full_cycle` ends `2024-06-30`, a
@@ -286,6 +324,22 @@ build) on changes under `trading-bot/**`.
   downloaded. Caches with no manifest (hand-seeded, or pre-dating this) fall
   back to the old observed-bar check, which is why the synthetic tests still
   pass unchanged.
+  **Two caveats found by the 2026-07-25 audit, both unfixed (B4, B13 in
+  `docs/PLAN.md`):** (a) `record_coverage` stores the *requested* bounds, so an
+  unbounded `tradebot data pull` (no `--start`/`--end`) records an unbounded
+  claim and every later window is then served from disk as an empty frame
+  instead of re-fetched — **always pass explicit `--start`/`--end`** until this
+  is fixed; (b) `_slice` is **half-open on the right**: a date-only `end`
+  excludes that date's own session, because real daily bars are stamped at the
+  04:00/05:00 UTC open. (b) is deliberate and is baked into the shipped
+  manifests — "fixing" it makes `_spans` reject `real_full_cycle`'s own declared
+  window and reintroduces the bug commit `33379b9` fixed. Changing it needs a
+  manifest migration.
+- **A failed sandbox tier is not reported.** `arena/runner.py` discards the
+  capability report from `apply_hardening`, so if `unshare(CLONE_NEWNET)` fails
+  the contestant runs with full network access while the tournament prints a
+  clean `ok`. This contradicts the module's own "never silently downgrade" rule
+  for isolation modes. Unverified but plausible; B14 in `docs/PLAN.md`.
 - **A composite selector must not out-run its own `required_history`.**
   `RegimeSwitchSelector` publishes `max(legs)` but its low-vol leg warms up
   sooner than its momentum leg; a storm inside that gap used to emit live
@@ -491,9 +545,40 @@ real cross-sectional dispersion **and** something uncorrelated to rotate into
 (SPY/QQQ/IWM are one equity-beta factor). That is a scenario-library change,
 which remains the correct next move — still NOT param tuning.
 Journal after this arc: `xs_momentum` 34 attempts (2 variants), `xs_regime` 17,
-every other family 17. Interpretation caveat from the spec holds: warmup eats
-the first ~60 bars of each window, but the baseline runs the same curve, so the
-comparison is fair even though absolute returns understate a buy-and-hold.
+every other family 17.
+
+**RETRACTED 2026-07-25 — everything above in this arc-status block.** Three
+corrections, none of which change the headline (both candidates still FAIL):
+
+1. **The numbers came from a biased engine** (B1 — the sizing look-ahead in the
+   retraction banner at the top of this file). The bias is turnover- and
+   exposure-dependent, so it does *not* cancel between candidate and baseline;
+   the fully-invested `buy_and_hold` benchmark harvests it hardest. The audit
+   reports that under a corrected mark the per-scenario attributions **invert**.
+   Treat every fold attribution above as unreliable, especially "this
+   candidate's remaining gaps are structural trade-offs, not bugs" — two of the
+   three worst-fold losses that sentence explains away may be the bug.
+2. **The warmup caveat was wrong**, not merely imprecise. It used to say the
+   comparison is fair because "the baseline runs the same curve". It does not:
+   `buy_and_hold` has zero warmup while `MomentumSelector(lookback=60)` is flat
+   for 61 bars. Rebasing post-warmup reportedly moves `real_recovery_2023` from
+   −17.2pp to −1.6pp and reverses 2 of 3 real-pack worst-fold wins. Fix is in
+   the gate (extend windows backward by `required_warmup`), not the label — M2.
+3. **The attempt counts are unauditable.** `arena.db` is gitignored and every
+   session runs in a fresh container, so the ledger is ephemeral by
+   construction — nothing survives to check these against, which is also why
+   two counts in this file disagree (55 earlier, 34 here: different databases,
+   not a counter running backwards). Worse, `arena gate` journals every
+   contestant for every scenario, so one 5-scenario gate adds +5 to all 12
+   families — which is why `buy_and_hold`, never iterated once, carries the same
+   17 as a candidate under active development. The statistic currently measures
+   gate invocations, not iterations of an idea. M8.
+
+The **structural** conclusion survives all three and is the one to carry
+forward: neither gauntlet exercises the mechanism it is meant to test. `top_k=2`
+over a 2-symbol pool selects both names every bar. A genuine test needs a pool
+with real cross-sectional dispersion **and** something uncorrelated to rotate
+into. Still NOT param tuning. Design: `docs/PLAN.md` §4.
 
 Deferred (decided, do not re-propose without a new ask):
 - **Container/gVisor containment** — the strongest, OS-level tier, for fully

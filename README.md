@@ -513,15 +513,21 @@ tier.
 ## Testing
 
 ```bash
-make test     # ~225 tests, fully offline
+make test     # ~260 tests, fully offline
 ```
 
 ## Roadmap / ideas
 
+The FastAPI dashboard listed here as an idea has shipped — see "Web dashboard"
+above. Remaining backlog, with locked designs in `docs/DESIGN-HANDOFF.md`:
+
 - Bracket / stop-loss / take-profit order types
 - Telegram or email notifications on fills and circuit-breaker trips
 - Streaming data via Alpaca websockets instead of polling
-- A small Streamlit/Flask dashboard reading the SQLite log
+
+> **Note (2026-07-25):** a full audit found a look-ahead in the sizing path of
+> both backtest loops, plus 15 other defects. Backtest and arena numbers are
+> under retraction pending re-derivation. Scope and staged plan: `docs/PLAN.md`.
 
 ## Disclaimer
 
