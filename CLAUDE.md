@@ -269,15 +269,17 @@ Building CI is Stage 6 in `docs/PLAN.md`.
   lives inside the membership walk, derived from data only — never from fills.
   Selector gating happens BEFORE the allocator is consulted, so weights are
   distributed over members only.
-  **CORRECTION (2026-07-25):** this section used to claim the live engine
-  "recomputes from full fetched history every pass". It does not —
-  `engine.py:146` fetches only `lookback=self._lookback_days()` and `:164` runs
-  the selector on that truncated window. Prefix-stability licenses recomputing a
-  *prefix*; it says nothing about truncating the *head* of a path-dependent
-  hysteresis walk, so the live book can hold a different set of names than the
-  backtest that validated it. B6 in `docs/PLAN.md` — the fix is to feed the
-  selector the full accumulated history from `Storage`, which is what this
-  sentence always assumed.
+  The engine recomputes membership every pass from the **full accumulated
+  history**, read back from `Storage` via `Engine._selector_frames` — not from
+  the bounded window it fetches for the strategy. That distinction is
+  load-bearing and was a real bug until 2026-07-25: a `RankedSelector` walk
+  seeds `held` from an empty set, so its verdict depends on where the frame
+  *starts*. Prefix-stability licenses recomputing a *prefix*; it says nothing
+  about truncating the *head*. Feeding the selector the rolling fetch window
+  made live holdings depend on process start time. `record_bars` is an upsert
+  for the same reason — the newest persisted bar is usually still forming, and
+  under first-write-wins that partial would be frozen onto the decision path
+  permanently.
 - **Season = bars are source of truth.** A live `Season` (`season.py`) persists
   only the accumulated bars (+ a standings snapshot per tick) to SQLite; each
   tick re-ranks the field with `run_tournament(..., frames=accumulated)`. No

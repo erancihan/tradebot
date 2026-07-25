@@ -1,3 +1,4 @@
+import pandas as pd
 from pathlib import Path
 
 from tradebot.arena.season import (
@@ -132,6 +133,47 @@ def test_run_season_without_supervise_propagates():
 def _dt(y, m, d, h, mi=0):
     from datetime import datetime, timezone
     return datetime(y, m, d, h, mi, tzinfo=timezone.utc)
+
+
+def test_live_feed_delivers_a_bar_polled_while_still_forming(tmp_path):
+    """Regression: the live feed used to lose every bar it saw form.
+
+    `next()` marked a timestamp seen the moment it was *offered*, and the daemon
+    then discarded it as still-forming — so a bar first polled before its close
+    was never offered again after it closed. A live daily season accumulated
+    zero bars while reporting healthy ticks. Completeness is now filtered inside
+    the feed, before the dedup.
+    """
+    from tradebot.arena.season import AlpacaSeasonFeed
+
+    idx = pd.date_range("2024-01-02", periods=3, freq="1D", tz="UTC")
+    df = pd.DataFrame({"open": 100.0, "high": 101.0, "low": 99.0,
+                       "close": 100.5, "volume": 1000.0}, index=idx)
+
+    class _Fake:
+        def history(self, symbol, timeframe=None, lookback=None):
+            return df
+
+    # First poll lands during the last bar's own session (still forming); the
+    # second lands after it has closed.
+    times = iter([_dt(2024, 1, 4, 17, 0), _dt(2024, 1, 5, 17, 0), _dt(2024, 1, 5, 18, 0)])
+    feed = AlpacaSeasonFeed(["DEMO"], "1day", "k", "s",
+                            data=_Fake(), clock=lambda: next(times))
+
+    # Poll during the last bar's session: it is still forming, so the feed hands
+    # over the newest *settled* bar instead and does not consume the forming one.
+    first = feed.next()
+    assert first is not None
+    assert pd.Timestamp(first["DEMO"].index[-1]) == idx[-2]
+
+    # Poll after it closes: the bar that was forming is now delivered. Under the
+    # old order it had already been marked seen and was lost permanently.
+    second = feed.next()
+    assert second is not None
+    assert pd.Timestamp(second["DEMO"].index[-1]) == idx[-1]
+
+    # ...and exactly once: a settled bar is not re-delivered.
+    assert feed.next() is None
 
 
 def test_daemon_gates_on_market_hours(tmp_path):

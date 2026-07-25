@@ -194,6 +194,31 @@ def test_regime_switch_emits_nothing_before_its_required_history():
     assert member.iloc[sel.required_history - 1:].to_numpy().any()   # live afterwards
 
 
+def test_ragged_frames_are_intersected_not_unioned():
+    """Only the live engine passes ragged frames — it must select identically.
+
+    A union-aligned close matrix inserts NaN for the missing session, which
+    blanks that symbol's score for a whole rolling window and quietly makes it
+    unholdable. Both execution loops align on the intersection.
+    """
+    full = _pool(periods=60)
+    ragged = {s: f.copy() for s, f in full.items()}
+    # Drop a handful of scattered sessions from one symbol, as a real calendar
+    # (halts, late listings, a provider gap) would.
+    ragged["UP"] = ragged["UP"].drop(ragged["UP"].index[[12, 27, 41]])
+
+    sel = MomentumSelector(lookback=10, skip=1, top_k=1)
+    got = sel.membership(ragged)
+    # The intersection is what the execution loops would have handed us.
+    common = ragged["UP"].index
+    for f in ragged.values():
+        common = common.intersection(f.index)
+    want = sel.membership({s: f.reindex(common) for s, f in ragged.items()})
+
+    pd.testing.assert_frame_equal(got, want)
+    assert got.to_numpy().any(), "every symbol went unrankable — NaNs leaked in"
+
+
 def test_selector_validation_and_registry():
     with pytest.raises(ValueError):
         MomentumSelector(lookback=10, skip=10)

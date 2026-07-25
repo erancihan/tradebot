@@ -86,7 +86,15 @@ class Storage:
         self._conn.commit()
 
     def record_bars(self, symbol: str, timeframe: str, bars, mode: str) -> None:
-        """Persist OHLCV bars (idempotent — duplicate timestamps are ignored)."""
+        """Persist OHLCV bars (idempotent — a re-written timestamp is updated).
+
+        Deliberately an upsert rather than ``INSERT OR IGNORE``: the engine polls
+        intraday, so the newest bar it persists is usually *still forming*. Under
+        first-write-wins that partial bar would be frozen permanently and could
+        never be replaced by the settled one — and the stored history is what the
+        selector reads back, so the contamination would land squarely on the
+        decision path.
+        """
         rows = [
             (symbol, timeframe, _ts_iso(ts), float(r["open"]), float(r["high"]),
              float(r["low"]), float(r["close"]), float(r["volume"]), mode)
@@ -95,12 +103,46 @@ class Storage:
         if not rows:
             return
         self._conn.executemany(
-            "INSERT OR IGNORE INTO bars"
+            "INSERT INTO bars"
             " (symbol, timeframe, ts, open, high, low, close, volume, mode)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(symbol, timeframe, ts, mode) DO UPDATE SET"
+            " open=excluded.open, high=excluded.high, low=excluded.low,"
+            " close=excluded.close, volume=excluded.volume",
             rows,
         )
         self._conn.commit()
+
+    def load_bars(self, symbol: str, timeframe: str, mode: str | None = None):
+        """Full stored history for one symbol, oldest first, in BAR_COLUMNS shape.
+
+        The live engine feeds this to the selector. A `RankedSelector` walk is
+        path-dependent (its `held` set starts empty), so prefix-stability
+        licenses recomputing a *prefix* — it says nothing about truncating the
+        *head*. Handing the selector a rolling window would make the live
+        holdings depend on when the process happened to start; the accumulated
+        bars are the source of truth, exactly as in `season.py`.
+
+        pandas is imported lazily to keep this module stdlib-only on import.
+        """
+        import pandas as pd
+
+        sql = ("SELECT ts, open, high, low, close, volume FROM bars"
+               " WHERE symbol = ? AND timeframe = ?")
+        params: list[object] = [symbol, timeframe]
+        if mode is not None:
+            sql += " AND mode = ?"
+            params.append(mode)
+        sql += " ORDER BY ts"
+        rows = self._conn.execute(sql, params).fetchall()
+        if not rows:
+            return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+        idx = pd.to_datetime([r[0] for r in rows], utc=True)
+        return pd.DataFrame(
+            [{"open": r[1], "high": r[2], "low": r[3], "close": r[4], "volume": r[5]}
+             for r in rows],
+            index=idx,
+        )
 
     def record_weights(self, weights: dict[str, float], mode: str) -> None:
         """Persist the allocator's target weights for one rebalance pass."""

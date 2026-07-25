@@ -94,3 +94,41 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
             symbols = r["symbols"] if len(r["symbols"]) <= 20 else r["symbols"][:17] + "..."
             tr.line(f"    {symbols:<20} {r['start']:>12,.2f} -> {r['final']:>12,.2f}"
                     f"   ({pct:+.1%}, {r['trades']} trades)   {r['first']} -> {r['last']}")
+
+
+# --- offline-first backstop ---------------------------------------------------
+# The suite is meant to run with no credentials and no network. Deleting the
+# ALPACA_* env vars is not enough on its own: `AlpacaCredentials.from_env()`
+# calls `_maybe_load_dotenv()`, which re-reads a `.env` from the CWD — so on a
+# machine that has one (this project now pulls real bars, so that is the normal
+# case) tests meant to exercise the no-credentials path silently made live HTTPS
+# calls instead. Neutralise dotenv, and make any outbound connection fail loudly
+# rather than depend on whoever's laptop is running the suite.
+
+@pytest.fixture(autouse=True, scope="session")
+def _offline_guard():
+    import socket
+
+    import tradebot.config as config_mod
+
+    original_dotenv = config_mod._maybe_load_dotenv
+    original_connect = socket.socket.connect
+    # Exact matches, not prefixes: `str.startswith("")` is True for every string,
+    # so a "" entry in a prefix tuple silently disables the whole guard.
+    _LOOPBACK = {"127.0.0.1", "::1", "localhost", "0.0.0.0", ""}
+
+    config_mod._maybe_load_dotenv = lambda: None
+
+    def guarded_connect(self, address, *args, **kwargs):
+        host = address[0] if isinstance(address, tuple) else address
+        if isinstance(host, str) and host not in _LOOPBACK:
+            raise AssertionError(
+                f"offline test suite attempted a network connection to {host!r}. "
+                "Tests must not touch the network — inject a fake fetcher."
+            )
+        return original_connect(self, address, *args, **kwargs)
+
+    socket.socket.connect = guarded_connect
+    yield
+    socket.socket.connect = original_connect
+    config_mod._maybe_load_dotenv = original_dotenv

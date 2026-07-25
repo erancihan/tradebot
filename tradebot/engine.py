@@ -75,6 +75,32 @@ class Engine:
     def mode(self) -> str:
         return self._mode_label
 
+    def _selector_frames(self, fetched: dict[str, object]) -> dict[str, object]:
+        """Full accumulated per-symbol history for the selector.
+
+        The strategy is stateless over a bounded window, so the fetched frames
+        are fine for it. A `RankedSelector` is not: its hysteresis walk carries
+        `held` from an empty set, so a verdict depends on where the frame
+        *starts*. Feeding it the rolling fetch window made live selection depend
+        on process start time and diverge from the backtest that validated it.
+
+        Every fetched bar is already persisted just above, so the store holds a
+        superset of the window. Without a store (or before any history has
+        accumulated) we fall back to the fetched frames — same behaviour as
+        before, and the only honest option when there is nothing else to read.
+        """
+        if self.storage is None:
+            return fetched
+        out: dict[str, object] = {}
+        for sym, window in fetched.items():
+            try:
+                stored = self.storage.load_bars(sym, self.settings.timeframe, self.mode)
+            except Exception:
+                log.exception("Could not read stored bars for %s; using the fetch window", sym)
+                stored = None
+            out[sym] = stored if stored is not None and len(stored) >= len(window) else window
+        return out
+
     def _lookback_days(self) -> int:
         # Ensure enough history for every history-hungry component (strategy,
         # selector, allocator, overlays) plus headroom for weekends/holidays.
@@ -158,10 +184,11 @@ class Engine:
                 log.exception("Data/signal failed for %s; skipping it this pass", sym)
 
         # 2) Cross-sectional gate: symbols outside the selection are forced
-        #    flat. Membership is recomputed from full history every pass
-        #    (prefix-stable, so bars remain the only state).
+        #    flat. Membership is recomputed every pass from the FULL accumulated
+        #    history (bars are the only state), not from the bounded window the
+        #    strategy uses — see `_selector_frames`.
         if self.selector is not None:
-            membership = self.selector.latest_targets(frames)
+            membership = self.selector.latest_targets(self._selector_frames(frames))
             for sym in targets:
                 if not membership.get(sym):
                     targets[sym] = 0

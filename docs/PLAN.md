@@ -619,8 +619,12 @@ side by side; if no criterion changes state, stop and re-scope.
 fails when the shift is deleted from **both** loops — verify by actually
 deleting it; the mark choice is recorded as a pre-registered decision.
 
-**Stage 2 — Live-path convergence.** Pure offline. B6 + B10 + B3 + B2 + B7. ~2
-days. B6 and B10 land together — B6 makes B10 load-bearing. B7 lands here
+**Stage 2 — Live-path convergence. DONE 2026-07-25.** B6 + B10 + B3 + B2 + B7
+all shipped, each with a test that fails without the fix. The offline backstop
+(B7) is worth a note: the first version used `str.startswith(("", ...))`, which
+is True for every string and silently disabled the whole guard — it now matches
+loopback hosts exactly, and was verified to actually fire against a real
+outbound connect. B6 and B10 land together — B6 makes B10 load-bearing. B7 lands here
 because Stage 5 introduces credentials and this is the last quiet moment to
 install the socket backstop.
 *DoD:* a test asserts `latest_targets(<what the engine actually fetches>)`

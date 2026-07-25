@@ -192,6 +192,64 @@ def test_engine_dry_run_with_selector_holds_only_the_winner():
     assert broker.account().equity > 10_000     # and riding the winner paid
 
 
+def test_engine_selector_sees_full_history_not_the_fetch_window(tmp_path):
+    """The live selector must walk the accumulated bars, not the fetch window.
+
+    `RankedSelector.membership` carries `held` from an empty set, so its verdict
+    depends on where the frame starts. Feeding it the engine's bounded fetch
+    window made live selection depend on when the process happened to start and
+    diverge from the backtest that validated it. Bars are the source of truth,
+    so the engine reads its own persisted history back.
+    """
+    from tradebot.selection import MomentumSelector
+    from tradebot.storage import Storage
+
+    seen: list[int] = []
+
+    class _RecordingSelector(MomentumSelector):
+        def latest_targets(self, frames):
+            seen.append(max((len(f) for f in frames.values()), default=0))
+            return super().latest_targets(frames)
+
+    def linear(start, step, periods):
+        vals = [start + step * i for i in range(periods)]
+        idx = pd.date_range("2024-01-01", periods=periods, freq="1D", tz="UTC")
+        return pd.DataFrame({"open": vals, "high": vals, "low": vals,
+                             "close": vals, "volume": 1000.0}, index=idx)
+
+    settings = Settings(
+        mode="paper", symbols=["UP", "DOWN"], initial_cash=10_000, timeframe="1day",
+        strategy_name="buy_and_hold",
+        risk=RiskConfig(max_position_pct=1.0, max_gross_exposure=1.0,
+                        allow_fractional=True),
+    )
+    selector = _RecordingSelector(lookback=20, skip=2, top_k=1)
+    # Long enough that the accumulated history outgrows the fetch window.
+    frames = {"UP": linear(100, 1.0, 220), "DOWN": linear(200, -0.9, 220)}
+    data = ReplayData(frames, warmup=selector.required_history + 2)
+    broker = DryRunBroker(data, timeframe="1day", initial_cash=10_000, slippage_bps=0)
+    storage = Storage(str(tmp_path / "t.db"))
+    engine = Engine(
+        settings, broker, data, build_strategy(settings.strategy_name),
+        RiskManager(settings.risk), mode_label="dry_run", enforce_live_ack=False,
+        selector=selector, storage=storage,
+    )
+
+    while True:
+        engine.rebalance()
+        if not data.has_next():
+            break
+        data.advance()
+    storage.close()
+
+    window = engine._lookback_days()
+    # The bounded fetch window caps out; the accumulated history keeps growing
+    # past it, which is the whole point.
+    assert max(seen) > window, (
+        f"selector never saw more than the {window}-bar fetch window (max {max(seen)})")
+    assert seen == sorted(seen), "history handed to the selector must only grow"
+
+
 def test_live_config_with_dry_run_skips_live_gate(monkeypatch):
     monkeypatch.delenv(LIVE_CONFIRM_ENV, raising=False)
     settings = Settings(mode="live", symbols=["X"])

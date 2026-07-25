@@ -294,24 +294,41 @@ class AlpacaSeasonFeed:
     """Live one-bar-per-poll feed (lazy Alpaca; not exercised by the test suite)."""
 
     def __init__(self, symbols, timeframe: str, api_key: str, api_secret: str,
-                 feed: str = "iex") -> None:
-        from ..data.alpaca_data import AlpacaData
-
+                 feed: str = "iex", data=None, clock=utcnow) -> None:
         self._symbols = list(symbols)
         self._timeframe = timeframe
-        self._data = AlpacaData(api_key, api_secret, feed=feed)
+        if data is None:
+            from ..data.alpaca_data import AlpacaData
+
+            data = AlpacaData(api_key, api_secret, feed=feed)
+        self._data = data
+        self._clock = clock
         self._last_ts: dict[str, pd.Timestamp] = {}
 
     def next(self) -> dict[str, pd.DataFrame] | None:
+        """The newest *complete* bar per symbol, each returned exactly once.
+
+        Completeness is filtered HERE, before the dedup — not by the caller.
+        The daemon also drops still-forming bars, and when that was the only
+        filter a bar first polled while it was still forming got marked as seen,
+        then thrown away, and was never offered again once it settled. A live
+        daily season accumulated zero bars while reporting healthy ticks.
+        """
+        from .market import drop_incomplete_bars
+
+        now = self._clock()
         bar: dict[str, pd.DataFrame] = {}
         for symbol in self._symbols:
             df = self._data.history(symbol, timeframe=self._timeframe, lookback=5)
-            if df.empty:
+            if df is None or df.empty:
+                continue
+            df = drop_incomplete_bars(df, self._timeframe, now)
+            if df is None or len(df) == 0:
                 continue
             last = df.iloc[[-1]]
             ts = pd.Timestamp(last.index[-1])
             if self._last_ts.get(symbol) == ts:
-                continue  # no new bar yet
+                continue  # already delivered this bar
             self._last_ts[symbol] = ts
             bar[symbol] = last
         return bar or None

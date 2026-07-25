@@ -99,7 +99,22 @@ class RankedSelector(Selector):
 
     @staticmethod
     def _closes(frames: dict[str, pd.DataFrame]) -> pd.DataFrame:
-        return pd.DataFrame({s: f["close"] for s, f in frames.items()}).sort_index()
+        """Close matrix on the *intersection* of the per-symbol indexes.
+
+        `pd.DataFrame({...})` aligns on the UNION, which inserts a NaN close for
+        any symbol missing a session and so blanks that symbol's score for a
+        whole rolling window — it becomes unrankable and cannot be held. Both
+        execution loops align on the intersection, and only the live engine ever
+        passes ragged frames, so unioning here is a pure backtest-vs-live
+        divergence that no offline fixture can show (they all share an index).
+        """
+        if not frames:
+            return pd.DataFrame()
+        common = None
+        for f in frames.values():
+            common = f.index if common is None else common.intersection(f.index)
+        common = common.sort_values()
+        return pd.DataFrame({s: f["close"].reindex(common) for s, f in frames.items()})
 
 
 class MomentumSelector(RankedSelector):
