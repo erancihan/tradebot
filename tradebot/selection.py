@@ -187,6 +187,11 @@ class RegimeSwitchSelector(Selector):
     regime at ``t`` uses only bars ``≤ t``, so the row-wise switch reproduces any
     prefix exactly. Each leg keeps its own hysteresis walk; state is deliberately
     *not* threaded across the switch (the regime flip is the whole point).
+
+    The legs warm up at different rates, so verdicts are held flat until the
+    slower one is live — see ``membership``. Without that, a storm arriving in
+    the gap would trade on the short leg alone, before the ``required_history``
+    this selector advertises.
     """
 
     name = "regime_switch"
@@ -229,6 +234,11 @@ class RegimeSwitchSelector(Selector):
         stormy = stormy.reindex(index=calm.index, columns=calm.columns)
         is_storm = self._storm(frames).reindex(calm.index, fill_value=False).to_numpy()
         combined = np.where(is_storm[:, None], stormy.to_numpy(), calm.to_numpy())
+        # One leg warms up sooner than the other, so whichever is ready first
+        # would otherwise emit verdicts before `required_history` — the contract
+        # this selector publishes. Hold flat until both legs are live; masking a
+        # leading run of rows preserves prefix-stability.
+        combined[: self.required_history - 1] = False
         return pd.DataFrame(combined, index=calm.index, columns=calm.columns)
 
     def _storm(self, frames: dict[str, pd.DataFrame]) -> pd.Series:

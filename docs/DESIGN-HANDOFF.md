@@ -60,7 +60,20 @@ dial (which shrinks the book): the book stays invested, in different names.
   Record the verdict in CLAUDE.md arc status whatever it is. One attempt;
   if it fails, write the fold attribution before proposing anything else.
 
-## Spec 2 — real-data gauntlet (needs user's Alpaca keys, once)
+## Spec 2 — real-data gauntlet — DONE 2026-07-25
+
+**Status: RUN. Bars are cached; both gate attempts FAILED on mean return.**
+Full numbers, the inverted-vs-synthetic finding, and the "the real pack is
+*still* a selector no-op on 2 of 3 scenarios" attribution are in the CLAUDE.md
+arc-status block ("Real-data gauntlet"). Read that before proposing a third
+candidate — the conclusion is that the **scenario library**, not the candidate,
+is what needs work.
+
+Two defects surfaced and were fixed in the same change (both have CLAUDE.md
+gotchas): `BarCache` coverage is now a recorded manifest rather than inferred
+from bar timestamps (real calendars never land on the requested boundaries, so
+`real_*` could not replay offline at all), and `RegimeSwitchSelector` no longer
+emits verdicts before its own `required_history`.
 
 Scenarios already shipped: `scenarios/real_bear_2022.yaml`,
 `real_recovery_2023.yaml`, `real_full_cycle.yaml` (source: alpaca; pull
@@ -68,7 +81,10 @@ commands in each file's header; cached bars replay offline afterwards).
 
 - Ops order: `tradebot data pull ...` per YAML → `arena run` each scenario
   (journaled) → `arena gate --candidate xs_momentum_vt --scenarios
-  scenarios/real_*.yaml` and same for any new candidate.
+  scenarios/real_*.yaml` and same for any new candidate. One superset pull
+  (`--symbols SPY QQQ IWM --start 2021-12-01 --end 2024-06-30`) covers all
+  three windows. Note `data pull` needs the `[live]` extra installed
+  (`pip install -e ".[live]"`) — the core deliberately has no Alpaca dep.
 - Caveats to handle in interpretation, not code: IEX volume ≈2% of consolidated
   (irrelevant here — no volume screens in these scenarios); real calendars
   have gaps/halts — `Backtester` aligns on index intersection already; warmup

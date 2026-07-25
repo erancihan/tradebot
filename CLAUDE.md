@@ -26,7 +26,7 @@ Status: feature-complete for the core vision **including the portfolio stack**
 arc's tooling is COMPLETE** (regime scenario library + robustness scorers +
 classic roster + experiment journal + cross-sectional portfolio contestants +
 meta strategies + promotion pass gate; no contestant has passed the gate yet —
-see Roadmap arc status). **~250 tests, all offline & green** (web tests skip
+see Roadmap arc status). **~260 tests, all offline & green** (web tests skip
 without fastapi); frontend has a strict `tsc` gate.
 
 ## Agent skills
@@ -273,6 +273,28 @@ build) on changes under `trading-bot/**`.
   *every tick* until the loop crawls. Keep season fields to affordable
   contestants (or short replays); the 10-min season replay timeout seen on
   2026-07-04 was exactly this with `meta_leader` in the field.
+- **Cache coverage is recorded, not inferred.** `BarCache` writes a
+  `*.coverage.json` manifest beside each CSV listing the windows actually pulled
+  from a provider, and a request inside a pulled window is served from disk.
+  Judging coverage by observed bar timestamps (the old rule) is wrong for real
+  calendars: asking for `2021-12-01` yields a first daily bar stamped at the
+  `05:00` UTC open (`min > start`), and `real_full_cycle` ends `2024-06-30`, a
+  **Sunday**, whose last bar is the Friday before (`max < end`). Both made the
+  scenario re-fetch forever and never replay offline. When a manifest exists it
+  is **authoritative, gaps included** — disjoint pulls stay separate entries so
+  a request spanning a hole re-fetches instead of trusting data never
+  downloaded. Caches with no manifest (hand-seeded, or pre-dating this) fall
+  back to the old observed-bar check, which is why the synthetic tests still
+  pass unchanged.
+- **A composite selector must not out-run its own `required_history`.**
+  `RegimeSwitchSelector` publishes `max(legs)` but its low-vol leg warms up
+  sooner than its momentum leg; a storm inside that gap used to emit live
+  verdicts early, silently making `xs_regime` diverge from `xs_momentum` on
+  pools where the selector should have been a **no-op** (caught on real 2022
+  bars: 8 leaked verdicts, `-8.33%` vs `-6.84%`). `membership()` now masks the
+  leading `required_history - 1` rows flat, which also covers the mirror case
+  (`vol_window > lookback`). Masking a *leading run* keeps prefix-stability.
+  Any future composed selector needs the same guard.
 
 ## Roadmap
 
@@ -417,8 +439,11 @@ one attempt, do not re-chase.** The idea was defense by *rotation* not scaling:
 hold momentum top-2 in calm regimes, rotate into the 2 calmest names when the
 pool's realized vol proxy (equal-weight mean vol, annualized, > 0.25) spikes.
 Gate vs buy_and_hold over the 5 synthetic scenarios: beats mean return
-(30.63% vs 28.04%) and completes everywhere, but loses the worst-fold majority
-2/5 and blows the drawdown limit (−48.25% on crash_recovery). **Structural
+(31.53% vs 28.04%) and completes everywhere, but loses the worst-fold majority
+2/5 and blows the drawdown limit (−48.25% on crash_recovery). (Numbers
+re-derived 2026-07-25 after the composite-warmup fix below; the original run
+read 30.63% mean return and lost the same two criteria, so the verdict and its
+attribution are unchanged.) **Structural
 attribution:** four of the five gauntlet scenarios (bull_trend, sideways_chop,
 crash_recovery, vol_spike) are **single-symbol `[DEMO]`** — a rotation selector
 is definitionally a *no-op* there (top-2 over a 1-name pool selects that name in
@@ -434,6 +459,41 @@ NOT tuning `storm_vol`/`vol_window` (that would fit the harness). Left as the
 honest result. Promotion mechanics verified offline end-to-end: the exact
 candidate stack ran as a core config through `run --replay` (+7% on the
 demo replay) and an 11-contestant replay season.
+
+**Real-data gauntlet — run 2026-07-25 (owner supplied paper Alpaca keys).**
+Bars pulled once (SPY/QQQ/IWM, daily, IEX, 2021-12-01 → 2024-06-30; 647 bars
+each) and cached; every result below replays with **no credentials in the
+environment**. Two gates, both **FAIL**, both for the *same* reason and it is
+not the one the synthetic gauntlet gave:
+
+| candidate | mean ret | baseline | worst-fold | deepest DD | verdict |
+|---|---|---|---|---|---|
+| `xs_momentum_vt` | 13.52% | 17.75% | **3/3** | −17.76% | FAIL |
+| `xs_regime` | 12.38% | 17.75% | **3/3** | −22.38% | FAIL |
+
+This *inverts* the synthetic outcome. On real bars both candidates win
+worst-fold in **every** scenario and keep drawdown far inside the limit
+(baseline takes −24.55% on the full cycle) — the robustness case they were
+built for holds up. They fail purely on **mean return**, and essentially all of
+the gap is `real_recovery_2023`: 26.66% vs buy_and_hold's 43.87%. A top-K
+inverse-vol book with a 60% per-name cap systematically concedes to just
+holding everything in a straight-up bull. That is a real trade-off, not a bug.
+**The real pack is still not a fair cross-sectional test.** `top_k=2` over
+`real_bear_2022`/`real_recovery_2023` (SPY, QQQ) selects *both* names every
+bar — the selector is a **no-op**, exactly the flaw that sank the synthetic
+gauntlet (4/5 single-symbol), only milder. Verified directly: momentum vs
+regime membership differs on **0 of 292** and **0 of 270** bars there, and on
+170/647 only in `real_full_cycle` (3 names, top-2). So all three `xs_*`
+variants tie exactly at 26.66% in 2023 — nothing to select, no storm, dial
+inert. Do NOT read these two FAILs as evidence against rotation or vol-dialing;
+the gauntlet still barely exercises either. A genuine test needs a pool with
+real cross-sectional dispersion **and** something uncorrelated to rotate into
+(SPY/QQQ/IWM are one equity-beta factor). That is a scenario-library change,
+which remains the correct next move — still NOT param tuning.
+Journal after this arc: `xs_momentum` 34 attempts (2 variants), `xs_regime` 17,
+every other family 17. Interpretation caveat from the spec holds: warmup eats
+the first ~60 bars of each window, but the baseline runs the same curve, so the
+comparison is fair even though absolute returns understate a buy-and-hold.
 
 Deferred (decided, do not re-propose without a new ask):
 - **Container/gVisor containment** — the strongest, OS-level tier, for fully

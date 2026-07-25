@@ -171,6 +171,29 @@ def test_regime_switch_is_prefix_stable_across_the_switch():
         pd.testing.assert_frame_equal(full.iloc[:cut], prefix)
 
 
+def test_regime_switch_emits_nothing_before_its_required_history():
+    """Regression: the low-vol leg warms up sooner than the momentum leg, so a
+    storm inside that gap used to produce verdicts before `required_history`.
+
+    Caught on real 2022 bars, where it silently made `xs_regime` diverge from
+    `xs_momentum` on a pool where the selector should have been a no-op.
+    """
+    rng = np.random.default_rng(5)
+    n = 80
+    # Wild from the very start, so the storm flag fires as soon as its own
+    # (shorter) window is warm — well before the momentum leg is ready.
+    pool = {s: _frame(list(100 + rng.normal(0, 8.0, n))) for s in ("A", "B", "C")}
+
+    sel = RegimeSwitchSelector(lookback=40, skip=2, top_k=1, vol_window=10,
+                               storm_vol=0.25)
+    assert sel.required_history == 41                  # max(lookback+1, vol_window+1)
+    member = sel.membership(pool)
+
+    warmup = member.iloc[: sel.required_history - 1]
+    assert not warmup.to_numpy().any(), "verdicts leaked before required_history"
+    assert member.iloc[sel.required_history - 1:].to_numpy().any()   # live afterwards
+
+
 def test_selector_validation_and_registry():
     with pytest.raises(ValueError):
         MomentumSelector(lookback=10, skip=10)

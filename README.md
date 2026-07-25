@@ -450,7 +450,12 @@ tradebot arena run --algos ./algos --scenario scenarios/alpaca_spy.yaml
 
 The `BarCache` (`tradebot/data/cache.py`) downloads any missing range, merges it
 into the on-disk cache, and serves everything else from disk — so a given
-(symbol, timeframe, range) is fetched at most once.
+(symbol, timeframe, range) is fetched at most once. Beside each CSV it writes a
+`*.coverage.json` manifest recording which windows were actually pulled, so a
+request is served offline even when no bar sits on its boundaries — real
+calendars put the first daily bar at the session open and have nothing at all on
+a weekend end-date. Pulling needs the `[live]` extra (`pip install -e ".[live]"`)
+and paper credentials; replaying afterwards needs neither.
 
 > Contestants run in isolated subprocesses with a hard timeout + CPU/memory
 > limits, and are **sandboxed by default** — **no disk writes, no network**
