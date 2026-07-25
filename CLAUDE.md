@@ -36,13 +36,16 @@ without fastapi); frontend has a strict `tsc` gate.
 > quantity filled at that bar's unchanged open from 96.455539 to 81.893842.
 >
 > **RESOLVED.** The engine is fixed (Stage 1, `_sizing_marks`) and the record
-> has been re-derived (Stage 3). A second suppressing bug turned up on the way:
-> `exit_rank` froze membership so the real gauntlet was inert. With both fixed,
-> **`xs_momentum_vt` PASSES the real-data gate** — the first contestant ever to
-> pass — and the old attributions turn out to have been exactly inverted. See
-> "Re-derived record (2026-07-25)" at the end of the arc-status block; the text
-> above it is kept only as an audit trail. Full backlog and staged plan:
-> `docs/PLAN.md`.
+> re-derived (Stage 3). Two more suppressing bugs turned up on the way:
+> `exit_rank` froze membership so the real gauntlet was inert, and the return
+> criterion averaged total returns across windows of different lengths.
+> **Still no contestant passes the gate** — but the old attributions were
+> exactly inverted, and the margins are now tiny (0.39pp of CAGR on the real
+> pack, 1.38pp of drawdown on synthetic). Worth reading in full: a PASS appeared
+> after the engine fix and then vanished under the units fix, and the vanishing
+> is the trustworthy part. See "Re-derived record (2026-07-25)" at the end of
+> the arc-status block; the text above it is kept only as an audit trail. Full
+> backlog and staged plan: `docs/PLAN.md`.
 
 ## Agent skills
 
@@ -85,6 +88,10 @@ Keep these in sync when workflows or invariants change.
 ├── algos/                    # example arena contestants + how-to README
 ├── scenarios/                # arena scenario YAMLs incl. the regime library
 │                             #   (bull_trend/sideways_chop/crash_recovery/vol_spike)
+│                             #   + factor library (xs_bull_dispersion/xs_crash_haven/
+│                             #   xs_crash_nohaven — 8-name pool, ONE shared market
+│                             #   factor; the only scenarios that actually exercise
+│                             #   cross-sectional selection)
 │                             #   + real-data pack (real_bear_2022/real_recovery_2023/
 │                             #   real_full_cycle — need one `data pull`, then offline)
 ├── frontend/                 # TS + Tailwind + esbuild source for the dashboard
@@ -353,6 +360,29 @@ Building CI is Stage 6 in `docs/PLAN.md`.
   the contestant runs with full network access while the tournament prints a
   clean `ok`. This contradicts the module's own "never silently downgrade" rule
   for isolation modes. Unverified but plausible; B14 in `docs/PLAN.md`.
+- **A scenario must be checked for degeneracy before it is trusted.** Both
+  prior gauntlets silently measured nothing: 4/5 synthetic scenarios were
+  single-symbol, and the real pack froze membership. In both, a cross-sectional
+  selector was a *definitional* no-op, so the verdicts carried no information
+  about the mechanism they claimed to test. `tests/test_scenario_library.py`
+  now asserts, for every `xs_*` scenario: `top_k < pool size`, membership
+  actually varies across bars, and **two different selectors disagree on ≥20% of
+  live bars**. Measured "selector active" rates: new factor library 92–94%,
+  `cross_sectional` 98%, `real_full_cycle` 38%, `real_bear_2022` **0%**,
+  `bull_trend` **0%**. Run that check on any scenario before reading a verdict
+  from it.
+- **The factor library builds the pool jointly, not as independent walks.**
+  `synthetic_factor_panel` draws one market factor per bar and gives each symbol
+  a beta, an alpha and idiosyncratic noise. The older `cross_sectional.yaml`
+  drew each symbol independently (~0.03 mean pairwise correlation), which is the
+  wrong null for cross-sectional work: a "crash" is several unrelated accidents,
+  every name is a haven, and diversification is free. The pool is **fixed across
+  every scenario** (re-picking it per scenario is the cheapest way to flatter a
+  candidate), the haven **costs to hold** in calm regimes so "always hide"
+  cannot win, and `beta_shift` drags betas toward 1.0 to model crisis contagion
+  — that single parameter is the only difference between `xs_crash_haven` and
+  `xs_crash_nohaven`, asserted by test so the punishing mirror cannot be quietly
+  weakened.
 - **`exit_rank` freezes membership when it reaches the pool size.** It defaults
   to `top_k + max(top_k // 2, 1)`, so `top_k=2` gives `exit_rank=3`. On a
   3-name pool every held name is permanently within `exit_rank` and can never

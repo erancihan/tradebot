@@ -659,7 +659,18 @@ State which conclusions survive and which do not.
 assumptions; the journal counts evaluations of the family under development, not
 the whole field.
 
-**Stage 4 — Synthetic scenario library.** Pure offline. ~3 days. Ship as **one
+**Stage 4 — Synthetic scenario library. PARTLY DONE 2026-07-25.** Shipped:
+`synthetic_factor_panel` (one shared market factor, per-symbol beta/alpha/idio,
+`beta_shift` for crisis contagion), the `source: factor` branch in `Scenario`,
+the fixed 8-name pool, three scenarios including the `xs_crash_haven` /
+`xs_crash_nohaven` mirror pair, and `tests/test_scenario_library.py` enforcing
+Rules 1, 2 and 5 — mirror-pair single-parameter identity, parameter provenance
+in the YAML headers, and the degeneracy assertion. The new scenarios run
+92–94% selector-active against 0% for the single-symbol scenarios they replace.
+Still open: the remaining four schedules (vol-spike mirror pair, momentum
+crash, chop dispersion), the canary bracket (Rule 4), `--seeds N` with median
+aggregation and an `UNSTABLE` verdict (Rule 6), the gate's "selector active %"
+column, and library content-hash journaling (Rule 3). Ship as **one
 pre-registration commit before any candidate runs against it.** Canaries go in
 `algos/canaries/`; `loader._expand` uses non-recursive `glob("*.py")`, so a
 subdirectory does not disturb the field count of 12 baked into four test files —

@@ -13,7 +13,12 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from ..data.synthetic import load_csv, synthetic_ohlcv, synthetic_regime_ohlcv
+from ..data.synthetic import (
+    load_csv,
+    synthetic_factor_panel,
+    synthetic_ohlcv,
+    synthetic_regime_ohlcv,
+)
 from ..risk import RiskConfig
 
 
@@ -21,7 +26,7 @@ from ..risk import RiskConfig
 class Scenario:
     name: str = "default"
     symbols: list[str] = field(default_factory=lambda: ["DEMO"])
-    source: str = "synthetic"           # synthetic | csv | alpaca
+    source: str = "synthetic"           # synthetic | factor | csv | alpaca
     initial_cash: float = 10_000.0
     commission: float = 0.0
     slippage_bps: float = 1.0
@@ -39,6 +44,14 @@ class Scenario:
     # {AAA: {drift: 0.001}, ...} — gives the pool a cross-sectional spread so
     # selection has something real to find. Ignored when `regimes` is set.
     symbol_overrides: dict[str, dict] = field(default_factory=dict)
+    # `factor` source: per-symbol loadings on ONE shared market factor —
+    # {HIB1: {beta: 1.4, alpha: 0.0002, idio_vol: 0.010}, ...}. `alpha` may be a
+    # list with one entry per regime segment (a leadership reversal). Unlike the
+    # plain synthetic source, which draws every symbol independently and so has
+    # no cross-sectional structure to find, this builds the pool jointly. A
+    # segment may carry `beta_shift` to drag betas toward 1.0 (crisis contagion,
+    # which is what stops a haven working).
+    factor_symbols: dict[str, dict] = field(default_factory=dict)
     # csv params: {symbol: path}
     csv_paths: dict[str, str] = field(default_factory=dict)
     # alpaca params (pulled once, then cached + replayed)
@@ -58,6 +71,7 @@ class Scenario:
         known = {
             "name", "symbols", "source", "initial_cash", "commission", "slippage_bps",
             "periods", "seed", "drift", "volatility", "regimes", "symbol_overrides",
+            "factor_symbols",
             "csv_paths", "timeframe", "start", "end", "cache_dir",
         }
         kwargs = {k: v for k, v in raw.items() if k in known}
@@ -85,6 +99,18 @@ class Scenario:
                     volatility=float(ov.get("volatility", self.volatility)),
                 )
             return frames
+        if self.source == "factor":
+            if not self.factor_symbols:
+                raise ValueError("factor source needs `factor_symbols`")
+            regimes = self.regimes or [
+                {"periods": self.periods, "drift": self.drift,
+                 "volatility": self.volatility}]
+            panel = synthetic_factor_panel(
+                self.factor_symbols, regimes, seed=self.seed)
+            missing = [s for s in self.symbols if s not in panel]
+            if missing:
+                raise ValueError(f"factor_symbols missing entries for: {missing}")
+            return {sym: panel[sym] for sym in self.symbols}
         if self.source == "csv":
             missing = [s for s in self.symbols if s not in self.csv_paths]
             if missing:
