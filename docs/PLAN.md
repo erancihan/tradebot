@@ -602,8 +602,16 @@ mixing them is how a record becomes unauditable.
 retracted number is labelled at its point of use; the CI claim is either built
 or deleted; the `trading-bot/` prefix is gone.
 
-**Stage 1 — Instrument fix and the guard class.** Pure offline. B1, B9, B8. 1–2
-days. Split the reporting mark from the sizing mark in both loops in one commit.
+**Stage 1 — Instrument fix and the guard class. DONE 2026-07-25.** B1, B8, B9
+shipped. The falsification checkpoint ran first and the arc survived it:
+candidate mean return 13.52% → 10.67%, baseline 17.75% → **11.71%**, worst-fold
+3/3 → 2/3, and `real_full_cycle` flipped from candidate-loses to
+candidate-wins. Criteria changed state, so the bias was material. The mark
+choice (fill-bar open) is pre-registered in CLAUDE.md. Both new guards were
+verified to fail when their shift is deleted from *both* loops while the
+lockstep suite stays green. **Also confirmed here:** the `exit_rank` freeze —
+`xs_momentum` makes zero membership changes across all 587 live bars of the
+real pack, so that gauntlet contains no cross-sectional evidence at all. Split the reporting mark from the sizing mark in both loops in one commit.
 Move target computation after alignment. Add the absolute single-engine guards.
 **Falsification checkpoint first:** run the fill-bar-open and prev-close variants
 side by side; if no criterion changes state, stop and re-scope.
@@ -657,9 +665,12 @@ is the arc becoming "fix the audit".
 
 - The quantitative counterfactuals were not re-run first-hand. Stage 1's
   falsification checkpoint exists because the plan rests on them.
-- Whether the `exit_rank` freeze claim holds on the shipped real pack is the
-  most consequential unverified item — it would mean the real gauntlet contains
-  no cross-sectional evidence at all. Verify before Stage 3.
+- ~~Whether the `exit_rank` freeze claim holds on the shipped real pack~~
+  **CONFIRMED 2026-07-25, and worse than reported.** `MomentumSelector(60, 5,
+  top_k=2)` over SPY/QQQ/IWM picks `{IWM, SPY}` on 2022-02-28 and never changes
+  again — 0 membership changes in 587 live bars, not just on the 2-symbol
+  scenarios. The real gauntlet measures one single-day pick frozen for 2.5
+  years. Fix in Stage 3.
 - Alpaca's free IEX history depth for a 2016 start is unverified. If the
   provider will not serve it, drop the earliest window rather than shortening
   the gate windows.

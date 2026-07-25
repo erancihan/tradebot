@@ -4,6 +4,7 @@ Runs the *same* Strategy and RiskManager objects the live engine uses, so a
 backtest exercises the real decision/sizing code. To avoid look-ahead bias,
 targets computed from bar ``t``'s close are executed at bar ``t+1``'s open
 (targets are shifted by one bar), with optional slippage and commission.
+The *sizing* mark obeys the same discipline — see :func:`_sizing_marks`.
 
 Supports a multi-symbol portfolio with shared cash; each symbol is sized
 independently by the RiskManager and bounded by the gross-exposure cap.
@@ -21,6 +22,39 @@ from .models import Trade
 from .portfolio import Portfolio
 from .risk import RiskManager
 from .strategies.base import Strategy
+
+
+def _sizing_marks(
+    symbols,
+    bar_opens: dict[str, float],
+    prev_closes: dict[str, float],
+    bar_closes: dict[str, float],
+) -> dict[str, float]:
+    """Prices to mark the book at when sizing a fill on this bar.
+
+    Shared by :class:`Backtester` and ``arena.simulation.simulate`` so the two
+    loops cannot drift apart — the lockstep invariant is structural here rather
+    than merely asserted by a test.
+
+    Order of preference per symbol: this bar's **open** (the price we are about
+    to fill at, and already printed), then the **previous** bar's close, then
+    this bar's close. That last fallback can only be reached on the first bar
+    for a symbol with no usable open, when the book is still flat and the mark
+    therefore cannot affect any quantity.
+
+    Marking at this bar's close instead — which is what this loop used to do —
+    sizes every fill with the return of the bar it fills on. The bias is not
+    noise: it de-risks into down bars and levers into up bars, it scales with
+    exposure and turnover so it does not cancel between a candidate and its
+    benchmark, and it inflates results, so the failure mode is a false PASS.
+    """
+    marks = {}
+    for s in symbols:
+        price = bar_opens.get(s)
+        if price is None:
+            price = prev_closes.get(s, bar_closes[s])
+        marks[s] = price
+    return marks
 
 
 @dataclass
@@ -142,13 +176,19 @@ class Backtester:
         if len(common) < 2:
             raise ValueError("Not enough overlapping bars to backtest")
 
+        # Align first, then decide: the strategy, the selector and the allocator
+        # must all see one timeline. Computing targets on each symbol's own raw
+        # frame and reindexing afterwards diverges from the arena's stepped
+        # loop (which only ever sees the intersection) whenever the symbols have
+        # ragged indexes — which real bars do, and every lockstep fixture does
+        # not.
+        aligned = {s: df.reindex(common) for s, df in data.items()}
+
         # Pre-compute shifted targets per symbol: decide on t, act on t+1.
         targets: dict[str, pd.Series] = {}
-        for sym, df in data.items():
-            t = self.strategy.target_positions(df).reindex(common).shift(1).fillna(0)
+        for sym in data:
+            t = self.strategy.target_positions(aligned[sym]).shift(1).fillna(0)
             targets[sym] = t.astype(int)
-
-        aligned = {s: df.reindex(common) for s, df in data.items()}
         opens = {s: aligned[s]["open"] for s in data}
         closes = {s: aligned[s]["close"] for s in data}
 
@@ -162,9 +202,10 @@ class Backtester:
         equity_points: list[float] = []
         slip = self.slippage_bps / 10_000.0
 
+        prev_closes: dict[str, float] = {}
+
         for i, ts in enumerate(common):
             close_prices = {s: float(closes[s].loc[ts]) for s in data}
-            equity = pf.equity(close_prices)
 
             # Gather this bar's fillable symbols, then size the book jointly so
             # the result never depends on symbol iteration order.
@@ -179,6 +220,15 @@ class Backtester:
                     target = 0
                 bar_targets[sym] = target
                 bar_prices[sym] = price
+
+            # Sizing marks the book at prices that have already printed when we
+            # fill: this bar's open, falling back to the previous close for a
+            # symbol whose open is unusable. Marking at THIS bar's close would
+            # size every fill with the return of the bar it fills on — the
+            # look-ahead this loop exists to avoid. The close is still the right
+            # mark for the reported equity point at the end of the bar.
+            sizing_prices = _sizing_marks(data, bar_prices, prev_closes, close_prices)
+            equity = pf.equity(sizing_prices)
 
             weights = None
             if self.allocator is not None:
@@ -204,6 +254,7 @@ class Backtester:
                 pf.execute(sym, delta, fill_price, commission=self.commission)
 
             equity_points.append(pf.equity(close_prices))
+            prev_closes = close_prices
 
         curve = pd.Series(equity_points, index=common, name="equity")
         return BacktestResult(

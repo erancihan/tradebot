@@ -30,14 +30,18 @@ see Roadmap arc status). **~260 tests, all offline & green** (web tests skip
 without fastapi); frontend has a strict `tsc` gate.
 
 > **⚠ 2026-07-25 — the research record is under retraction.** A full audit found
-> a look-ahead in the *sizing* path of both execution loops: `backtest.py:167`
-> marks the equity used to size a fill at bar `i`'s **close**, then fills at bar
-> `i`'s **open** (`:191`). Reproduced directly — perturbing only bar 60's close
-> moves the quantity filled at that bar's unchanged open from 96.455539 to
-> 81.893842. Every recorded gate verdict, fold attribution and balance ledger
-> came out of that loop, and the bias does not cancel between candidate and
-> baseline. **Do not cite the arc-status numbers below until they are
-> re-derived.** Full scope, backlog and staged plan: `docs/PLAN.md`.
+> a look-ahead in the *sizing* path of both execution loops: they marked the
+> equity used to size a fill at bar `i`'s **close**, then filled at bar `i`'s
+> **open**. Reproduced directly — perturbing only bar 60's close moved the
+> quantity filled at that bar's unchanged open from 96.455539 to 81.893842.
+>
+> **The engine is FIXED (Stage 1, see `_sizing_marks`); the recorded numbers are
+> NOT yet re-derived (Stage 3).** Do not cite the arc-status numbers below.
+> Measured effect on the real-data gate for `xs_momentum_vt`: candidate mean
+> return 13.52% → 10.67%, baseline 17.75% → **11.71%**. The fully-invested
+> baseline was harvesting the leak hardest, exactly as the bias direction
+> predicts, and `real_full_cycle` flips from candidate-loses to candidate-wins.
+> Full scope, backlog and staged plan: `docs/PLAN.md`.
 
 ## Agent skills
 
@@ -117,14 +121,20 @@ componentised), `static/` (built, gitignored).
   `t+1`). The arena feeds a *growing window* so the future is physically invisible.
   Allocation weights obey the same shift: at fill bar `t+1` the allocator only
   sees bars `≤ t` (guarded by `test_allocator_never_sees_the_fill_bar`).
-  **CURRENTLY VIOLATED — see the retraction banner above and B1 in
-  `docs/PLAN.md`.** The *sizing* path leaks the fill bar: `backtest.py:167` and
-  `arena/simulation.py:77` mark equity at bar `i`'s close and hand it to
-  `risk.allocate`/`material_delta`, which size fills at bar `i`'s open. Every
-  individual shift is correct; the composition is not. Note *why* the existing
-  guards missed it: they are lockstep tests, and **a lockstep test can never
-  catch an error made identically in both loops.** Every shift needs one
-  absolute, single-engine guard (B9).
+  **The sizing mark obeys the same rule** (fixed 2026-07-25): `_sizing_marks`
+  in `backtest.py` marks the book at the fill bar's *open* (falling back to the
+  previous close), never at the close of the bar being filled. Both loops import
+  that one helper, so the rule cannot drift between them. **Pre-registered
+  decision:** open-of-fill-bar over previous-close — both are honest, the open
+  is the price actually being filled at and is tighter; they coincide on
+  synthetic data, where `synthetic_ohlcv` sets `open(t) == close(t-1)`.
+  Note *why* the old guards missed the leak for so long: they were lockstep
+  tests, and **a lockstep test can never catch an error made identically in both
+  loops.** Every shift now also has one absolute, single-engine guard —
+  `test_sizing_never_sees_the_fill_bars_close` and
+  `test_selector_verdict_cannot_be_acted_on_the_bar_it_is_formed`. Both were
+  verified to FAIL when the corresponding shift is deleted from *both* loops,
+  while the lockstep suite stays green. Keep that property when adding shifts.
 - **Risk is centralised.** All sizing/limits go through `RiskManager`; strategies
   only emit targets in `{-1, 0, +1}`. Don't let strategies size positions.
   Allocators (`allocation.py`) only *propose* weights; `RiskManager.allocate`
@@ -340,6 +350,19 @@ Building CI is Stage 6 in `docs/PLAN.md`.
   the contestant runs with full network access while the tournament prints a
   clean `ok`. This contradicts the module's own "never silently downgrade" rule
   for isolation modes. Unverified but plausible; B14 in `docs/PLAN.md`.
+- **`exit_rank` freezes membership when it reaches the pool size.** It defaults
+  to `top_k + max(top_k // 2, 1)`, so `top_k=2` gives `exit_rank=3`. On a
+  3-name pool every held name is permanently within `exit_rank` and can never
+  be dropped, so **membership freezes at the first verdict**. Verified on the
+  shipped real pack: `MomentumSelector(lookback=60, skip=5, top_k=2)` over
+  SPY/QQQ/IWM picks `{IWM, SPY}` on 2022-02-28 and holds it for all 587 live
+  bars — **zero** membership changes across the entire real gauntlet. So the
+  real pack contains no evidence about cross-sectional momentum at all; it
+  measures one single-day pick frozen for 2.5 years, and the previously
+  recorded "170/647 bars differ" was entirely `RegimeSwitchSelector` switching
+  legs, not momentum rotating. A held name must stay droppable whenever the
+  pool has more than `top_k` names — fix is Stage 3 in `docs/PLAN.md`. Until
+  then, pass `exit_rank` explicitly on small pools.
 - **A composite selector must not out-run its own `required_history`.**
   `RegimeSwitchSelector` publishes `max(legs)` but its low-vol leg warms up
   sooner than its momentum leg; a storm inside that gap used to emit live

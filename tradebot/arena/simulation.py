@@ -18,7 +18,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from ..backtest import BacktestResult, _infer_periods_per_year
+from ..backtest import BacktestResult, _infer_periods_per_year, _sizing_marks
 from ..portfolio import Portfolio
 from ..risk import RiskManager
 from .adapters import Policy
@@ -72,9 +72,10 @@ def simulate(
     fractional = risk.config.allow_fractional
     equity_points: list[float] = []
 
+    prev_closes: dict[str, float] = {}
+
     for i, ts in enumerate(common):
         close_prices = {s: float(closes[s].iloc[i]) for s in symbols}
-        equity = pf.equity(close_prices)
 
         # 1) Execute the targets decided on the previous bar, at this bar's
         #    open — sized jointly, exactly like the Backtester.
@@ -89,6 +90,10 @@ def simulate(
                 target = 0
             bar_targets[s] = target
             bar_prices[s] = price
+
+        # Same sizing mark as the Backtester, from the same helper: never the
+        # fill bar's own close.
+        equity = pf.equity(_sizing_marks(symbols, bar_prices, prev_closes, close_prices))
 
         weights = None
         if allocator is not None:
@@ -114,6 +119,7 @@ def simulate(
             pf.execute(s, delta, fill_price, commission=config.commission)
 
         equity_after = pf.equity(close_prices)
+        prev_closes = close_prices
 
         # 2) Ask the policy for the next targets using data up to and incl. now.
         for s in symbols:

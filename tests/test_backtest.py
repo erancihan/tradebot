@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from tradebot.allocation import EqualWeight
 from tradebot.backtest import Backtester, _infer_periods_per_year
@@ -38,6 +39,106 @@ def test_no_lookahead_targets_are_shifted():
     result = _bt(SmaCrossover(5, 20)).run(df, symbol="X")
     # Equity is flat until the strategy first takes a position.
     assert result.equity_curve.iloc[0] == 10_000
+
+
+# --- absolute look-ahead guards ---------------------------------------------
+# These are deliberately SINGLE-ENGINE. The backtester-vs-arena lockstep tests
+# cannot catch a mistake made identically in both loops — that is exactly how
+# the sizing-mark look-ahead survived (see `_sizing_marks`). Every shift in the
+# execution path needs one guard that is true in absolute terms, not relative
+# to the other engine.
+
+def _spy_on_sizing(df, strategy=None, **risk_kw):
+    """Run a backtest, recording the (equity, prices, qty) at every bar."""
+    from tradebot.strategies import BuyAndHold
+
+    risk = RiskManager(RiskConfig(allow_fractional=True, max_position_pct=1.0,
+                                  max_gross_exposure=1.0, rebalance_band_pct=0.0,
+                                  **risk_kw))
+    seen = []
+    original = risk.allocate
+
+    def spy(targets, equity, prices, weights=None):
+        out = original(targets, equity, prices, weights)
+        seen.append((equity, dict(prices), dict(out)))
+        return out
+
+    risk.allocate = spy
+    Backtester(strategy or BuyAndHold(), risk, initial_cash=10_000,
+               slippage_bps=0.0).run(df, symbol="X")
+    return seen
+
+
+def test_sizing_never_sees_the_fill_bars_close():
+    """Perturbing a bar's CLOSE must not change the fill sized at its OPEN.
+
+    Regression for the sizing look-ahead: the loop used to mark the book at the
+    fill bar's close, so every position size depended on the intra-bar return
+    of the bar it was being filled on.
+    """
+    i = 60
+    base = synthetic_ohlcv(periods=200, seed=3)
+    pert = base.copy()
+    pert.iloc[i, pert.columns.get_loc("close")] = base.iloc[i]["close"] * 0.85
+    pert.iloc[i, pert.columns.get_loc("low")] = min(
+        base.iloc[i]["low"], base.iloc[i]["close"] * 0.85)
+
+    a, b = _spy_on_sizing(base), _spy_on_sizing(pert)
+
+    assert base.iloc[i]["open"] == pert.iloc[i]["open"]      # fill price untouched
+    assert [x[2] for x in a[:i]] == [x[2] for x in b[:i]]    # history untouched
+    assert a[i][0] == b[i][0], "sizing equity at the fill bar saw that bar's close"
+    assert a[i][2] == b[i][2], "quantity filled at the open moved with a future close"
+
+
+def test_selector_verdict_cannot_be_acted_on_the_bar_it_is_formed():
+    """A membership verdict formed on bar t's close is only tradable at t+1.
+
+    The fixture makes same-bar action unmistakably profitable. JUMP is the worst
+    momentum pick until, on one bar, it opens at 100 and closes at 130 — so the
+    verdict that first selects it is formed by a move that is still *inside* the
+    bar a same-bar engine would fill at. Acting on the shifted verdict buys the
+    next open at 130 and captures nothing; acting same-bar buys at 100 and books
+    the whole 30%.
+
+    The jump must straddle the open, not precede it: a fixture where the jump
+    bar already opens at 130 passes with the shift deleted and guards nothing.
+    """
+    from tradebot.selection import MomentumSelector
+    from tradebot.strategies import BuyAndHold
+
+    n, jump = 60, 40
+    # STEADY drifts gently up so it strictly wins momentum before the jump —
+    # otherwise the tie is broken arbitrarily and the book may already hold JUMP.
+    steady = np.linspace(100.0, 105.0, n)
+    jump_close = np.full(n, 100.0)
+    jump_close[jump:] = 130.0
+    jump_open = np.full(n, 100.0)
+    jump_open[jump + 1:] = 130.0          # the jump happens between open and close
+
+    idx = pd.date_range("2024-01-01", periods=n, freq="1D", tz="UTC")
+
+    def frame(opens, closes):
+        return pd.DataFrame(
+            {"open": opens, "high": np.maximum(opens, closes),
+             "low": np.minimum(opens, closes), "close": closes, "volume": 1000.0},
+            index=idx)
+
+    result = Backtester(
+        BuyAndHold(),
+        RiskManager(RiskConfig(allow_fractional=True, max_position_pct=1.0,
+                               max_gross_exposure=1.0)),
+        initial_cash=10_000, slippage_bps=0.0,
+        # exit_rank is explicit: the default (top_k + max(top_k//2, 1)) equals
+        # the pool size here, which freezes membership at the first verdict and
+        # would make this test vacuous.
+        selector=MomentumSelector(lookback=10, skip=0, top_k=1, exit_rank=1),
+    ).run({"JUMP": frame(jump_open, jump_close),
+           "STEADY": frame(steady, steady)})
+
+    # The book may earn STEADY's gentle drift; it must never book the 30% jump.
+    assert result.equity_curve.pct_change().max() < 0.10
+    assert result.total_return < 0.10
 
 
 def test_multi_symbol_shared_cash_respects_exposure():
