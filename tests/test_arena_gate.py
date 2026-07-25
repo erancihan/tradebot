@@ -133,7 +133,15 @@ def test_cli_gate_pass_and_fail_exit_codes(tmp_path, capsys):
     assert "VERDICT: FAIL" in out
 
 
-def test_cli_gate_journals_the_gauntlet(tmp_path, capsys):
+def test_cli_gate_journals_only_the_candidate_family(tmp_path, capsys):
+    """A gate run charges attempts to the idea under development — nobody else.
+
+    The gate runs the whole field against every gauntlet scenario just to obtain
+    a baseline. Journaling all of them charged +1 attempt per scenario to every
+    family, so a never-iterated baseline accumulated the same attempt count as
+    the candidate and the multiple-testing statistic measured gate invocations
+    rather than iterations of an idea.
+    """
     algos = _write_algos(tmp_path)
     up = _write_scenario(tmp_path, "up", drift=0.002)
     db = str(tmp_path / "arena.db")
@@ -143,4 +151,5 @@ def test_cli_gate_journals_the_gauntlet(tmp_path, capsys):
     capsys.readouterr()
     assert main(["arena", "journal", "--db", db]) == 0
     out = capsys.readouterr().out
-    assert "holder" in out and "sitter" in out
+    assert "holder" in out
+    assert "sitter" not in out          # the baseline is a reference, not an attempt

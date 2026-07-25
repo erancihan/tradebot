@@ -631,8 +631,17 @@ install the socket backstop.
 equals `membership(full).iloc[-1]` on **ragged** bars; a season test drives the
 feed through a fake fetcher and asserts bars actually accumulate.
 
-**Stage 3 — Re-derivation and methodology instrumentation.** Pure offline. M2,
-M3, M6, M8, M9, plus the `exit_rank` fix. 2–3 days plus compute. Re-run all four
+**Stage 3 — Re-derivation and methodology instrumentation. PARTLY DONE
+2026-07-25.** Shipped: the `exit_rank` small-pool fix, M6 (fold-count
+sensitivity printed across k=3..8 beside the worst-fold check), M8's semantics
+half (the gate journals only the candidate's family, not the whole field), and
+the full re-derivation of all four recorded gate verdicts. **Result:
+`xs_momentum_vt` PASSES the real-data gate** and the recorded attributions were
+exactly inverted — see the re-derived record in CLAUDE.md.
+Still open in this stage: M2 (gate warmup discipline), M3 (length-normalized,
+de-duplicated aggregation — the three real scenarios are nested, so the mean
+double-counts 2022–23), M8's durability half (commit a ledger export), M9
+(provenance stamp on every journal row). Re-run all four
 gate verdicts, the synthetic gauntlet, the walk-forwards and the balance ledger
 on the fixed engine. Rewrite the arc-status block with corrected numbers and
 **explicit retraction** of invalidated attributions — not a quiet amendment.

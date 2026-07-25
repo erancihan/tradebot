@@ -194,6 +194,33 @@ def test_regime_switch_emits_nothing_before_its_required_history():
     assert member.iloc[sel.required_history - 1:].to_numpy().any()   # live afterwards
 
 
+def test_hysteresis_cannot_freeze_membership_on_a_small_pool():
+    """A held name must stay droppable whenever the pool exceeds top_k.
+
+    Regression: `exit_rank` defaults to `top_k + max(top_k // 2, 1)`, which is 3
+    for `top_k=2`. On a three-name pool every held name was permanently inside
+    it, so membership froze at the first verdict and the selector became a no-op
+    — silently, while still looking like it was selecting. This is what made the
+    entire real-data gauntlet inert.
+    """
+    n = 60
+    # A and B lead early; C overtakes decisively in the second half.
+    a = _frame(list(100 + np.linspace(0, 20, n)))
+    b = _frame(list(100 + np.linspace(0, 18, n)))
+    c_vals = list(100 + np.concatenate([np.linspace(0, 1, n // 2),
+                                        np.linspace(1, 60, n - n // 2)]))
+    pool = {"A": a, "B": b, "C": _frame(c_vals)}
+
+    sel = MomentumSelector(lookback=10, skip=1, top_k=2)      # default exit_rank == 3
+    assert sel.exit_rank >= len(pool), "fixture no longer exercises the freeze"
+
+    member = sel.membership(pool)
+    live = member.iloc[sel.required_history - 1:]
+    changes = int((live != live.shift(1)).any(axis=1).sum()) - 1
+    assert changes > 0, "membership froze at the first verdict"
+    assert bool(live.iloc[-1]["C"]), "the late leader was never picked up"
+
+
 def test_ragged_frames_are_intersected_not_unioned():
     """Only the live engine passes ragged frames — it must select identically.
 

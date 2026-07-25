@@ -485,12 +485,15 @@ def cmd_arena_gate(args: argparse.Namespace) -> int:
                            [(sc.name, out) for sc, out in runs],
                            max_drawdown_limit=args.max_drawdown)
 
+    fam = report.family or args.candidate
     with ArenaStore(args.db) as store:
         if args.journal:
+            # Only the candidate's family: the rest of the field is run to
+            # produce a baseline, not because anyone is iterating on it.
             for scenario, outcome in runs:
-                store.record_attempts(scenario, "worst_fold", outcome)
+                store.record_attempts(scenario, "worst_fold", outcome,
+                                      only_families={fam})
         summary = {r["family"]: r for r in store.journal_summary()}
-        fam = report.family or args.candidate
         if fam in summary:
             report.attempts = summary[fam]["attempts"]
 

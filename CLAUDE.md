@@ -35,13 +35,14 @@ without fastapi); frontend has a strict `tsc` gate.
 > **open**. Reproduced directly — perturbing only bar 60's close moved the
 > quantity filled at that bar's unchanged open from 96.455539 to 81.893842.
 >
-> **The engine is FIXED (Stage 1, see `_sizing_marks`); the recorded numbers are
-> NOT yet re-derived (Stage 3).** Do not cite the arc-status numbers below.
-> Measured effect on the real-data gate for `xs_momentum_vt`: candidate mean
-> return 13.52% → 10.67%, baseline 17.75% → **11.71%**. The fully-invested
-> baseline was harvesting the leak hardest, exactly as the bias direction
-> predicts, and `real_full_cycle` flips from candidate-loses to candidate-wins.
-> Full scope, backlog and staged plan: `docs/PLAN.md`.
+> **RESOLVED.** The engine is fixed (Stage 1, `_sizing_marks`) and the record
+> has been re-derived (Stage 3). A second suppressing bug turned up on the way:
+> `exit_rank` froze membership so the real gauntlet was inert. With both fixed,
+> **`xs_momentum_vt` PASSES the real-data gate** — the first contestant ever to
+> pass — and the old attributions turn out to have been exactly inverted. See
+> "Re-derived record (2026-07-25)" at the end of the arc-status block; the text
+> above it is kept only as an audit trail. Full backlog and staged plan:
+> `docs/PLAN.md`.
 
 ## Agent skills
 
@@ -495,6 +496,11 @@ strict majority · drawdown never worse than `--max-drawdown` (default 35%).
 Exit code = verdict; runs are journaled; the family's attempt count prints
 with the verdict. Runbook in README (validate → gate → walk-forward → replay
 dry-run → paper/season).
+**⚠ ARC STATUS SUPERSEDED — see "Re-derived record (2026-07-25)" at the end of
+this block. `xs_momentum_vt` now PASSES the real-data gate. Everything from
+here to that heading is the pre-fix record, kept for the audit trail; its
+numbers and its attributions are wrong.**
+
 **Arc status (2026-07-04): tooling complete; NO contestant has passed the
 gate yet — that is the honest result, not a bug.** Gauntlet outcomes: classics
 protect drawdown but concede too much return vs buy_and_hold; raw
@@ -604,6 +610,55 @@ forward: neither gauntlet exercises the mechanism it is meant to test. `top_k=2`
 over a 2-symbol pool selects both names every bar. A genuine test needs a pool
 with real cross-sectional dispersion **and** something uncorrelated to rotate
 into. Still NOT param tuning. Design: `docs/PLAN.md` §4.
+
+### Re-derived record (2026-07-25, Stage 3) — THIS is the current record
+
+Everything above this heading is superseded. Re-run on the fixed engine
+(sizing mark corrected, `exit_rank` freeze fixed, targets computed after
+alignment). **`xs_momentum_vt` PASSES the real-data gate — the first contestant
+ever to pass anything.** Two bugs were suppressing it.
+
+| gauntlet | candidate | mean ret | baseline | worst-fold | deepest DD | verdict |
+|---|---|---|---|---|---|---|
+| real (3) | `xs_momentum_vt` | **14.79%** | 11.71% | 2/3 | −18.97% | **PASS** |
+| real (3) | `xs_regime` | 11.20% | 11.71% | 2/3 | −24.72% | FAIL (return) |
+| synthetic (5) | `xs_momentum_vt` | 23.18% | 16.90% | **4/5** | −36.38% | FAIL (drawdown) |
+| synthetic (5) | `xs_regime` | 20.36% | 16.90% | **5/5** | −52.86% | FAIL (drawdown) |
+
+**The recorded attributions were exactly inverted.** The old record said
+`xs_momentum_vt` "passes mean-return + drawdown but loses the worst-fold
+majority 2/5". It now passes mean return *and* worst-fold 4/5, and fails only
+on drawdown, by 1.38pp. Do not carry forward any fold attribution written
+before this date — in particular "this candidate's remaining gaps are
+structural trade-offs, not bugs" was wrong: they were the bugs.
+
+How much the leak flattered the benchmark: `crash_recovery`'s `buy_and_hold`
+goes −28.92% → **−37.20%**, and `sideways_chop`'s flips sign, +14.34% →
+**−1.84%**. The baseline is the most exposed contestant and harvested the bias
+hardest, which is why the candidates looked worse than they were.
+
+**Why the real pack finally means something.** The `exit_rank` freeze had made
+it inert: momentum picked one pair and held it for all 587 live bars. It now
+makes 42 membership changes and uses all three pairs, so the gauntlet actually
+tests cross-sectional selection for the first time.
+
+**Do not over-read the PASS.** It is a real result and it is not yet a
+promotion:
+- The three real scenarios are **nested** — `real_bear_2022` (292 bars) and
+  `real_recovery_2023` (270) are both fully contained in `real_full_cycle`
+  (647). "Mean over 3" is one path counted three times with 2022–23
+  double-weighted (M3).
+- It is a point estimate with no interval on a 3.08pp margin (M4).
+- Fold sensitivity is now printed and is stable here (`k=3..8: 3:2 4:2 5:2 6:3
+  7:2 8:2`), which is the one thing that *does* hold up (M6).
+- The pool is still three correlated equity-beta ETFs. The Stage 4/5 library
+  remains the right next move.
+- `xs_momentum` family: 16 attempts on synthetic, 6 on real, under the
+  corrected counting (the gate no longer charges the whole field).
+
+Per the README runbook, a gate pass is followed by walk-forward, then a replay
+dry-run, then paper. **Do not tune the −35% drawdown limit** to convert the
+synthetic FAIL; that bound is doing its job.
 
 Deferred (decided, do not re-propose without a new ask):
 - **Container/gVisor containment** — the strongest, OS-level tier, for fully

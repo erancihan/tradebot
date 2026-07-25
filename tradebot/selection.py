@@ -82,7 +82,14 @@ class RankedSelector(Selector):
         for _, row in scores.iterrows():
             ranked = self._rank(row)
             rank_of = {s: r + 1 for r, s in enumerate(ranked)}
-            keep = {s for s in held if rank_of.get(s, np.inf) <= self.exit_rank}
+            # A held name must stay droppable whenever the pool is bigger than
+            # `top_k`. The default `exit_rank` (top_k + max(top_k//2, 1)) can
+            # reach or exceed the pool size — e.g. 3 for top_k=2 on three names —
+            # and then every held name is permanently inside it and membership
+            # FREEZES at the first verdict. That silently made the whole real
+            # gauntlet inert: momentum picked one pair and held it for 587 bars.
+            exit_rank = min(self.exit_rank, max(len(ranked) - 1, self.top_k))
+            keep = {s for s in held if rank_of.get(s, np.inf) <= exit_rank}
             for s in ranked:
                 if len(keep) >= self.top_k:
                     break

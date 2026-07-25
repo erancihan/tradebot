@@ -23,7 +23,27 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .result import ContestantResult
-from .scoring import get_scorer
+from .scoring import fold_returns, get_scorer
+
+#: Fold counts the worst-fold comparison is re-run at, for the sensitivity line.
+#: The verdict itself still uses the library default (4).
+_SENSITIVITY_FOLDS = (3, 4, 5, 6, 7, 8)
+
+
+def _fold_sensitivity(ok_rows: list[dict]) -> str:
+    """How the worst-fold win count moves with the fold partition.
+
+    ``worst_fold`` is ``min()`` over a partition of one realized curve — an
+    order statistic of a small dependent sample, so it is maximally sensitive to
+    where the boundaries fall. The fold count was an undeclared researcher
+    degree of freedom baked in at 4; printing the count at other partitions
+    makes it visible whether a verdict turns on that choice.
+    """
+    counts = []
+    for k in _SENSITIVITY_FOLDS:
+        wins = sum(1 for r in ok_rows if r.get("wf_wins_by_k", {}).get(k))
+        counts.append(f"{k}:{wins}")
+    return " ".join(counts)
 
 
 @dataclass
@@ -130,6 +150,12 @@ def evaluate_gate(
             "cand_max_drawdown": cand.max_drawdown,
             "base_return": base.total_return,
             "base_worst_fold": worst_fold(base.result),
+            # Same comparison under other fold partitions, for the sensitivity
+            # line. Computed here while both results are in hand.
+            "wf_wins_by_k": {
+                k: min(fold_returns(cand.result, k)) >= min(fold_returns(base.result, k))
+                for k in _SENSITIVITY_FOLDS
+            },
         })
 
     ok_rows = [r for r in report.rows if r["ok"]]
@@ -148,10 +174,18 @@ def evaluate_gate(
         wins = sum(1 for r in ok_rows
                    if r["cand_worst_fold"] >= r["base_worst_fold"])
         need = len(ok_rows) // 2 + 1
+        # Report how the count moves with the fold partition. `worst_fold` is
+        # min() over a partition of one realized curve — an order statistic of a
+        # tiny dependent sample, so it is maximally sensitive to where the
+        # boundaries land, and the fold count was an undeclared researcher
+        # degree of freedom baked in at 4. The verdict still uses k=4; this line
+        # says whether that choice is load-bearing.
+        sensitivity = _fold_sensitivity(ok_rows)
         report.checks.append(GateCheck(
             "worst fold >= baseline in a majority",
             wins >= need,
-            f"{wins}/{len(ok_rows)} scenarios (need {need})"))
+            f"{wins}/{len(ok_rows)} scenarios (need {need}); "
+            f"across k=3..8: {sensitivity}"))
 
         deepest = min(r["cand_max_drawdown"] for r in ok_rows)
         report.checks.append(GateCheck(

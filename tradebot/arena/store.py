@@ -135,15 +135,28 @@ class ArenaStore:
         self._conn.commit()
         return run_id
 
-    def record_attempts(self, scenario, metric: str, outcome, run_id: int | None = None) -> int:
+    def record_attempts(self, scenario, metric: str, outcome, run_id: int | None = None,
+                        only_families: set[str] | None = None) -> int:
         """Journal one experiment row per contestant (the data-snooping ledger).
 
         Every evaluation counts as an attempt — including failures. Attempts are
         grouped by the contestant's ``family`` (default: its name), so trying
         ten variants of one idea shows up as ten attempts against that idea.
+
+        ``only_families`` restricts journaling to the ideas actually under
+        development. The pass gate needs it: it runs the *whole* field against
+        every gauntlet scenario merely to obtain a baseline, so journaling
+        everyone charged +1 attempt per scenario to all twelve families. That is
+        how `buy_and_hold` — never iterated on once — came to carry the same
+        attempt count as a candidate under active development, and it made the
+        multiple-testing statistic measure gate invocations rather than
+        iterations of an idea.
         """
         ts = utcnow().isoformat()
         entries = outcome.leaderboard.entries
+        if only_families is not None:
+            entries = [r for r in entries
+                       if (getattr(r.contestant, "family", "") or r.name) in only_families]
         for r in entries:
             family = getattr(r.contestant, "family", "") or r.name
             start = final = first = last = None
