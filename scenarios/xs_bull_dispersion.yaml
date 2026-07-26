@@ -1,13 +1,3 @@
-# ⚠ INCOMPLETE LIBRARY — NOT A GATE GAUNTLET YET.
-# Only 3 of the 7 planned schedules exist, and 2 of those 3 are crashes, so the
-# set structurally rewards defensive books ~2:1. Running `arena gate` over these
-# three produces a PASS for a defensive candidate that loses badly in the one
-# bull scenario -- an artifact of the imbalance, not evidence. Use these for
-# mechanism testing (they are the only scenarios that genuinely exercise
-# selection: 92-94% selector-active) until the mirror schedules land: a
-# vol-spike pair (up/down), a momentum crash, and a chop-dispersion. See
-# docs/PLAN.md section 4.
-#
 # Can selection harvest a real alpha spread when there is no storm?
 # MIRROR: xs_momentum_crash (same pool, alpha persistence reversed).
 # Seed assigned by rule (100 + scenario index), never searched.

@@ -667,19 +667,18 @@ the fixed 8-name pool, three scenarios including the `xs_crash_haven` /
 Rules 1, 2 and 5 — mirror-pair single-parameter identity, parameter provenance
 in the YAML headers, and the degeneracy assertion. The new scenarios run
 92–94% selector-active against 0% for the single-symbol scenarios they replace.
-**The library is NOT yet usable as a gauntlet, and this is load-bearing:**
-2 of its 3 schedules are crashes, so it rewards defensive books ~2:1. Gating
-`xs_momentum_vt` over it returns PASS while the candidate loses −22.41% in the
-one bull scenario against the baseline's +1.21%. That is Rule 1 failing — the
-library cannot yet punish every mechanism it rewards — and it is exactly the
-kind of flattering gauntlet the rules exist to prevent. Each YAML carries a
-warning banner.
+All seven schedules now ship, and Rule 6 (`--seeds N`) with them. The balance
+turned out to decide verdicts rather than merely soften them: over the first
+three schedules (two of which were crashes) `xs_momentum_vt` **PASSED**; over
+the balanced seven it **FAILs decisively** (mean CAGR 1.70% vs 9.73%,
+worst-fold 3/7), winning both crash scenarios and losing all four non-crash
+ones. An unbalanced gauntlet does not produce a weak verdict — it produces a
+wrong one.
 
-Still open: the remaining four schedules (vol-spike mirror pair, momentum
-crash, chop dispersion) — needed for balance before ANY verdict is read from
-this set — plus the canary bracket (Rule 4), `--seeds N` with median
-aggregation and an `UNSTABLE` verdict (Rule 6), the gate's "selector active %"
-column, and library content-hash journaling (Rule 3). Ship as **one
+Still open: the canary bracket (Rule 4 — `always_haven` must lose everywhere,
+`random_topk` must land mid-pack, `oracle_topk` must win by a wide margin), the
+gate's "selector active %" column, and library content-hash journaling
+(Rule 3). Ship as **one
 pre-registration commit before any candidate runs against it.** Canaries go in
 `algos/canaries/`; `loader._expand` uses non-recursive `glob("*.py")`, so a
 subdirectory does not disturb the field count of 12 baked into four test files —

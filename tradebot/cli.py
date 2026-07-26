@@ -469,32 +469,50 @@ def cmd_arena_gate(args: argparse.Namespace) -> int:
     from .arena.store import ArenaStore
     from .arena.tournament import run_tournament
 
-    runs = []
-    for path in args.scenarios:
-        scenario = Scenario.from_yaml(path)
-        print(f"  gauntlet: {scenario.name} ...", flush=True)
-        outcome = run_tournament(
-            args.algos, scenario, metric="worst_fold",
-            time_budget_s=args.time_budget, isolation=args.isolation,
-        )
-        for e in outcome.load_errors:
-            print(f"  ! load error: {e.path}: {e.message}", file=sys.stderr)
-        runs.append((scenario, outcome))
+    import dataclasses
 
-    report = evaluate_gate(args.candidate, args.baseline,
-                           # Pass the Scenario, not just its name: the return
-                           # aggregation needs `source`/`symbols` to tell a
-                           # genuinely duplicated price path from two synthetic
-                           # draws that merely share an epoch.
-                           [(sc, out) for sc, out in runs],
-                           max_drawdown_limit=args.max_drawdown)
+    seeds = max(1, int(getattr(args, "seeds", 1)))
+    base_scenarios = [Scenario.from_yaml(p) for p in args.scenarios]
+
+    # One verdict per seed. A single synthetic draw is a weak basis for a
+    # binary decision: a high-vol window carries enough noise that the same
+    # scenario can resolve either way, so a one-path verdict is close to a coin
+    # flip on whether the effect it advertises is even present. Re-drawing the
+    # whole gauntlet and reporting the median — plus UNSTABLE when the verdict
+    # flips across draws — strips both lucky passes and unlucky fails, and it
+    # cannot be aimed at a candidate.
+    reports, all_runs = [], []
+    for k in range(seeds):
+        runs = []
+        for base in base_scenarios:
+            scenario = (base if k == 0
+                        else dataclasses.replace(base, seed=base.seed + k))
+            label = scenario.name if seeds == 1 else f"{scenario.name} (seed {scenario.seed})"
+            print(f"  gauntlet: {label} ...", flush=True)
+            outcome = run_tournament(
+                args.algos, scenario, metric="worst_fold",
+                time_budget_s=args.time_budget, isolation=args.isolation,
+            )
+            for e in outcome.load_errors:
+                print(f"  ! load error: {e.path}: {e.message}", file=sys.stderr)
+            runs.append((scenario, outcome))
+        all_runs.extend(runs)
+        reports.append(evaluate_gate(
+            args.candidate, args.baseline,
+            # Pass the Scenario, not just its name: the return aggregation needs
+            # `source`/`symbols` to tell a genuinely duplicated price path from
+            # two generated draws that merely share an epoch.
+            [(sc, out) for sc, out in runs],
+            max_drawdown_limit=args.max_drawdown))
+
+    report = reports[0] if seeds == 1 else _median_report(reports)
 
     fam = report.family or args.candidate
     with ArenaStore(args.db) as store:
         if args.journal:
             # Only the candidate's family: the rest of the field is run to
             # produce a baseline, not because anyone is iterating on it.
-            for scenario, outcome in runs:
+            for scenario, outcome in all_runs:
                 store.record_attempts(scenario, "worst_fold", outcome,
                                       only_families={fam})
         summary = {r["family"]: r for r in store.journal_summary()}
@@ -502,7 +520,40 @@ def cmd_arena_gate(args: argparse.Namespace) -> int:
             report.attempts = summary[fam]["attempts"]
 
     print(report.table())
+    if seeds > 1:
+        passes = sum(1 for r in reports if r.passed)
+        print(f"  seed ensemble: PASS in {passes}/{seeds} draws"
+              + ("" if passes in (0, seeds) else "  <-- UNSTABLE, the verdict is noise"))
     return 0 if report.passed else 1
+
+
+def _median_report(reports):
+    """Collapse per-seed gate reports into one, criterion by criterion.
+
+    The median is taken per *criterion*, not over a summary score, so a
+    candidate has to clear each bar in most draws rather than in a lucky one.
+    A verdict that flips across seeds is reported as UNSTABLE by the caller
+    rather than being silently resolved either way.
+    """
+    from statistics import median
+
+    base = reports[0]
+    for i, check in enumerate(base.checks):
+        votes = [r.checks[i].passed for r in reports if i < len(r.checks)]
+        check.passed = sum(votes) > len(votes) / 2
+        check.detail = (f"{check.detail}  [{sum(votes)}/{len(votes)} seeds pass]")
+    # Median the headline per-scenario numbers so the printed table is not just
+    # the first draw pretending to be the ensemble.
+    for row_idx, row in enumerate(base.rows):
+        if not row.get("ok"):
+            continue
+        for key in ("cand_return", "base_return", "cand_cagr", "base_cagr",
+                    "cand_worst_fold", "base_worst_fold", "cand_max_drawdown"):
+            values = [r.rows[row_idx][key] for r in reports
+                      if row_idx < len(r.rows) and r.rows[row_idx].get("ok") and key in r.rows[row_idx]]
+            if values:
+                row[key] = median(values)
+    return base
 
 
 def _balance(row) -> str:
@@ -951,6 +1002,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="fail if any scenario drawdown is worse than this (default 0.35)")
     ag.add_argument("--time-budget", dest="time_budget", type=float, default=10.0,
                     help="per-contestant wall-clock budget in seconds (default 10)")
+    ag.add_argument("--seeds", type=int, default=1,
+                    help="re-draw the whole gauntlet N times and take the median "
+                         "verdict; flags UNSTABLE when the decision flips (a single "
+                         "high-vol draw is not a reliable basis for a binary call)")
     ag.add_argument("--isolation", choices=["process", "thread", "auto"], default="process")
     ag.add_argument("--no-journal", dest="journal", action="store_false", default=True,
                     help="skip journaling the gauntlet runs as attempts")

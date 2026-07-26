@@ -371,16 +371,27 @@ Building CI is Stage 6 in `docs/PLAN.md`.
   `cross_sectional` 98%, `real_full_cycle` 38%, `real_bear_2022` **0%**,
   `bull_trend` **0%**. Run that check on any scenario before reading a verdict
   from it.
-- **The factor library is INCOMPLETE and must not be gated on yet.** Three of
-  the seven planned schedules exist and **two of those three are crashes**, so
-  the set rewards defensive books roughly 2:1. Gating `xs_momentum_vt` over
-  them returns PASS while that candidate loses −22.41% in the one bull scenario
-  against the baseline's +1.21% — the verdict is an artifact of the imbalance,
-  not evidence. The whole point of the mirror-pair rule is that the library must
-  be able to *punish* every mechanism it rewards; with 2/3 crashes it cannot.
-  Use these scenarios for mechanism testing (they are the only ones that
-  genuinely exercise selection) until the vol-spike pair, momentum crash and
-  chop-dispersion schedules land. Each YAML carries the same warning.
+- **A gauntlet must be BALANCED, and the balance decides verdicts.** All seven
+  `xs_*` schedules now ship: selection is rewarded by `xs_bull_dispersion` and
+  `xs_chop_dispersion` and punished by `xs_momentum_crash`; defense is rewarded
+  by `xs_crash_haven` and `xs_vol_spike_down` and punished by
+  `xs_crash_nohaven` and `xs_vol_spike_up`. This is not bookkeeping. With only
+  the first three shipped (two of them crashes) the set rewarded defensive
+  books ~2:1 and returned **PASS** for `xs_momentum_vt`; over the balanced
+  seven the same candidate **FAILs decisively** (mean CAGR 1.70% vs 9.73%,
+  worst-fold 3/7) — it wins the two crash scenarios and loses the four
+  non-crash ones. An unbalanced gauntlet does not produce a weak verdict, it
+  produces a *wrong* one. `MIRROR_PAIRS` in `tests/test_scenario_library.py`
+  asserts every rewarding scenario has a punishing twin differing by exactly
+  one parameter.
+- **Seed ensembles: `arena gate --seeds N`.** A single draw of a high-vol
+  window is not a reliable basis for a binary decision. `xs_vol_spike_down`'s
+  own shipped seed resolves *upward* — the designed effect holds in 93–98% of
+  seeds but not that one. Deepening the drift until every seed complies was
+  rejected: it takes ±0.0090/bar, which produces a +295% 80-bar "recovery",
+  i.e. a distortion introduced to flatter a draw. **Fix the evaluation, not the
+  data.** `--seeds N` re-draws the whole gauntlet, takes the median per
+  criterion, and prints `UNSTABLE` when the verdict flips across draws.
 - **The factor library builds the pool jointly, not as independent walks.**
   `synthetic_factor_panel` draws one market factor per bar and gives each symbol
   a beta, an alpha and idiosyncratic noise. The older `cross_sectional.yaml`

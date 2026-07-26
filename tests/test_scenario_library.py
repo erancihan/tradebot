@@ -23,7 +23,21 @@ from tradebot.selection import LowVolatilitySelector, MomentumSelector
 
 SCENARIOS = Path(__file__).resolve().parents[1] / "scenarios"
 #: Scenarios intended to exercise cross-sectional machinery.
-XS_SCENARIOS = ["xs_bull_dispersion", "xs_crash_haven", "xs_crash_nohaven"]
+#:
+#: Balanced by construction so no single mechanism can sweep a strict majority:
+#: selection is rewarded by bull_dispersion and chop_dispersion and punished by
+#: momentum_crash; defense is rewarded by crash_haven and vol_spike_down and
+#: punished by crash_nohaven and vol_spike_up.
+XS_SCENARIOS = [
+    "xs_bull_dispersion", "xs_chop_dispersion", "xs_momentum_crash",
+    "xs_crash_haven", "xs_crash_nohaven",
+    "xs_vol_spike_up", "xs_vol_spike_down",
+]
+
+#: (rewards mechanism, punishes mechanism) pairs. Each must differ by exactly
+#: one parameter so weakening the punishing half is a visible one-line diff.
+MIRROR_PAIRS = [("xs_crash_haven", "xs_crash_nohaven"),
+                ("xs_vol_spike_down", "xs_vol_spike_up")]
 
 
 def _load(name: str) -> Scenario:
@@ -59,26 +73,41 @@ def test_scenario_is_not_degenerate_for_selection(name):
         "the scenario cannot tell them apart")
 
 
-def test_crash_mirror_pair_differs_by_exactly_one_parameter():
-    """xs_crash_haven and xs_crash_nohaven must be one `beta_shift` apart.
+@pytest.mark.parametrize("rewards,punishes", MIRROR_PAIRS)
+def test_mirror_pair_differs_by_exactly_one_parameter(rewards, punishes):
+    """Mirror halves must be one parameter apart.
 
     Mirror pairs are the library's defence against only ever rewarding the
-    mechanisms it contains. If a pair can drift apart on other parameters, the
-    "punishing" half can be quietly weakened until a favoured candidate passes.
+    mechanisms it happens to contain. If a pair can drift apart on other
+    parameters, the "punishing" half can be quietly weakened until a favoured
+    candidate passes — and that edit would be invisible in review.
     """
-    haven, nohaven = _load("xs_crash_haven"), _load("xs_crash_nohaven")
+    a_sc, b_sc = _load(rewards), _load(punishes)
 
-    assert haven.seed == nohaven.seed
-    assert haven.symbols == nohaven.symbols
-    assert haven.factor_symbols == nohaven.factor_symbols
-    assert len(haven.regimes) == len(nohaven.regimes)
+    assert a_sc.seed == b_sc.seed, "mirror halves must share a seed"
+    assert a_sc.symbols == b_sc.symbols
+    assert a_sc.factor_symbols == b_sc.factor_symbols
+    assert len(a_sc.regimes) == len(b_sc.regimes)
 
-    diffs = []
-    for a, b in zip(haven.regimes, nohaven.regimes):
-        for key in set(a) | set(b):
-            if a.get(key, 0.0) != b.get(key, 0.0):
-                diffs.append(key)
-    assert diffs == ["beta_shift"], f"mirror pair differs on {diffs}"
+    diffs = set()
+    for x, y in zip(a_sc.regimes, b_sc.regimes):
+        for key in set(x) | set(y):
+            if x.get(key, 0.0) != y.get(key, 0.0):
+                diffs.add(key)
+    assert len(diffs) == 1, f"{rewards} vs {punishes} differ on {sorted(diffs)}"
+
+
+def test_vol_spike_mirror_is_symmetric_in_magnitude():
+    """The vol-spike pair must differ only in the SIGN of the spike drift.
+
+    An asymmetric pair would smuggle in a second difference: a shallow up-move
+    against a deep down-move rewards defence twice over.
+    """
+    up, down = _load("xs_vol_spike_up"), _load("xs_vol_spike_down")
+    up_drift = up.regimes[1]["drift"]
+    down_drift = down.regimes[1]["drift"]
+    assert up_drift == pytest.approx(-down_drift)
+    assert up.regimes[1]["volatility"] == down.regimes[1]["volatility"]
 
 
 def test_beta_shift_is_what_breaks_the_haven():

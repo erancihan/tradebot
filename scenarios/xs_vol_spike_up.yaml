@@ -1,0 +1,47 @@
+# PUNISHES vol-dialing: volatility triples but the move resolves UPWARD, so a
+# book that de-risks on the spike gives up the rally.
+# MIRROR: xs_vol_spike_down -- identical seed and schedule, drift sign flipped.
+# Provenance: vol 0.030/bar ~= 48% annualized (VIX ~45, 2020-03 / 2008-10).
+# Drift +/-0.0045/bar sits between the 2009-03 recovery (~+0.0037/bar) and the
+# 2008-10 selloff (~-0.008/bar). The pair is SYMMETRIC in magnitude so the two
+# scenarios differ by exactly one thing: the sign.
+#
+# ⚠ RUN THIS PAIR WITH `--seeds N`. At vol 0.030/bar an 80-bar window has ~29%
+# one-sigma noise in log terms, so the drift is only ~1.2 sigma and a single
+# draw is not reliably signed -- the shipped seed of the DOWN scenario happens
+# to resolve upward. The designed effect holds in 93-98% of seeds. Deepening
+# the drift until one seed behaves was rejected: it takes +/-0.0090/bar to make
+# every seed comply, which produces a +295% 80-bar "recovery" -- a distortion
+# introduced to flatter a draw, not a market. Fix the evaluation, not the data.
+#
+# Drift +/-0.0045/bar is symmetric across the pair and sits between the 2009-03
+# recovery (~+0.0037/bar) and the 2008-10 selloff (~-0.008/bar).
+#
+# RUN THIS PAIR WITH SEED ENSEMBLES. At vol 0.030/bar an 80-bar window carries
+# ~29% one-sigma noise in log terms, so the drift is only ~1.2 sigma and a
+# single draw is not reliably signed -- the shipped seed of the DOWN scenario
+# happens to resolve upward. The designed effect holds in 93-98% of seeds.
+# Deepening the drift until every seed complies was rejected: it takes
+# +/-0.0090/bar, which produces a +295% 80-bar "recovery" -- a distortion
+# introduced to flatter a draw, not a market. Fix the evaluation, not the data.
+#
+name: xs_vol_spike_up
+source: factor
+symbols: [HIB1, HIB2, MID1, MID2, LOB1, LOB2, LAGG, HAVEN]
+seed: 105
+regimes:
+  - {periods: 210, drift: 0.0006, volatility: 0.010}
+  - {periods: 80,  drift: 0.0045, volatility: 0.030}
+  - {periods: 210, drift: 0.0006, volatility: 0.010}
+factor_symbols:
+  HIB1:  {beta: 1.4,  alpha: 0.00020,  idio_vol: 0.010}   # high-beta growth
+  HIB2:  {beta: 1.3,  alpha: 0.00015,  idio_vol: 0.010}
+  MID1:  {beta: 1.0,  alpha: 0.0,      idio_vol: 0.008}   # market-like
+  MID2:  {beta: 1.0,  alpha: 0.0,      idio_vol: 0.008}
+  LOB1:  {beta: 0.7,  alpha: 0.00005,  idio_vol: 0.006}   # defensive
+  LOB2:  {beta: 0.6,  alpha: 0.0,      idio_vol: 0.006}
+  LAGG:  {beta: 1.1,  alpha: -0.00060, idio_vol: 0.010}   # rejecting it must pay
+  HAVEN: {beta: -0.20, alpha: 0.00006, idio_vol: 0.005}   # costs to hold
+initial_cash: 10000
+slippage_bps: 1.0
+risk: {max_position_pct: 0.6, max_gross_exposure: 1.0, max_daily_loss_pct: 1.0}
