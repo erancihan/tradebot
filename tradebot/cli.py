@@ -466,7 +466,7 @@ def cmd_arena_gate(args: argparse.Namespace) -> int:
     """Promotion pass gate: judge one candidate against a baseline over a gauntlet."""
     from .arena.gate import evaluate_gate
     from .arena.scenario import Scenario
-    from .arena.store import ArenaStore
+    from .arena.store import ArenaStore, library_fingerprint
     from .arena.tournament import run_tournament
 
     import dataclasses
@@ -514,7 +514,8 @@ def cmd_arena_gate(args: argparse.Namespace) -> int:
             # produce a baseline, not because anyone is iterating on it.
             for scenario, outcome in all_runs:
                 store.record_attempts(scenario, "worst_fold", outcome,
-                                      only_families={fam})
+                                      only_families={fam},
+                                      library=library_fingerprint(args.scenarios))
         summary = {r["family"]: r for r in store.journal_summary()}
         if fam in summary:
             report.attempts = summary[fam]["attempts"]

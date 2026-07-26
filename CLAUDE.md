@@ -384,6 +384,20 @@ Building CI is Stage 6 in `docs/PLAN.md`.
   produces a *wrong* one. `MIRROR_PAIRS` in `tests/test_scenario_library.py`
   asserts every rewarding scenario has a punishing twin differing by exactly
   one parameter.
+- **The canaries say the factor library has signal, and that momentum can't
+  reliably extract it.** `algos/canaries/` holds three non-promotable
+  diagnostics (`oracle_topk` selects on *future* returns and must win;
+  `random_topk` is the null model; `always_haven` tests whether hiding is
+  free). Measured over 8 draws: the oracle wins **every** one, by +152% to
+  +351% — so the signal is unambiguously there. But `xs_momentum` beats
+  `random_topk` in only **4 of 8** draws. A 60-bar trailing-return selector
+  picking 2 of 8 names cannot reliably harvest a +0.0002/bar alpha spread
+  against 0.010/bar idiosyncratic noise; the edge is real in expectation and
+  invisible on one 500-bar path. Treat "momentum beat random on this scenario"
+  as a coin flip unless it is run with `--seeds`. Also measured: `always_haven`
+  is *legitimately* competitive in flat and falling markets — a low-beta asset
+  with slight carry should be — so the "hiding is not free" property is only
+  asserted where the market rises.
 - **Seed ensembles: `arena gate --seeds N`.** A single draw of a high-vol
   window is not a reliable basis for a binary decision. `xs_vol_spike_down`'s
   own shipped seed resolves *upward* — the designed effect holds in 93–98% of

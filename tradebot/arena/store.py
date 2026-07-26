@@ -26,6 +26,26 @@ from .result import render_table
 #:                    alignment; `exit_rank` no longer freezes on small pools.
 ENGINE_VERSION = "e2"
 
+
+def library_fingerprint(paths) -> str:
+    """Short content hash of a scenario set — the gauntlet's identity.
+
+    Pre-registration only means something if edits are visible. Hashing the
+    YAML contents (not their names) means quietly softening a scenario a
+    candidate keeps failing produces a new fingerprint, so the journal reads
+    "library v2, attempt 1" instead of silently continuing the old tally.
+    """
+    import hashlib
+
+    digest = hashlib.sha256()
+    for path in sorted(str(p) for p in paths):
+        try:
+            digest.update(Path(path).read_bytes())
+        except OSError:
+            digest.update(path.encode())
+    return digest.hexdigest()[:12]
+
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS arena_runs (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,7 +86,8 @@ CREATE TABLE IF NOT EXISTS experiments (
     start_date    TEXT,       -- simulated data window (first/last bar)
     end_date      TEXT,
     run_id        INTEGER,    -- arena_runs.id when the run was --save'd
-    engine        TEXT        -- instrument version; see ENGINE_VERSION
+    engine        TEXT,       -- instrument version; see ENGINE_VERSION
+    library       TEXT        -- content hash of the scenario set (Rule 3)
 );
 CREATE INDEX IF NOT EXISTS idx_experiments_family ON experiments(family);
 """
@@ -119,7 +140,7 @@ class ArenaStore:
         cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(experiments)")}
         for col, kind in (("start_balance", "REAL"), ("final_balance", "REAL"),
                           ("start_date", "TEXT"), ("end_date", "TEXT"),
-                          ("engine", "TEXT")):
+                          ("engine", "TEXT"), ("library", "TEXT")):
             if col not in cols:
                 self._conn.execute(f"ALTER TABLE experiments ADD COLUMN {col} {kind}")
         self._conn.commit()
@@ -147,7 +168,8 @@ class ArenaStore:
         return run_id
 
     def record_attempts(self, scenario, metric: str, outcome, run_id: int | None = None,
-                        only_families: set[str] | None = None) -> int:
+                        only_families: set[str] | None = None,
+                        library: str | None = None) -> int:
         """Journal one experiment row per contestant (the data-snooping ledger).
 
         Every evaluation counts as an attempt — including failures. Attempts are
@@ -162,6 +184,12 @@ class ArenaStore:
         attempt count as a candidate under active development, and it made the
         multiple-testing statistic measure gate invocations rather than
         iterations of an idea.
+
+        ``library`` is a content hash of the scenario set the attempt was run
+        against (see :func:`library_fingerprint`). Editing a scenario after
+        seeing a result then shows up as a *different* library rather than
+        vanishing into a re-run — which is the specific dishonest move
+        pre-registration exists to make visible.
         """
         ts = utcnow().isoformat()
         entries = outcome.leaderboard.entries
@@ -181,11 +209,11 @@ class ArenaStore:
             self._conn.execute(
                 "INSERT INTO experiments (ts, family, name, scenario, metric,"
                 " score, status, start_balance, final_balance, start_date,"
-                " end_date, run_id, engine)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " end_date, run_id, engine, library)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (ts, family, r.name, scenario.name, metric, _clean(r.score),
                  r.status, _clean(start), _clean(final), first, last, run_id,
-                 ENGINE_VERSION),
+                 ENGINE_VERSION, library),
             )
         self._conn.commit()
         return len(entries)

@@ -175,6 +175,63 @@ def test_factor_panel_builds_one_shared_market():
     assert rets[equities].corrwith(rets["HAVEN"]).max() < 0.0, "haven is not a haven"
 
 
+def _canary_scores(scenario):
+    """Run the canaries plus two real books over one scenario."""
+    from tradebot.arena.tournament import run_tournament
+
+    algos = Path(__file__).resolve().parents[1] / "algos"
+    paths = [str(algos / "canaries"), str(algos / "xs_momentum.py"),
+             str(algos / "buy_and_hold.py")]
+    outcome = run_tournament(paths, scenario, metric="total_return",
+                             isolation="thread", time_budget_s=120)
+    return {e.name: e.total_return for e in outcome.leaderboard.entries if e.ok}
+
+
+@pytest.mark.parametrize("name", ["xs_bull_dispersion", "xs_chop_dispersion"])
+def test_an_oracle_can_win_so_the_scenario_contains_signal(name):
+    """The sharpest single test of whether a scenario is worth running.
+
+    `oracle_topk` selects on future returns. If something that can see ahead
+    cannot beat the field by a wide margin, there is nothing in the scenario to
+    exploit and every verdict on it — pass or fail — is noise.
+
+    Candidate-agnostic by construction: it asks whether the scenario can
+    measure skill, never whether a favoured contestant won, so it cannot be
+    used to tune a scenario toward a result.
+    """
+    scores = _canary_scores(_load(name))
+    for who in ("oracle_topk", "random_topk", "always_haven"):
+        assert who in scores, f"{who} did not complete on {name}"
+
+    others = max(v for k, v in scores.items() if k != "oracle_topk")
+    assert scores["oracle_topk"] > others + 0.50, (
+        f"{name}: oracle {scores['oracle_topk']:.1%} vs best-other {others:.1%} — "
+        "no exploitable signal, so no verdict from this scenario means anything")
+
+
+def test_hiding_is_not_free_when_the_market_rises():
+    """`always_haven` must lose in a rising market, in expectation.
+
+    Deliberately scoped to the rising scenario. In flat or falling markets a
+    low-beta asset with slight positive carry is *legitimately* competitive —
+    measured across seeds the haven often beats random selection in
+    `xs_chop_dispersion`. That is realistic behaviour, not a flattering
+    scenario, and asserting otherwise would be forcing the data to match a
+    slogan.
+    """
+    import dataclasses
+
+    base = _load("xs_bull_dispersion")
+    haven_loses = 0
+    for k in range(3):
+        scenario = base if k == 0 else dataclasses.replace(base, seed=base.seed + k)
+        scores = _canary_scores(scenario)
+        haven_loses += scores["always_haven"] < scores["buy_and_hold"]
+    assert haven_loses >= 2, (
+        "sitting in the haven kept up with holding everything in a rising "
+        "market — defence is free here and the scenario flatters defensive books")
+
+
 def test_all_symbols_share_one_index():
     """Ragged frames would silently change what the execution loops align on."""
     for name in XS_SCENARIOS:

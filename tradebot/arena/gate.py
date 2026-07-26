@@ -30,6 +30,43 @@ from .scoring import fold_returns, get_scorer
 _SENSITIVITY_FOLDS = (3, 4, 5, 6, 7, 8)
 
 
+def selector_activity(frames, top_k: int = 2) -> float | None:
+    """Fraction of live bars on which two different selectors disagree.
+
+    A scenario where every selector picks the same names cannot distinguish
+    them, so a verdict comparing selection mechanisms over it carries no
+    information. Both prior gauntlets scored ~0 here and nobody noticed for
+    months, which is why the number is now printed next to every result rather
+    than living only in a test.
+    """
+    from ..selection import LowVolatilitySelector, MomentumSelector
+
+    if not frames or len(frames) <= top_k:
+        return 0.0
+    try:
+        momentum = MomentumSelector(lookback=60, skip=5, top_k=top_k)
+        low_vol = LowVolatilitySelector(window=30, top_k=top_k)
+        warmup = max(momentum.required_history, low_vol.required_history)
+        mom = momentum.membership(frames).iloc[warmup:]
+        lov = low_vol.membership(frames).iloc[warmup:]
+        if mom.empty:
+            return 0.0
+        return float((mom != lov).any(axis=1).mean())
+    except Exception:      # a diagnostic must never break the verdict
+        return None
+
+
+def _activity_for(scenario_obj) -> float | None:
+    """Selector activity for a Scenario; None when only a name was passed."""
+    build = getattr(scenario_obj, "build_frames", None)
+    if build is None:
+        return None
+    try:
+        return selector_activity(build())
+    except Exception:
+        return None
+
+
 def _overlapping_spans(ok_rows: list[dict]) -> list[tuple[str, str]]:
     """Pairs of scenarios that are partly the same underlying price path.
 
@@ -112,6 +149,7 @@ class GateReport:
     checks: list[GateCheck] = field(default_factory=list)
     attempts: int | None = None                      # journal count, if known
     family: str | None = None
+    notes: list[str] = field(default_factory=list)   # diagnostics, not criteria
 
     @property
     def passed(self) -> bool:
@@ -137,6 +175,10 @@ class GateReport:
             else:
                 lines.append(f"{r['scenario']:<18} {r['error']}")
         lines.append("")
+        for note in self.notes:
+            lines.append(f"  ~ {note}")
+        if self.notes:
+            lines.append("")
         lines.append("criteria:")
         for c in self.checks:
             lines.append(f"  [{'x' if c.passed else ' '}] {c.label:<42} {c.detail}")
@@ -213,6 +255,7 @@ def evaluate_gate(
             "base_cagr": base.result.cagr,
             "span": (str(curve.index[0]), str(curve.index[-1])) if len(curve) else None,
             "source": source, "symbols": symbols,
+            "selector_active": _activity_for(scenario_obj),
             "cand_worst_fold": worst_fold(cand.result),
             "cand_max_drawdown": cand.max_drawdown,
             "base_return": base.total_return,
@@ -229,6 +272,18 @@ def evaluate_gate(
     n = len(report.rows)
     report.checks.append(GateCheck(
         "completes every scenario", all_ok, f"{len(ok_rows)}/{n} clean"))
+
+    # Degeneracy, reported next to the verdict rather than left for a post-mortem.
+    active = [(r["scenario"], r["selector_active"]) for r in ok_rows
+              if r.get("selector_active") is not None]
+    if active:
+        worst = min(a for _, a in active)
+        summary = " ".join(f"{n}:{a:.0%}" for n, a in active)
+        report.notes.append(
+            ("selector active: " + summary)
+            + ("" if worst >= 0.20 else
+               "  <-- BELOW 20% somewhere: a selector is near-inert there, so "
+               "that scenario cannot tell selection mechanisms apart"))
 
     if ok_rows:
         report.checks.append(_return_check(ok_rows))
