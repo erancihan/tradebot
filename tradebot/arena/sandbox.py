@@ -22,7 +22,8 @@ syscall-complete so ordinary numeric contestants are never surprised.
 Limits (be honest): even with seccomp this does not stop a contestant from
 *reading* files it already has access to or from burning CPU within its limit.
 For untrusted third-party code, OS-level containment (containers / gVisor) is the
-right tool — see ``container.py``. Opt in via ``--harden`` / ``--seccomp``.
+right tool; that tier is deliberately not built (see the Deferred section
+of CLAUDE.md). Opt in via ``--harden`` / ``--seccomp``.
 """
 
 from __future__ import annotations

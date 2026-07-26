@@ -130,8 +130,18 @@ def _subprocess_work(contestant, frames, risk_config, config, result_queue,
 
         # ``seccomp`` is the adversarial tier; it can be requested on its own, but
         # we still keep the default no-write/no-network layers on when hardening.
-        apply_hardening(no_write=harden, isolate_network=harden,
-                        max_open_files=256 if harden else 0, seccomp=seccomp)
+        report = apply_hardening(no_write=harden, isolate_network=harden,
+                                 max_open_files=256 if harden else 0, seccomp=seccomp)
+        # Never silently downgrade. The capability report used to be discarded,
+        # so a failed `unshare(CLONE_NEWNET)` left the contestant with full
+        # network access while the tournament printed a clean `ok` — exactly the
+        # silent downgrade this module's isolation modes refuse to do.
+        denied = sorted(k for k, enforced in report.items() if not enforced)
+        if denied:
+            result_queue.put(("error",
+                              "SandboxError: requested containment not enforced: "
+                              + ", ".join(denied)))
+            return
     try:
         policy, extra = simulation_args(contestant)
         result = simulate(policy, frames, RiskManager(risk_config), config, **extra)

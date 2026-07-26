@@ -30,7 +30,12 @@ async def dashboard(request: Request, interval: float = 5.0, limit: int | None =
         while True:
             if await request.is_disconnected():
                 break
-            payload = json.dumps(account_service.snapshot(repo))
+            # Off the event loop: `snapshot` is synchronous and, on the
+            # credentialed path, makes blocking HTTP calls to the broker. Called
+            # directly it stalls every other request for as long as any browser
+            # tab holds this stream open.
+            snapshot = await asyncio.to_thread(account_service.snapshot, repo)
+            payload = json.dumps(snapshot)
             yield f"event: account\ndata: {payload}\n\n"
             count += 1
             if limit is not None and count >= limit:

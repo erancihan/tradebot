@@ -19,7 +19,7 @@ router = APIRouter()
 
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, repo: TradingRepository = Depends(get_trading_repo)):
-    equity = repo.equity_series(limit=2000)
+    equity = repo.equity_series(mode=repo.default_mode(), limit=2000)
     weights = repo.latest_weights()
     universe = repo.latest_universe()
     context = {

@@ -47,3 +47,20 @@ def test_drop_incomplete_daily_bar_before_close():
     assert len(drop_incomplete_bars(df, "1day", _utc(2024, 1, 3, 17, 0))) == 1
     # After close -> the bar is complete and kept.
     assert len(drop_incomplete_bars(df, "1day", _utc(2024, 1, 3, 22, 0))) == 2
+
+
+def test_holiday_table_has_not_run_out():
+    """Fail *before* the hard-coded calendar expires, not after.
+
+    A table that quietly runs out is the worst kind of bug: the season daemon
+    just starts treating every holiday as a trading day and nothing looks
+    wrong. This is deliberately time-dependent — that is the point.
+    """
+    from datetime import datetime, timezone
+
+    from tradebot.arena.market import holiday_table_expiry
+
+    this_year = datetime.now(timezone.utc).year
+    assert holiday_table_expiry() >= this_year + 1, (
+        f"holiday table ends {holiday_table_expiry()} and it is {this_year} — "
+        "extend DEFAULT_HOLIDAYS (NYSE publishes the schedule years ahead)")

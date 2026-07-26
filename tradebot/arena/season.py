@@ -15,10 +15,11 @@ Design (reuse-heavy, drift-free):
   an Alpaca-backed feed (lazy) drives it live. ``Season.step`` only ever sees a
   dict of one-bar-per-symbol, so the engine is fully testable without a network.
 
-What is NOT covered here (the remaining real-time operational layer): a hardened
-long-running daemon, market-hours/holiday scheduling, and partial-bar handling.
-``run_season`` is a thin loop; for production you'd drive ``step`` from cron or a
-supervised service.
+``run_season`` is the thin loop (one tick per bar, no scheduling).
+``run_season_daemon`` is the operational one: it gates on US market hours and
+the holiday calendar, drops still-forming bars, supervises failing ticks, and
+takes an injected ``clock``/``sleep`` so the whole loop is runnable offline —
+which is what ``season run --simulate`` does.
 """
 
 from __future__ import annotations
@@ -393,7 +394,15 @@ def run_season_daemon(season: Season, feed, poll_seconds: float = 60.0,
         sleep = time.sleep
 
     ticks = 0
+    # `max_ticks` counts *applied* ticks, so on its own it cannot terminate a run
+    # whose feed never yields — a closed market or a dry feed spins without ever
+    # incrementing it. Bound the loop itself too, generously enough that the tick
+    # budget is what normally ends a healthy run.
+    spins, max_spins = 0, None if max_ticks is None else max_ticks * 100 + 1000
     while max_ticks is None or ticks < max_ticks:
+        if max_spins is not None and spins >= max_spins:
+            break
+        spins += 1
         now = clock()
         if not ignore_market_hours and not is_market_open(now):
             sleep(poll_seconds)

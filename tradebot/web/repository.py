@@ -62,17 +62,48 @@ class TradingRepository:
         rows = _read(self.db_path, "SELECT DISTINCT symbol FROM bars ORDER BY symbol")
         return [r["symbol"] for r in rows]
 
-    def bars(self, symbol: str, mode: str | None = None, limit: int = 500) -> list[dict]:
-        where = "WHERE symbol = ?" + (" AND mode = ?" if mode else "")
-        params = (symbol, mode, limit) if mode else (symbol, limit)
+    def bars(self, symbol: str, limit: int = 500,
+             timeframe: str | None = None, mode: str | None = None) -> list[dict]:
+        """Candles for one symbol, oldest first.
+
+        `timeframe` is part of the bars primary key and `mode` partitions the
+        table, so without both filters the same timestamp comes back once per
+        (timeframe, mode) partition and the chart draws overlapping duplicate
+        candles across half the requested window.
+        """
+        clauses, params = ["symbol = ?"], [symbol]
+        if timeframe:
+            clauses.append("timeframe = ?")
+            params.append(timeframe)
+        if mode:
+            clauses.append("mode = ?")
+            params.append(mode)
+        params.append(limit)
         rows = _read(
             self.db_path,
-            f"SELECT ts, open, high, low, close, volume FROM bars {where} "
-            "ORDER BY ts DESC LIMIT ?",
-            params,
+            "SELECT ts, open, high, low, close, volume FROM bars WHERE "
+            + " AND ".join(clauses)
+            + " ORDER BY ts DESC LIMIT ?",
+            tuple(params),
         )
-        rows.reverse()  # chronological for charting
+        rows.reverse()
         return rows
+
+    def timeframes(self) -> list[str]:
+        """Distinct timeframes present, newest activity first."""
+        rows = _read(self.db_path,
+                     "SELECT DISTINCT timeframe FROM bars ORDER BY timeframe")
+        return [r["timeframe"] for r in rows]
+
+    def default_mode(self) -> str | None:
+        """The mode of the newest snapshot — what the dashboard should show.
+
+        Stats must be scoped to ONE account. Concatenating a $100k paper run
+        with a $10k dry-run produced a continuous-looking curve and a
+        catastrophic drawdown that never happened.
+        """
+        row = self.latest_equity()
+        return row["mode"] if row else None
 
     def latest_equity(self) -> dict | None:
         rows = _read(

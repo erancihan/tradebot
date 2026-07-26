@@ -84,12 +84,18 @@ def symbols(repo: TradingRepository = Depends(get_trading_repo)):
 
 
 @router.get("/bars", response_model=CandleSeries)
-def bars(symbol: str, mode: str | None = None, limit: int = 500,
-         repo: TradingRepository = Depends(get_trading_repo)):
+def bars(symbol: str, mode: str | None = None, timeframe: str | None = None,
+         limit: int = 500, repo: TradingRepository = Depends(get_trading_repo)):
+    # Default to a single timeframe rather than none: `timeframe` is part of the
+    # bars primary key, so an unfiltered query returns each timestamp once per
+    # stored timeframe and the chart renders overlapping duplicate candles.
+    if timeframe is None:
+        available = repo.timeframes()
+        timeframe = available[0] if len(available) == 1 else timeframe
     candles = [
         Candle(ts=r["ts"], open=float(r["open"]), high=float(r["high"]),
                low=float(r["low"]), close=float(r["close"]), volume=float(r["volume"]))
-        for r in repo.bars(symbol, mode=mode, limit=limit)
+        for r in repo.bars(symbol, mode=mode, timeframe=timeframe, limit=limit)
     ]
     return CandleSeries(symbol=symbol, candles=candles)
 

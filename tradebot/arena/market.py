@@ -28,7 +28,20 @@ DEFAULT_HOLIDAYS: frozenset[date] = frozenset({
     date(2026, 1, 1), date(2026, 1, 19), date(2026, 2, 16), date(2026, 4, 3),
     date(2026, 5, 25), date(2026, 6, 19), date(2026, 7, 3), date(2026, 9, 7),
     date(2026, 11, 26), date(2026, 12, 25),
+    date(2027, 1, 1), date(2027, 1, 18), date(2027, 2, 15), date(2027, 3, 26),
+    date(2027, 5, 31), date(2027, 6, 18), date(2027, 7, 5), date(2027, 9, 6),
+    date(2027, 11, 25), date(2027, 12, 24),
+    date(2028, 1, 17), date(2028, 2, 21), date(2028, 4, 14), date(2028, 5, 29),
+    date(2028, 6, 19), date(2028, 7, 4), date(2028, 9, 4), date(2028, 11, 23),
+    date(2028, 12, 25),
 })
+
+#: Last year the table covers. A hard-coded calendar that silently runs out is
+#: worse than no calendar: the season daemon would simply treat every holiday as
+#: a trading day and nothing would look wrong. `holiday_table_expiry` lets
+#: callers check, and `test_arena_market.py` fails once the table is within a
+#: year of running out, so this gets extended before it bites rather than after.
+HOLIDAY_TABLE_THROUGH = 2028
 
 _TF_DURATION = {
     "1min": timedelta(minutes=1),
@@ -36,6 +49,11 @@ _TF_DURATION = {
     "15min": timedelta(minutes=15),
     "1hour": timedelta(hours=1),
 }
+
+
+def holiday_table_expiry() -> int:
+    """Last calendar year `DEFAULT_HOLIDAYS` covers."""
+    return HOLIDAY_TABLE_THROUGH
 
 
 def is_trading_day(day: date, holidays=DEFAULT_HOLIDAYS) -> bool:

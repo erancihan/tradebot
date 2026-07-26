@@ -191,12 +191,17 @@ npm run watch:js        # dev rebuild on change
 Stack: TypeScript, Alpine.js, Apache ECharts, Tailwind, esbuild. Built assets are
 gitignored — reproduce with `npm run build`.
 
-**CI: there is none.** This file previously claimed a
-`.github/workflows/trading-bot-ci.yml`; no `.github/` directory exists and none
-ever has. The two mechanical gates in the Definition of done (`make test`,
-`npm run typecheck`) are therefore manual — and `frontend/node_modules` is not
-installed by default, so the typecheck gate cannot run until `make install-web`.
-Building CI is Stage 6 in `docs/PLAN.md`.
+CI: `.github/workflows/ci.yml` — two jobs, `pytest (offline)` and
+`tsc --noEmit` (+ a build). It runs on every branch push and PR.
+**History worth knowing:** this file asserted a CI workflow for a long time
+while no `.github/` directory existed, so neither mechanical gate in the
+Definition of done had ever run automatically — which is part of how the sizing
+look-ahead survived. The Python job deliberately supplies no credentials: the
+offline-first invariant says the suite passes without them, and
+`tests/conftest.py` fails any test that opens a non-loopback socket, so a run
+that starts reaching the network breaks loudly rather than becoming flaky.
+Note `frontend/node_modules` is not installed locally by default, so
+`npm run typecheck` needs `make install-web` before it can run on your machine.
 
 ## Conventions
 

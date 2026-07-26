@@ -17,8 +17,11 @@ router = APIRouter(prefix="/partials")
 
 
 @router.get("/stats", response_class=HTMLResponse)
-def stats(request: Request, repo: TradingRepository = Depends(get_trading_repo)):
-    equity = repo.equity_series(limit=2000)
+def stats(request: Request, mode: str | None = None,
+          repo: TradingRepository = Depends(get_trading_repo)):
+    # Scoped to one mode: an unscoped series splices separate accounts into one
+    # curve, so "total return" and "max drawdown" describe a book nobody ran.
+    equity = repo.equity_series(mode=mode or repo.default_mode(), limit=2000)
     return templates.TemplateResponse(
         request, "components/stats.html",
         {"metrics": metrics_service.summarize(equity),

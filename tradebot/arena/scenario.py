@@ -2,7 +2,8 @@
 
 Same symbols, same data, same starting capital, same cost/risk model — only the
 algorithms differ. Phase 1 supports `synthetic` (seeded, reproducible, offline)
-and `csv` data sources; `alpaca` (pull + local cache) arrives in Phase 2.
+`csv`, `alpaca` (pull once, then replay from the local cache) and
+`factor` (a pool built jointly from one shared market factor) data sources.
 """
 
 from __future__ import annotations
