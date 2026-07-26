@@ -648,9 +648,17 @@ data, since synthetic scenarios share an epoch by construction while being
 independent draws. M9 stamps `ENGINE_VERSION` on every journal row so pre- and
 post-fix numbers can never be compared silently.
 
-Still open in this stage: M2 (gate warmup discipline — the fix is to pull each
-real window with `required_warmup` extra bars, which belongs with Stage 5's
-pack) and M8's durability half (commit a ledger export). Re-run all four
+**Stage 3 COMPLETE.** M2 landed as post-warmup rebasing inside the gate rather
+than as wider data pulls: both contestants are now scored from the bar where
+the *later* of the two starts trading, detected from the curve. M8's durability
+half is `arena journal --export ledger.csv`, so the ledger can be committed and
+the attempt counts actually checked.
+
+**M2 flipped the real-pack verdict back to PASS** (10.98% vs 9.52% mean CAGR),
+the fourth flip in the sequence. See the final-state table in CLAUDE.md: the
+conclusion is that the real pack cannot support a binary decision at these
+margins, and the balanced factor library — a decisive FAIL at 2.03% vs 11.17% —
+is the gauntlet to judge on. Re-run all four
 gate verdicts, the synthetic gauntlet, the walk-forwards and the balance ledger
 on the fixed engine. Rewrite the arc-status block with corrected numbers and
 **explicit retraction** of invalidated attributions — not a quiet amendment.
@@ -675,10 +683,10 @@ worst-fold 3/7), winning both crash scenarios and losing all four non-crash
 ones. An unbalanced gauntlet does not produce a weak verdict — it produces a
 wrong one.
 
-Still open: the canary bracket (Rule 4 — `always_haven` must lose everywhere,
-`random_topk` must land mid-pack, `oracle_topk` must win by a wide margin), the
-gate's "selector active %" column, and library content-hash journaling
-(Rule 3). Ship as **one
+**Stage 4 COMPLETE.** Rules 1–6 all ship: mirror pairs asserted by test,
+parameter provenance in every YAML header, library content-hash journaling, the
+canary bracket in `algos/canaries/`, the degeneracy assertion (also printed by
+the gate), and seed ensembles. Ship as **one
 pre-registration commit before any candidate runs against it.** Canaries go in
 `algos/canaries/`; `loader._expand` uses non-recursive `glob("*.py")`, so a
 subdirectory does not disturb the field count of 12 baked into four test files —

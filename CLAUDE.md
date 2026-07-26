@@ -721,6 +721,36 @@ it inert: momentum picked one pair and held it for all 587 live bars. It now
 makes 42 membership changes and uses all three pairs, so the gauntlet actually
 tests cross-sectional selection for the first time.
 
+### Final state after the full methodology pass (2026-07-25)
+
+The verdict flipped **four times** as each defensible correction landed, which
+is itself the most important result in this file:
+
+| judged on | real pack | verdict |
+|---|---|---|
+| biased engine, mean total return | 13.52% vs 17.75% | FAIL |
+| fixed engine, mean total return | 14.79% vs 11.71% | PASS |
+| + M3 length-normalization (CAGR) | 8.79% vs 9.18% | FAIL |
+| + M2 post-warmup rebasing | **10.98% vs 9.52%** | **PASS** |
+
+Every step was a construct fix argued without knowing its effect, and no single
+one is wrong. A quantity that reverses under four honest choices, on margins of
+0.4–1.5pp, is **not a measurement** — it is M4's point made concrete. Do not
+promote on it.
+
+**The trustworthy verdict is the balanced factor library, and it is a decisive
+FAIL:** mean CAGR **2.03% vs 11.17%**, worst-fold 3/7, over seven scenarios
+that run 89–100% selector-active. `xs_momentum_vt` wins both crash scenarios
+and loses all five others. That gauntlet is balanced, non-degenerate, and its
+margin is wide enough to survive the choices above.
+
+The real pack's PASS should be read alongside what the gate now prints about
+it: `selector active: real_bear_2022:0% real_recovery_2023:0%
+real_full_cycle:38%` plus `WINDOWS OVERLAP` on all three pairs. The tooling is
+telling you that pack cannot test cross-sectional selection and counts one
+price path three times. **Use the factor library for verdicts; keep the real
+pack as a reality check on cost and calendar behaviour.**
+
 **How close it is, and what still stands between it and a promotion:**
 - Real gauntlet: fails return by **0.39pp** of CAGR. Synthetic: fails drawdown
   by **1.38pp**. Both are inside any reasonable error bar, which is the point of

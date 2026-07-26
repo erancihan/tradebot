@@ -218,6 +218,15 @@ class ArenaStore:
         self._conn.commit()
         return len(entries)
 
+    def journal_rows(self) -> list[dict]:
+        """Every journalled attempt, oldest first — the raw ledger for export."""
+        rows = self._conn.execute(
+            "SELECT ts, family, name, scenario, metric, score, status,"
+            " start_balance, final_balance, start_date, end_date, engine, library"
+            " FROM experiments ORDER BY id"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     def journal_summary(self) -> list[dict]:
         """Attempts per family, most-tried first, with each family's best score."""
         rows = self._conn.execute(

@@ -578,6 +578,26 @@ def cmd_arena_journal(args: argparse.Namespace) -> int:
     from .arena.store import ArenaStore
 
     with ArenaStore(args.db) as store:
+        if args.export:
+            # The DB is gitignored and every session runs in a fresh container,
+            # so the ledger is ephemeral by construction — which is why the
+            # attempt counts quoted in past write-ups could never be checked
+            # against anything. Exporting to CSV makes the record committable,
+            # and therefore auditable.
+            import csv
+
+            rows = store.journal_rows()
+            if not rows:
+                print(f"No attempts journaled yet in {args.db}; nothing to export.")
+                return 0
+            with open(args.export, "w", newline="") as fh:
+                writer = csv.DictWriter(fh, fieldnames=list(rows[0]))
+                writer.writeheader()
+                writer.writerows(rows)
+            print(f"Exported {len(rows)} attempt(s) to {args.export}. "
+                  "Commit it: an ephemeral ledger proves nothing.")
+            return 0
+
         if args.family:
             rows = store.journal_entries(args.family)
             if not rows:
@@ -1016,6 +1036,10 @@ def build_parser() -> argparse.ArgumentParser:
     aj = asub.add_parser("journal",
                          help="attempts-per-family ledger (multiple-testing honesty)")
     aj.add_argument("--family", help="list every attempt for one family")
+    aj.add_argument("--export", metavar="PATH",
+                    help="write the whole ledger to CSV so it can be committed "
+                         "(the DB is gitignored, so counts are otherwise "
+                         "unauditable)")
     aj.add_argument("--db", default="arena.db", help="arena results DB (default arena.db)")
     aj.set_defaults(func=cmd_arena_journal)
 

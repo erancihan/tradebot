@@ -56,6 +56,54 @@ def selector_activity(frames, top_k: int = 2) -> float | None:
         return None
 
 
+def _first_active(result) -> int:
+    """Index of the first bar on which this contestant actually held anything.
+
+    Detected from the curve rather than declared, because the gate is handed
+    results, not pipelines: equity sits exactly at `initial_cash` while a
+    contestant is still warming up.
+    """
+    curve = result.equity_curve
+    moved = curve.to_numpy() != result.initial_cash
+    return int(moved.argmax()) if moved.any() else 0
+
+
+def _rebased(result, start: int) -> dict:
+    """Return/CAGR/drawdown/worst-fold measured from bar ``start`` onward.
+
+    This is the warmup fix. `buy_and_hold` is deployed from bar 1 while a
+    60-bar momentum selector is flat for 61 bars, so comparing whole curves
+    credits the baseline with returns earned while the candidate was not yet
+    trading. `walkforward.py` already gives each fold a warmup prefix; the gate
+    did not. Scoring both contestants from the bar where the *later* of the two
+    starts is the cheapest honest fix available to something holding only
+    curves.
+
+    Note the direction of the correction is not knowable in advance: it removes
+    whatever the market did during the warmup, which may favour either side.
+    """
+    curve = result.equity_curve.iloc[start:]
+    if len(curve) < 2:
+        curve = result.equity_curve
+    first, last = float(curve.iloc[0]), float(curve.iloc[-1])
+    total = last / first - 1.0 if first else 0.0
+    years = len(curve) / (result.periods_per_year or 252.0)
+    cagr = (last / first) ** (1.0 / years) - 1.0 if first > 0 and years > 0 else 0.0
+    peak = curve.cummax()
+    drawdown = float((curve / peak - 1.0).min())
+
+    rets = curve.pct_change().dropna()
+    folds = []
+    n = len(rets)
+    if n:
+        k = max(1, min(4, n))
+        edges = [round(i * n / k) for i in range(k + 1)]
+        folds = [float((1.0 + rets.iloc[lo:hi]).prod() - 1.0)
+                 for lo, hi in zip(edges, edges[1:]) if hi > lo]
+    return {"total": total, "cagr": cagr, "drawdown": drawdown,
+            "worst_fold": min(folds) if folds else 0.0}
+
+
 def _activity_for(scenario_obj) -> float | None:
     """Selector activity for a Scenario; None when only a name was passed."""
     build = getattr(scenario_obj, "build_frames", None)
@@ -246,22 +294,31 @@ def evaluate_gate(
             })
             continue
         curve = cand.result.equity_curve
+        # Warmup discipline (M2): score both contestants from the bar where the
+        # LATER of the two starts trading, so the baseline is not credited with
+        # market moves the candidate was still warming up through.
+        start = max(_first_active(cand.result), _first_active(base.result))
+        c, b = _rebased(cand.result, start), _rebased(base.result, start)
         report.rows.append({
             "scenario": scenario_name, "ok": True,
-            "cand_return": cand.total_return,
+            "warmup_bars": start,
+            "cand_return": c["total"],
             # Length-normalized, so windows of different lengths are
             # commensurable — see the aggregation note in `_return_check`.
-            "cand_cagr": cand.result.cagr,
-            "base_cagr": base.result.cagr,
+            "cand_cagr": c["cagr"],
+            "base_cagr": b["cagr"],
             "span": (str(curve.index[0]), str(curve.index[-1])) if len(curve) else None,
             "source": source, "symbols": symbols,
             "selector_active": _activity_for(scenario_obj),
-            "cand_worst_fold": worst_fold(cand.result),
-            "cand_max_drawdown": cand.max_drawdown,
-            "base_return": base.total_return,
-            "base_worst_fold": worst_fold(base.result),
+            "cand_worst_fold": c["worst_fold"],
+            "cand_max_drawdown": c["drawdown"],
+            "base_return": b["total"],
+            "base_worst_fold": b["worst_fold"],
             # Same comparison under other fold partitions, for the sensitivity
             # line. Computed here while both results are in hand.
+            # Sensitivity is computed on the full curves: it asks whether the
+            # fold *partition* drives the verdict, which is a separate question
+            # from where scoring starts.
             "wf_wins_by_k": {
                 k: min(fold_returns(cand.result, k)) >= min(fold_returns(base.result, k))
                 for k in _SENSITIVITY_FOLDS
@@ -274,6 +331,13 @@ def evaluate_gate(
         "completes every scenario", all_ok, f"{len(ok_rows)}/{n} clean"))
 
     # Degeneracy, reported next to the verdict rather than left for a post-mortem.
+    trimmed = [(r["scenario"], r["warmup_bars"]) for r in ok_rows
+               if r.get("warmup_bars")]
+    if trimmed:
+        report.notes.append(
+            "scored post-warmup (bars dropped so both contestants are deployed): "
+            + " ".join(f"{n}:{k}" for n, k in trimmed))
+
     active = [(r["scenario"], r["selector_active"]) for r in ok_rows
               if r.get("selector_active") is not None]
     if active:
