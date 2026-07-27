@@ -102,7 +102,18 @@ commands in each file's header; cached bars replay offline afterwards).
 - Success criterion for promotion stays the same gate; a pass here plus a
   walk-forward on the pulled data = promote per the README runbook.
 
-## Spec 3 — paper season ops (after keys)
+## Spec 3 — paper season ops — DONE 2026-07-26
+
+**Status: VALIDATED end-to-end.** `arena season create` + `season run
+--simulate` drives the whole daemon offline (12 ticks, standings recomputed and
+persisted per tick, resumable). A live tick against Alpaca then accumulated
+real bars — the proof that mattered, because before B2 the live feed silently
+accumulated **zero**: it marked a bar seen the moment it was offered, and the
+daemon then discarded it as still-forming, so it was never offered again once
+it settled. Keep `meta_leader`/`meta_vote` out of long seasons per the hazard
+below; the validation run used the affordable contestants only.
+
+## Spec 3 — original notes (after keys)
 
 - `arena season create --name paper1 --symbols SPY QQQ IWM --algos ./algos
   --score worst_fold` then `arena season run <id>` (daemon: market-hours

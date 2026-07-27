@@ -92,8 +92,12 @@ Keep these in sync when workflows or invariants change.
 │                             #   xs_crash_nohaven — 8-name pool, ONE shared market
 │                             #   factor; the only scenarios that actually exercise
 │                             #   cross-sectional selection)
-│                             #   + real-data pack (real_bear_2022/real_recovery_2023/
-│                             #   real_full_cycle — need one `data pull`, then offline)
+│                             #   + real cross-sectional pack (real_xs_2021/2022/2023
+│                             #   + real_xs_2024_2025h1 SEALED HOLDOUT — 12 sector
+│                             #   SPDRs + TLT/GLD/SHY, 98-100% selector-active)
+│                             #   + legacy real pack (real_bear_2022/real_recovery_2023/
+│                             #   real_full_cycle — SUPERSEDED: 0% selector-active,
+│                             #   nested windows; keep only as a calendar/cost check)
 ├── frontend/                 # TS + Tailwind + esbuild source for the dashboard
 ├── tests/                    # pytest (offline; web tests importorskip fastapi)
 ├── docs/                     # DESIGN-HANDOFF.md (locked backlog designs)
@@ -307,11 +311,43 @@ Note `frontend/node_modules` is not installed locally by default, so
   `test_arena_tournament.py` (name set) and `test_arena_journal.py`
   ("Journaled N") assert on the field. Adding/removing an example contestant
   means updating those counts (currently 12).
-- **Fold scorers assume fixed parameters.** `worst_fold`/`consistency` treat
-  segments of the *realized* equity curve as out-of-sample folds. That's valid
-  while contestants don't fit anything during a run. If a contestant ever
-  optimizes in-run, its early folds become in-sample — use `walkforward.py`
-  with true refits instead.
+- **Fold scorers are out-of-sample for the algorithm, in-sample for you (M7).**
+  `worst_fold`/`consistency` chop the *realized* equity curve into segments.
+  This gotcha used to say that was valid "while contestants don't fit anything
+  during a run", which names the wrong risk twice over. The premise is already
+  false in the letter — `FollowTheLeader` picks a sub-strategy from trailing
+  P&L, `MomentumSelector` picks holdings from trailing returns — and the
+  mechanism is wrong too: both are *causal*, so fold `k`'s decisions use only
+  data before fold `k` and its return is uncontaminated. Adaptivity does not
+  break fold causality any more than an SMA does.
+  **What actually breaks it is the researcher.** Every fold shares
+  human-chosen parameters selected with knowledge of these exact scenarios. The
+  folds are out-of-sample with respect to the *algorithm's* information set and
+  fully in-sample with respect to the *analyst's*. Also note `worst_fold` has a
+  trivial optimum — an all-cash contestant scores exactly 0.0 and beats
+  anything with a losing fold. That is fine inside the gate, which pairs it
+  with a return check, and degenerate as a standalone arena/season ranking
+  metric. And `fold_returns` is *not* "the same idea as `walkforward`":
+  `walk_forward` re-runs the pipeline per fold with a warmup, this chops one
+  curve.
+- **The simulated cost/risk model is not the production one (M10).** Label this
+  when quoting any backtest number: no `adjustment=` is passed on the Alpaca
+  fetch, so cached bars are **raw, not dividend-adjusted** (understates every
+  fully-invested book — it makes the baseline *harder* to beat, so it never
+  rescues a candidate); `daily_loss_tripped` is referenced only in `engine.py`
+  and in **neither** simulation loop, so the circuit breaker that would halt a
+  paper account is switched off in every number used to decide promotion;
+  scenarios ship `slippage_bps: 1.0` with zero commission, which makes high
+  turnover nearly free; and `synthetic_ohlcv` sets `open(t) == close(t-1)`
+  *exactly*, so the decide-at-close/fill-at-open discipline costs a synthetic
+  strategy nothing while ~33% of real daily variance lives in that gap. The
+  synthetic gauntlet is structurally blind to signal-to-fill decay.
+- **Survivorship is handled; window selection is not (M11).** ETFs sidestep
+  membership bias, and the `universe:` screen is correctly labelled
+  survivorship-biased for historical use. What cannot be fixed in code: the
+  date span itself was chosen in 2026 knowing what happened in it. The
+  `real_xs_*` headers say so, and the sealed holdout is the only real
+  mitigation — which is why it must be run once, last.
 - **`arena run` writes the journal by default.** Every CLI tournament records
   attempts into `--db` (default `./arena.db`). Tests that invoke
   `main(["arena", "run", ...])` must pass `--db <tmp_path>` (or `--no-journal`)

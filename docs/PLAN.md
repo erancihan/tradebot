@@ -696,7 +696,14 @@ assume); the degeneracy assertion, mirror-pair identity, haven-costs-to-hold and
 canary bracket all enforced by test; `--seeds` defaults to 10 with median
 aggregation and an `UNSTABLE` verdict.
 
-**Stage 5 — Real scenario pack.** Needs paper credentials for one pull, then
+**Stage 5 — Real scenario pack. DONE 2026-07-26.** `real_xs_*` ships: twelve
+rule-chosen symbols, disjoint calendar-year windows, sealed holdout, 98–100%
+selector-active against the old pack's 0%. `xs_momentum_vt` FAILs it decisively
+(mean CAGR −1.30% vs 6.87%, worst-fold 0/3). Alpaca's free IEX history starts
+2020-07-27, so COVID and 2018Q4 are unavailable — the windows are what the data
+permits, and the headers say so. B4 landed first, as the plan required.
+
+**Stage 5 — original notes.** Needs paper credentials for one pull, then
 offline forever. ~1 day plus compute. Land B4 before the pull. Use **explicit**
 `--start`/`--end`. Write honesty headers covering IEX volume, raw un-adjusted
 bars, the after-the-fact window selection, and the inception-date exclusions.
