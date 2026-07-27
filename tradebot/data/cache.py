@@ -144,7 +144,13 @@ class BarCache:
         if pulled:
             # A manifest means these windows came from a provider, so they are
             # authoritative — including about the gaps between them.
-            covered = cached is not None and _spans(pulled, start, end)
+            if start is None and end is None:
+                # An unbounded read asks for "whatever is cached", not for proof
+                # that every date in history is present — which nothing bounded
+                # could ever satisfy.
+                covered = cached is not None and not cached.empty
+            else:
+                covered = cached is not None and _spans(pulled, start, end)
         else:
             covered = self._covers(cached, start, end)
 
@@ -158,7 +164,16 @@ class BarCache:
             fetched = fetcher(symbol, timeframe, start, end)
             cached = self._merge(cached, fetched)
             self.store(symbol, timeframe, cached)
-            self.record_coverage(symbol, timeframe, start, end)
+            # Never claim coverage wider than what the provider actually handed
+            # back. An empty response proves nothing about the window, and an
+            # unbounded request used to record an unbounded claim — after which
+            # `_spans` answered True for *every* later range and a window that
+            # was never downloaded came back as an empty frame instead of being
+            # re-fetched.
+            if fetched is not None and len(fetched):
+                lo = start if start is not None else _ts(fetched.index.min())
+                hi = end if end is not None else _ts(fetched.index.max())
+                self.record_coverage(symbol, timeframe, lo, hi)
 
         return self._slice(cached, start, end)
 

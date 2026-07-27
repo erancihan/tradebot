@@ -1,0 +1,40 @@
+# Real-data cross-sectional gauntlet — 2021, a broad bull with wide sector dispersion
+#
+# POOL CHOSEN BY RULE, NOT BY TASTE: the nine sector SPDRs that existed before
+# this span opens (XLB XLE XLF XLI XLK XLP XLU XLV XLY — a complete partition of
+# the S&P 500, so there is no discretion in the pick), plus TLT, GLD and SHY as
+# genuinely different factors. XLRE and XLC are excluded for INCEPTION DATE only
+# (2015-10 and 2018-06), not because of anything they did.
+#
+# Why this pool and not SPY/QQQ/IWM: those are one equity-beta factor with
+# 0.80-0.95 daily correlations, and top-2 of 3 made the selector a no-op (the
+# gate measured it at 0% selector-active). Sectors disperse 40-90pp a year, and
+# TLT/GLD are a haven whose haven-ness *fails* in 2022 and works elsewhere — so
+# a candidate cannot win merely by having access to bonds. buy_and_hold holds
+# all twelve, including the havens.
+#
+# HONESTY NOTES, none of which are fixable by code:
+#  - Alpaca's free IEX history begins 2020-07-27, so this pack cannot contain
+#    the COVID crash or 2018Q4. The windows are what the data permits.
+#  - Bars are RAW, not dividend-adjusted (no `adjustment=` is passed on the
+#    pull). That understates every fully-invested book, baseline included, by
+#    roughly the dividend yield. It makes the baseline HARDER to beat, so it
+#    does not rescue a candidate.
+#  - IEX volume is ~2% of consolidated. Irrelevant here (no volume screens).
+#  - WINDOW SELECTION: these boundaries are calendar years, chosen so they
+#    cannot be nudged toward a result. But the *span* was chosen in 2026 with
+#    full knowledge of what happened in it. That bias is not removable; the
+#    sealed holdout below is the mitigation.
+#  - `start` is set ~3 months (Oct 1) before the scored year so the ~61-bar
+#    warmup falls OUTSIDE the judged period. The gate re-bases both contestants
+#    to the first bar where the later one starts trading.
+#
+name: real_xs_2021
+source: alpaca
+symbols: [XLB, XLE, XLF, XLI, XLK, XLP, XLU, XLV, XLY, TLT, GLD, SHY]
+timeframe: 1day
+start: "2020-10-01"
+end: "2021-12-31"
+initial_cash: 10000
+slippage_bps: 1.0
+risk: {max_position_pct: 0.6, max_gross_exposure: 1.0, max_daily_loss_pct: 1.0}

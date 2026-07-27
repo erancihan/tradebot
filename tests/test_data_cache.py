@@ -136,6 +136,69 @@ def test_disjoint_pulls_stay_separate_until_the_gap_is_filled(tmp_path):
     assert len(cache.get("X", "1day", start="2023-01-05", end="2023-03-20")) > 0
 
 
+def test_unbounded_pull_records_only_what_came_back(tmp_path):
+    """An open-ended request must not claim every date that ever existed.
+
+    Regression: `record_coverage` stored the caller's bounds verbatim, so
+    `tradebot data pull` with no --start/--end wrote an unbounded window. After
+    that `_spans` answered True for every later range, and a window that was
+    never downloaded was served from disk as an empty frame instead of being
+    re-fetched or raising.
+    """
+    cache = BarCache(tmp_path)
+    calls = []
+
+    def fetch(symbol, timeframe, start, end):
+        calls.append(symbol)
+        return _calendar_frame("2023-01-01", "2023-03-31")
+
+    cache.get("Z", "1day", fetcher=fetch)              # no bounds at all
+    assert calls == ["Z"]
+
+    windows = cache.coverage("Z", "1day")
+    assert len(windows) == 1
+    lo, hi = windows[0]
+    assert lo.year == 2023 and hi.year == 2023        # bounded by what arrived
+
+    # A window outside the fetched span must NOT be served from disk.
+    with pytest.raises(RuntimeError):
+        cache.get("Z", "1day", start="2021-01-01", end="2021-06-30")
+
+
+def test_empty_fetch_is_not_recorded_as_coverage(tmp_path):
+    """A provider returning nothing proves nothing about the window."""
+    cache = BarCache(tmp_path)
+    cache.store("E", "1day", _calendar_frame("2023-01-01", "2023-01-31"))
+
+    def empty(symbol, timeframe, start, end):
+        return _calendar_frame("2023-01-01", "2023-01-01").iloc[:0]
+
+    cache.get("E", "1day", start="2024-01-01", end="2024-06-30", fetcher=empty)
+    assert cache.coverage("E", "1day") == []
+    with pytest.raises(RuntimeError):
+        cache.get("E", "1day", start="2024-01-01", end="2024-06-30")
+
+
+def test_an_explicit_end_is_recorded_as_asked(tmp_path):
+    """With an explicit `end`, record the ask — do NOT clamp to the last bar.
+
+    Deliberate, and the shipped manifests depend on it: `real_full_cycle` ends
+    2024-06-30, a Sunday whose last bar is the Friday before. Clamping `hi` to
+    the fetched maximum makes `_spans` reject that scenario's own declared
+    window, so the pack would demand a credentialed re-fetch and raise offline.
+    """
+    cache = BarCache(tmp_path)
+
+    def fetch(symbol, timeframe, start, end):
+        return _calendar_frame("2021-12-01", "2024-06-28")   # last bar is a Friday
+
+    cache.get("SPY", "1day", start="2021-12-01", end="2024-06-30", fetcher=fetch)
+    lo, hi = cache.coverage("SPY", "1day")[0]
+    assert str(hi.date()) == "2024-06-30"
+    # ...so the scenario replays offline, which is the whole point.
+    assert len(cache.get("SPY", "1day", start="2021-12-01", end="2024-06-30")) > 0
+
+
 def test_unreadable_manifest_degrades_to_fetching(tmp_path):
     cache = BarCache(tmp_path)
     cache.store("Q", "1day", _calendar_frame("2023-01-01", "2023-01-31"))

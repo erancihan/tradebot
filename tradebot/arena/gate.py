@@ -125,16 +125,26 @@ def _overlapping_spans(ok_rows: list[dict]) -> list[tuple[str, str]]:
     path counted several times (the real pack nests two windows inside a third),
     and only there does the mean double-count.
     """
+    import pandas as pd
+
     generated = (None, "synthetic", "factor")
     dated = [r for r in ok_rows
              if r.get("span") and r.get("source") not in generated]
     clashes = []
     for i, a in enumerate(dated):
-        lo_a, hi_a = a["span"]
+        lo_a, hi_a = (pd.Timestamp(t) for t in a["span"])
         for b in dated[i + 1:]:
-            lo_b, hi_b = b["span"]
+            lo_b, hi_b = (pd.Timestamp(t) for t in b["span"])
             shared = set(a.get("symbols") or ()) & set(b.get("symbols") or ())
-            if shared and lo_a <= hi_b and lo_b <= hi_a:
+            if not shared:
+                continue
+            overlap = (min(hi_a, hi_b) - max(lo_a, lo_b)).total_seconds()
+            shortest = min((hi_a - lo_a).total_seconds(),
+                           (hi_b - lo_b).total_seconds())
+            # Judge *material* overlap, not any touch. Adjacent calendar-year
+            # windows brush by a day or two at the boundary; that is not one
+            # price path counted twice, which is the thing worth warning about.
+            if shortest > 0 and overlap / shortest > 0.05:
                 clashes.append((a["scenario"], b["scenario"]))
     return clashes
 
@@ -302,12 +312,18 @@ def evaluate_gate(
         report.rows.append({
             "scenario": scenario_name, "ok": True,
             "warmup_bars": start,
+            # Span of the *scored* window, not the raw data window. Real
+            # scenarios extend their pull backward to cover warmup, so their
+            # data windows overlap by construction while the periods they are
+            # actually judged on do not — and it is the latter that would
+            # double-count.
+            "span": ((str(curve.index[start]), str(curve.index[-1]))
+                     if start < len(curve) else None),
             "cand_return": c["total"],
             # Length-normalized, so windows of different lengths are
             # commensurable — see the aggregation note in `_return_check`.
             "cand_cagr": c["cagr"],
             "base_cagr": b["cagr"],
-            "span": (str(curve.index[0]), str(curve.index[-1])) if len(curve) else None,
             "source": source, "symbols": symbols,
             "selector_active": _activity_for(scenario_obj),
             "cand_worst_fold": c["worst_fold"],

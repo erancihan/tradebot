@@ -40,8 +40,62 @@ MIRROR_PAIRS = [("xs_crash_haven", "xs_crash_nohaven"),
                 ("xs_vol_spike_down", "xs_vol_spike_up")]
 
 
+#: Real-data gauntlet. Needs one `tradebot data pull`; the cache is gitignored,
+#: so these skip rather than fail where it is absent (CI, a fresh clone).
+REAL_XS_SCENARIOS = ["real_xs_2021", "real_xs_2022", "real_xs_2023",
+                     "real_xs_2024_2025h1"]
+
+
 def _load(name: str) -> Scenario:
     return Scenario.from_yaml(SCENARIOS / f"{name}.yaml")
+
+
+def _load_real(name: str) -> Scenario:
+    scenario = _load(name)
+    try:
+        scenario.build_frames()
+    except Exception as exc:      # no cached bars in this checkout
+        pytest.skip(f"{name} needs cached bars (`tradebot data pull`): {exc}")
+    return scenario
+
+
+@pytest.mark.parametrize("name", REAL_XS_SCENARIOS)
+def test_real_scenario_is_not_degenerate_for_selection(name):
+    """The same check that fails on the old SPY/QQQ/IWM pack at 0%.
+
+    That pack is why this test exists: `top_k=2` over two or three correlated
+    equity-beta ETFs selects everything every bar, so months of verdicts were
+    produced by a gauntlet that could not see the mechanism it claimed to test.
+    """
+    frames = _load_real(name).build_frames()
+    assert len(frames) > 2, "pool too small for top-2 selection to mean anything"
+
+    momentum = MomentumSelector(lookback=60, skip=5, top_k=2)
+    low_vol = LowVolatilitySelector(window=30, top_k=2)
+    warmup = max(momentum.required_history, low_vol.required_history)
+    mom = momentum.membership(frames).iloc[warmup:]
+    lov = low_vol.membership(frames).iloc[warmup:]
+
+    assert int((mom != mom.shift(1)).any(axis=1).sum()) > 1, "membership never changes"
+    disagree = float((mom != lov).any(axis=1).mean())
+    assert disagree >= 0.20, (
+        f"{name}: two selectors agree on {1 - disagree:.0%} of live bars")
+
+
+def test_the_real_haven_is_not_unconditionally_a_haven():
+    """TLT must FAIL as a haven in 2022 and work elsewhere.
+
+    A pool whose haven always works is flattery: a candidate could win by
+    holding bonds rather than by timing anything. 2022 is in the pack precisely
+    because rates rose and bonds fell alongside equities.
+    """
+    def total(name, symbol):
+        frames = _load_real(name).build_frames()
+        close = frames[symbol]["close"]
+        return close.iloc[-1] / close.iloc[0] - 1.0
+
+    assert total("real_xs_2022", "TLT") < -0.15, "the haven did not fail in 2022"
+    assert total("real_xs_2023", "GLD") > 0.0, "no haven works anywhere in the pack"
 
 
 @pytest.mark.parametrize("name", XS_SCENARIOS)

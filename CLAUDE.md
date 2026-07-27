@@ -738,6 +738,19 @@ one is wrong. A quantity that reverses under four honest choices, on margins of
 0.4–1.5pp, is **not a measurement** — it is M4's point made concrete. Do not
 promote on it.
 
+**Confirmed on real bars too (2026-07-26).** The old SPY/QQQ/IWM pack is
+superseded by `real_xs_*`: twelve rule-chosen symbols (the nine sector SPDRs
+that predate the span — a complete S&P partition, so no discretion in the pick
+— plus TLT/GLD/SHY), disjoint calendar-year windows, and a sealed holdout.
+Measured: **98–100% selector-active** (the old pack scored 0%), sector
+dispersion of 40–113pp a year, and a haven that genuinely **fails** in 2022
+(TLT −33% alongside equities) while GLD works in 2023–25 — so no candidate can
+win merely by owning bonds. `xs_momentum_vt` over 2021/2022/2023: mean CAGR
+**−1.30% vs 6.87%**, worst-fold **0/3**. Decisive FAIL, on the first real-data
+gauntlet this project has had that can actually see cross-sectional selection.
+Alpaca's free IEX history starts 2020-07-27, so the pack cannot contain COVID
+or 2018Q4 — the windows are what the data permits.
+
 **The trustworthy verdict is the balanced factor library, and it is a decisive
 FAIL:** mean CAGR **2.03% vs 11.17%**, worst-fold 3/7, over seven scenarios
 that run 89–100% selector-active. `xs_momentum_vt` wins both crash scenarios
