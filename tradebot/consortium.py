@@ -205,14 +205,36 @@ class Consortium:
         self.targets: pd.DataFrame | None = None
         self.weights_frame: pd.DataFrame | None = None
         self.panel = None
+        self._fingerprint_seen = None
 
     @property
     def required_history(self) -> int:
         return max([1, self.voice.required_history,
                     *(getattr(m, "required_history", 1) for m in self.members)])
 
+    @staticmethod
+    def _fingerprint(aligned: dict[str, pd.DataFrame]):
+        """Identifies the frame set cheaply, without hashing every bar."""
+        symbols = tuple(sorted(aligned))
+        index = next((aligned[s].index for s in symbols if len(aligned[s])), None)
+        if index is None or not len(index):
+            return (symbols, 0, None, None)
+        return (symbols, len(index), index[0], index[-1])
+
     def prepare(self, aligned: dict[str, pd.DataFrame]) -> None:
         from .arena.panel import build_panel
+
+        # Idempotent for a given frame set. The consortium is its own signal and
+        # its own weighting, so it reaches the loop as two objects — the policy
+        # wrapper and the allocator — and both are offered the prepare hook.
+        # Rebuilding the panel for the second one would silently double the cost
+        # of the most expensive object in the system, which is exactly how this
+        # first blew its time budget on the factor library: 68s became 137s and
+        # every scenario came back TIMEOUT.
+        fingerprint = self._fingerprint(aligned)
+        if self.panel is not None and fingerprint == self._fingerprint_seen:
+            return
+        self._fingerprint_seen = fingerprint
 
         self.panel = build_panel(
             self.members, aligned, risk=self.risk,

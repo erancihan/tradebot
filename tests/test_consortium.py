@@ -287,3 +287,55 @@ def test_the_two_variants_differ_only_in_voice():
     # Same family, so the journal counts their attempts against one idea.
     families = {c.family for c in found if c.name.startswith("consortium")}
     assert families == {"consortium"}
+
+
+def test_a_component_filling_two_roles_is_prepared_once():
+    """The consortium is its own signal AND its own weighting, so it arrives at
+    `_prepare_components` twice. Preparing it twice silently doubles the cost of
+    the most expensive object in the system — which is how it first blew its
+    time budget on the factor library.
+    """
+    from tradebot.backtest import _prepare_components
+
+    class Counter:
+        def __init__(self):
+            self.calls = 0
+
+        def prepare(self, aligned):
+            self.calls += 1
+
+    both = Counter()
+    other = Counter()
+    _prepare_components({}, both, other, both, None, both)
+
+    assert both.calls == 1
+    assert other.calls == 1
+
+
+def test_the_consortium_prepares_once_per_simulation():
+    from tradebot.arena.adapters import simulation_args
+    from tradebot.arena.simulation import SimConfig, simulate
+    from tradebot.risk import RiskConfig, RiskManager
+
+    found, _ = discover([CONSORTIUM])
+    entry = [c for c in found if c.name == "consortium"][0]
+    policy, extra = simulation_args(entry)
+
+    # The consortium reaches the loop as TWO objects — the policy wrapper and
+    # the allocator — so identity dedup alone cannot save it. What must be
+    # counted is the expensive part: how many times the panel is actually built.
+    assert policy._consortium is extra["allocator"]
+
+    import tradebot.arena.panel as panel_mod
+
+    builds = []
+    original = panel_mod.build_panel
+    panel_mod.build_panel = lambda *a, **kw: (builds.append(1), original(*a, **kw))[1]
+    try:
+        simulate(policy, _frames(periods=40),
+                 RiskManager(RiskConfig(max_position_pct=0.95, max_daily_loss_pct=1.0)),
+                 SimConfig(initial_cash=10_000.0), **extra)
+    finally:
+        panel_mod.build_panel = original
+
+    assert len(builds) == 1

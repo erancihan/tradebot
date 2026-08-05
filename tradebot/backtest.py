@@ -71,10 +71,18 @@ def _prepare_components(aligned: dict, *components) -> None:
     owes the same guarantee** — precompute freely, but never let bar `t`'s
     answer depend on a bar after `t`. Both execution loops call this at the same
     point, right after alignment, so the two cannot drift.
+
+    Deduplicated by identity: one object may legitimately fill two roles at once
+    (the consortium is its own signal *and* its own weighting, so it arrives as
+    both the policy and the allocator). Preparing it twice would silently double
+    the cost of the most expensive thing in the system — which is exactly how it
+    first blew its time budget.
     """
+    seen: set[int] = set()
     for component in components:
-        if component is None:
+        if component is None or id(component) in seen:
             continue
+        seen.add(id(component))
         prepare = getattr(component, "prepare", None)
         if callable(prepare):
             prepare(aligned)

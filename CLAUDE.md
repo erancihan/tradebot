@@ -559,11 +559,23 @@ Note `frontend/node_modules` is not installed locally by default, so
   of its members* by construction (~17s for 250 bars × 2 symbols with the
   current field, dominated by the metas), so putting it in `algos/` would slow
   every ordinary tournament and blow the default 10s budget. Run it with
-  `--algos ./algos ./algos/consortium --time-budget 120`. Do **not** trim the
-  roster to fit a budget — that is fitting to the harness, same rule as the
-  metas. Self-exclusion is guarded twice (the subdirectory, plus an
-  `is_consortium` marker attribute rather than a name match) because a
-  consortium that loads itself recurses until the process dies.
+  `--algos ./algos ./algos/consortium --time-budget 200`. Measured on one
+  factor scenario (8 symbols × 500 bars): **68.6s of panel**, of which
+  `meta_leader` is 23.9s and `meta_vote` 19.7s — two members are 64% of the
+  cost. Do **not** trim the roster to fit a budget: that is fitting to the
+  harness, the same rule as the metas. Self-exclusion is guarded twice (the
+  subdirectory, plus an `is_consortium` marker attribute rather than a name
+  match) because a consortium that loads itself recurses until the process dies.
+- **A component can fill two roles, and preparing it twice doubles the bill.**
+  The consortium is its own signal *and* its own weighting, so it reaches
+  `_prepare_components` as two objects — the policy wrapper and the allocator.
+  `Consortium.prepare` is therefore idempotent on a frame fingerprint, and
+  `_prepare_components` also dedupes by identity. This was not theoretical: the
+  first gauntlet run turned 68s into 137s and returned **TIMEOUT on every
+  scenario** at a 120s budget, which reads exactly like "the candidate is too
+  slow" rather than "the framework called it twice". Identity dedup alone does
+  **not** cover it — the two objects are genuinely different — so the guard has
+  to live on the expensive call.
 - **A consortium over a correlated roster is one strategy wearing many hats.**
   The current twelve members are mostly trend/mean-reversion variants over one
   equity-beta pool. Averaging correlated members reduces the noise in the
