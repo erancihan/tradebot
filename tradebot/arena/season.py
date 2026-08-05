@@ -80,6 +80,19 @@ class SeasonConfig:
     max_position_pct: float = 0.95
     slippage_bps: float = 1.0
     isolation: str = "thread"   # season recompute runs every tick; thread is light
+    #: Per-contestant wall-clock budget for each tick's recompute. Under
+    #: `thread` isolation this is a SOFT limit — the runner marks TIMEOUT but
+    #: cannot kill the thread, so an over-budget contestant leaks a busy daemon
+    #: thread *every tick* and the season slowly grinds to a halt. That is the
+    #: documented hazard behind "keep meta strategies out of long seasons".
+    #: Use `isolation="process"` to make it a hard kill.
+    time_budget_s: float = 10.0
+
+    @property
+    def hardened(self) -> bool:
+        """Sandboxing only applies to the process runner (a thread shares the
+        interpreter, so it cannot be given its own filesystem or netns)."""
+        return self.isolation != "thread"
 
     def scenario(self) -> Scenario:
         return Scenario(
@@ -92,7 +105,7 @@ class SeasonConfig:
         return json.dumps({
             "algo_paths": self.algo_paths, "initial_cash": self.initial_cash,
             "max_position_pct": self.max_position_pct, "slippage_bps": self.slippage_bps,
-            "isolation": self.isolation,
+            "isolation": self.isolation, "time_budget_s": self.time_budget_s,
         })
 
 
@@ -129,6 +142,7 @@ class SeasonStore:
             max_position_pct=extra.get("max_position_pct", 0.95),
             slippage_bps=extra.get("slippage_bps", 1.0),
             isolation=extra.get("isolation", "thread"),
+            time_budget_s=extra.get("time_budget_s", 10.0),
         )
 
     def list_seasons(self) -> list[dict]:
@@ -265,7 +279,11 @@ class Season:
         outcome = run_tournament(
             self.config.algo_paths, self.config.scenario(),
             metric=self.config.metric, isolation=self.config.isolation, frames=frames,
-            harden=False,  # season uses fast thread isolation, which can't sandbox
+            time_budget_s=self.config.time_budget_s,
+            # Derived, never hardcoded: a season configured for process
+            # isolation must still get its sandbox. Hardcoding False here meant
+            # `isolation="process"` silently ran unsandboxed.
+            harden=self.config.hardened,
         )
         standings = _standings_from_leaderboard(outcome.leaderboard)
         self.store.record_standings(self.id, step, ts, standings)

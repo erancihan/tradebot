@@ -391,6 +391,19 @@ Note `frontend/node_modules` is not installed locally by default, so
   *every tick* until the loop crawls. Keep season fields to affordable
   contestants (or short replays); the 10-min season replay timeout seen on
   2026-07-04 was exactly this with `meta_leader` in the field.
+  **Fixed 2026-08-05: `season create --isolation process --time-budget N`.**
+  `SeasonConfig` now carries `time_budget_s` and passes it to the recompute, so
+  process isolation makes the budget a **hard kill** and the leak is
+  structurally impossible — verified by running the full 12-contestant field
+  (metas included) as a process-isolated season. Thread stays the default
+  because it is much faster and correct for affordable fields; its budget is
+  still soft, and that is now stated on the flag itself rather than only here.
+  The same change fixed a silent bug: `harden` was hardcoded `False` with a
+  comment about thread isolation, so a season created with `--isolation
+  process` ran **unsandboxed** while the tournament printed a clean `ok` —
+  the same failure shape as B14. Hardening is now *derived*
+  (`SeasonConfig.hardened`), which is the only way it cannot drift from the
+  isolation mode.
 - **Cache coverage is recorded, not inferred.** `BarCache` writes a
   `*.coverage.json` manifest beside each CSV listing the windows *requested*
   from a provider, and a request inside a pulled window is served from disk.
@@ -871,6 +884,21 @@ pack as a reality check on cost and calendar behaviour.**
 Both bounds are doing their job. The attempt counter climbs every time a
 gauntlet is re-run (`xs_momentum` is at 42 after this session's re-derivations),
 and that is working as intended — it is measuring exactly what it should.
+
+**But read the drawdown FAIL with its new context (2026-08-05).** The gate now
+prints the baseline's own deepest drawdown beside the candidate's, because
+three criteria are relative and this one is absolute — M5's incommensurability,
+previously invisible at the point of use. On `crash_recovery` the candidate
+fails at −36.38% while `buy_and_hold` takes **−52.91%** in the same scenario.
+The bound is therefore partly measuring the *regime*, not the candidate, and
+the gate now says so in the check's own detail line.
+**The criterion itself is unchanged, and changing it is the owner's call.** A
+relative bound would convert the recorded synthetic FAIL (short by 1.38pp), and
+`docs/PLAN.md`'s admissibility test rules out any change whose effect on the
+candidate in flight is known in advance — which it now is. M5 was admissible
+when it was written and stopped being admissible the moment the re-derived
+record was published. It must be pre-registered with its predicted effect
+stated up front, and shipped alone. Do not ship it as part of other work.
 
 **Live-execution backlog — DONE 2026-08-05** (owner ask: "complete the
 roadmap"). The three locked Spec 4 designs in `docs/DESIGN-HANDOFF.md` shipped

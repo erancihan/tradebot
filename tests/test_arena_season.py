@@ -241,3 +241,44 @@ def test_cli_season_create_run_standings(tmp_path, capsys):
 
     assert main(["arena", "season", "list", "--db", db]) == 0
     assert "wk" in capsys.readouterr().out
+
+
+def test_the_recompute_budget_and_sandbox_survive_a_restart(tmp_path):
+    """A season's isolation settings are part of its durable config.
+
+    They used to be half-durable: `isolation` round-tripped but the recompute
+    hardcoded `harden=False`, so a season created with process isolation ran
+    unsandboxed while the tournament reported a clean `ok`. Hardening is now
+    derived from the isolation mode, which is the only way the two cannot drift.
+    """
+    with SeasonStore(tmp_path / "s.db") as store:
+        sid = store.create_season(
+            _config(isolation="process", time_budget_s=3.5))
+        reloaded = store.get_config(sid)
+
+    assert reloaded.isolation == "process"
+    assert reloaded.time_budget_s == 3.5
+    assert reloaded.hardened is True
+
+
+def test_a_thread_isolated_season_is_never_reported_as_sandboxed():
+    """A thread shares the interpreter: it cannot get its own fs or netns."""
+    assert _config(isolation="thread").hardened is False
+    assert _config().hardened is False               # thread is the default
+
+
+def test_an_older_season_row_still_loads(tmp_path):
+    """Config JSON predating the budget field must not break on reload."""
+    import json
+
+    with SeasonStore(tmp_path / "s.db") as store:
+        sid = store.create_season(_config())
+        store._conn.execute(
+            "UPDATE seasons SET config_json = ? WHERE id = ?",
+            (json.dumps({"algo_paths": ["x"]}), sid),
+        )
+        store._conn.commit()
+        old = store.get_config(sid)
+
+    assert old.time_budget_s == 10.0
+    assert old.isolation == "thread"

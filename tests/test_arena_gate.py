@@ -153,3 +153,38 @@ def test_cli_gate_journals_only_the_candidate_family(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "holder" in out
     assert "sitter" not in out          # the baseline is a reference, not an attempt
+
+
+def test_the_drawdown_check_shows_the_frame_it_is_judging_in():
+    """M5 (diagnostic half): three criteria are relative, this one is absolute.
+
+    When the baseline itself breaches the bound, an absolute limit is partly
+    measuring the *scenario* rather than the candidate. The check has to say so
+    at the point of use, or a FAIL reads as "too risky" when it sometimes means
+    "this regime is". The criterion is deliberately unchanged — only what it
+    reports.
+    """
+    # Candidate crashes hard; baseline crashes HARDER.
+    worse = (list(np.linspace(100, 150, 21))
+             + list(np.linspace(150, 30, 11))[1:]
+             + list(np.linspace(30, 35, 11))[1:])
+    both_deep = [("crash", _outcome(_entry("cand", CRASHY), _entry("base", worse)))]
+
+    report = evaluate_gate("cand", "base", both_deep, max_drawdown_limit=0.35)
+    dd = [c for c in report.checks if "drawdown" in c.label][0]
+
+    assert not dd.passed                      # the criterion still bites
+    assert "baseline" in dd.detail            # ...but the frame is visible
+    assert "measuring the regime" in dd.detail
+
+
+def test_the_regime_note_stays_quiet_when_the_baseline_is_inside_the_bound():
+    """No note when the comparison is not confounded — signal, not decoration."""
+    shallow = [("bull", _outcome(_entry("cand", CRASHY), _entry("base", FLAT)))]
+
+    report = evaluate_gate("cand", "base", shallow, max_drawdown_limit=0.35)
+    dd = [c for c in report.checks if "drawdown" in c.label][0]
+
+    assert not dd.passed
+    assert "baseline" in dd.detail
+    assert "measuring the regime" not in dd.detail

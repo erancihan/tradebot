@@ -115,19 +115,26 @@ persisted per tick, resumable). A live tick against Alpaca then accumulated
 real bars — the proof that mattered, because before B2 the live feed silently
 accumulated **zero**: it marked a bar seen the moment it was offered, and the
 daemon then discarded it as still-forming, so it was never offered again once
-it settled. Keep `meta_leader`/`meta_vote` out of long seasons per the hazard
-below; the validation run used the affordable contestants only.
+it settled. The validation run used the affordable contestants only, because at
+the time the thread-pile-up hazard below was still open; it is now closed —
+`--isolation process --time-budget N` makes the budget a hard kill, so the full
+field can run.
 
 ## Spec 3 — original notes (after keys)
 
 - `arena season create --name paper1 --symbols SPY QQQ IWM --algos ./algos
   --score worst_fold` then `arena season run <id>` (daemon: market-hours
   gated; `--simulate` dry-runs the daemon offline).
-- KNOWN HAZARD (CLAUDE.md gotcha): season recompute is thread-isolation;
-  over-budget contestants leak busy threads per tick. Keep `meta_leader` /
-  `meta_vote` OUT of long seasons until someone implements a per-season
-  time-budget or process-isolated recompute (acceptable follow-up work:
-  plumb `isolation=` through `SeasonConfig`).
+- ~~KNOWN HAZARD: season recompute is thread-isolation; over-budget
+  contestants leak busy threads per tick.~~ **CLOSED 2026-08-05.** The
+  follow-up named here is done: `SeasonConfig` carries `isolation` *and*
+  `time_budget_s`, surfaced as `season create --isolation process
+  --time-budget N`. Process isolation makes the budget a hard kill, so the leak
+  is structurally impossible and `meta_leader`/`meta_vote` can run in a long
+  season. Verified on the full 12-contestant field. Thread remains the default
+  (faster, correct for affordable fields) with its soft budget documented on
+  the flag. Closing this also fixed a silent bug — `harden=False` was hardcoded,
+  so a process-isolated season ran unsandboxed while reporting `ok`.
 
 ## Spec 4 — backlog
 

@@ -513,6 +513,22 @@ outcome. Several make passing **harder**; that is the test of good faith.
   baseline itself takes −48%. That combination is close to unsatisfiable for any
   long-only book. **Pre-register separately, ship alone, never alongside a
   library change or a candidate run.**
+  **PARTLY DONE 2026-08-05 — diagnostic half only, criterion deliberately
+  unchanged.** The gate now prints the baseline's own deepest drawdown beside
+  the candidate's and names the mismatch when the baseline also breaches the
+  limit. Measured on the spot: `crash_recovery` fails the candidate at −36.38%
+  while `buy_and_hold` takes **−52.91%** in the same scenario — so on that
+  scenario the absolute bound is substantially measuring the regime, exactly as
+  M5 predicted, and the FAIL reads very differently once you can see it.
+  **The criterion half is NOT shipped, and should not be shipped by whoever
+  reads this next without an explicit owner decision.** Making the bound
+  relative would convert the recorded synthetic FAIL (candidate short by
+  1.38pp), and this document's own admissibility test disqualifies any change
+  whose effect on the candidate in flight is known in advance — which it now
+  is, and cannot be un-known. M5 was admissible when written and stopped being
+  admissible the moment the re-derived record was published. That is not a
+  reason to abandon it; it is a reason it must be pre-registered by the owner,
+  with the predicted effect stated up front, and shipped alone.
 - **M6 — `worst_fold` at a hardcoded `k=4` is an undeclared researcher degree of
   freedom.** The verdict is reportedly not stable to it. `min()` over a
   partition is an order statistic of a tiny dependent sample — maximally

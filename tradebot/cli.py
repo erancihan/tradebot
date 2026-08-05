@@ -677,7 +677,7 @@ def cmd_season_create(args: argparse.Namespace) -> int:
         name=args.name, symbols=args.symbols, timeframe=args.timeframe,
         metric=args.score, algo_paths=args.algos,
         initial_cash=args.cash, max_position_pct=args.max_position,
-        isolation=args.isolation,
+        isolation=args.isolation, time_budget_s=args.time_budget,
     )
     with SeasonStore(args.db) as store:
         season = Season.create(store, config)
@@ -986,7 +986,12 @@ def build_parser() -> argparse.ArgumentParser:
     sc.add_argument("--score", default="sharpe")
     sc.add_argument("--cash", type=float, default=10_000.0)
     sc.add_argument("--max-position", dest="max_position", type=float, default=0.95)
-    sc.add_argument("--isolation", choices=["process", "thread", "auto"], default="thread")
+    sc.add_argument("--isolation", choices=["process", "thread", "auto"], default="thread",
+                    help="thread (default) is light but its timeout is SOFT — an "
+                         "over-budget contestant leaks a busy thread every tick; "
+                         "process makes the budget a hard kill (and sandboxes)")
+    sc.add_argument("--time-budget", dest="time_budget", type=float, default=10.0,
+                    help="per-contestant seconds per tick (default 10)")
     sc.add_argument("--db", default="season.db")
     sc.set_defaults(func=cmd_season_create)
 

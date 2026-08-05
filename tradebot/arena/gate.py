@@ -330,6 +330,9 @@ def evaluate_gate(
             "cand_max_drawdown": c["drawdown"],
             "base_return": b["total"],
             "base_worst_fold": b["worst_fold"],
+            # Carried purely so the drawdown check can show what frame it is
+            # judging in — see the M5 note there. Never used as a criterion.
+            "base_max_drawdown": b["drawdown"],
             # Same comparison under other fold partitions, for the sensitivity
             # line. Computed here while both results are in hand.
             # Sensitivity is computed on the full curves: it asks whether the
@@ -384,10 +387,28 @@ def evaluate_gate(
             f"{wins}/{len(ok_rows)} scenarios (need {need}); "
             f"across k=3..8: {sensitivity}"))
 
+        # M5 (diagnostic half only). Three criteria are relative to the
+        # baseline; this one is absolute. In a scenario where the baseline
+        # itself breaches the limit, an absolute bound is measuring the
+        # *scenario*, not the candidate — and the combination is close to
+        # unsatisfiable for any long-only book. The frame mismatch used to be
+        # invisible here, so a FAIL read as "the candidate is too risky" when it
+        # sometimes meant "this regime is". The baseline's own drawdown is now
+        # printed beside it, and the mismatch is named when it bites.
+        #
+        # The criterion is deliberately UNCHANGED. Making the bound relative
+        # would convert a recorded FAIL (synthetic, by 1.38pp), and PLAN.md's
+        # admissibility test disqualifies any change whose effect on the
+        # candidate in flight is known in advance. That call is the owner's, and
+        # it must be pre-registered and shipped alone.
         deepest = min(r["cand_max_drawdown"] for r in ok_rows)
+        base_deepest = min(r["base_max_drawdown"] for r in ok_rows)
+        detail = f"deepest {deepest:.2%} (baseline {base_deepest:.2%})"
+        if base_deepest < -max_drawdown_limit:
+            detail += (f" — NOTE: the baseline also breaches -{max_drawdown_limit:.0%}, "
+                       "so this absolute bound is partly measuring the regime")
         report.checks.append(GateCheck(
             f"max drawdown never worse than -{max_drawdown_limit:.0%}",
-            deepest >= -max_drawdown_limit,
-            f"deepest {deepest:.2%}"))
+            deepest >= -max_drawdown_limit, detail))
 
     return report

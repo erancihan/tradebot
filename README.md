@@ -461,8 +461,15 @@ tradebot run --config my.yaml --replay
 
 # 5. paper: the real-time loop and/or a live paper season
 tradebot run --config my.yaml
-tradebot arena season create --name paper1 --symbols ... --algos ./algos
+tradebot arena season create --name paper1 --symbols ... --algos ./algos \
+    --isolation process --time-budget 10
 ```
+
+For a season you intend to leave running, prefer `--isolation process`. The
+default `thread` runner is faster but its time budget is **soft** — it can flag
+an over-budget contestant but cannot kill it, so a slow algo leaks a busy thread
+every tick until the season crawls. Process isolation makes the budget a hard
+kill (and sandboxes each contestant).
 
 The gate checks four things: the candidate completes every scenario, beats
 the baseline's mean return net of costs, is at least as robust (`worst_fold`)
