@@ -219,7 +219,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     engine = Engine(settings, broker, data, strategy, risk, storage,
                     allocator=settings.build_allocator(),
                     selector=settings.build_selector(),
-                    overlays=settings.build_overlays())
+                    overlays=settings.build_overlays(),
+                    notifier=settings.build_notifier())
 
     mode = "LIVE (real money)" if settings.is_live else "paper"
     print(f"Running in {mode} mode on {settings.symbols} with {strategy.name}.")
@@ -284,6 +285,7 @@ def _run_dry(settings, args: argparse.Namespace) -> int:
         allocator=settings.build_allocator(),
         selector=selector,
         overlays=settings.build_overlays(),
+        notifier=settings.build_notifier(),
     )
 
     src = "replay" if replay else "live data"

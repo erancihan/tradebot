@@ -26,8 +26,11 @@ Status: feature-complete for the core vision **including the portfolio stack**
 arc's tooling is COMPLETE** (regime scenario library + robustness scorers +
 classic roster + experiment journal + cross-sectional portfolio contestants +
 meta strategies + promotion pass gate; no contestant has passed the gate yet —
-see Roadmap arc status). **~260 tests, all offline & green** (web tests skip
-without fastapi); frontend has a strict `tsc` gate.
+see Roadmap arc status). The live-execution backlog (bracket exits, websocket
+streaming, notifications) shipped 2026-08-05, so **`docs/DESIGN-HANDOFF.md` has
+no outstanding specs left**. **316 tests, all offline & green** (web tests skip
+without fastapi; the Alpaca bracket-mapping test skips without the `[live]`
+extra); frontend has a strict `tsc` gate.
 
 > **⚠ 2026-07-25 — the research record is under retraction.** A full audit found
 > a look-ahead in the *sizing* path of both execution loops: they marked the
@@ -66,7 +69,8 @@ Keep these in sync when workflows or invariants change.
 │   │                         #   donchian_breakout, macd_trend, bollinger_reversion,
 │   │                         #   meta.py (follow_leader bandit + ensemble_vote)
 │   ├── indicators.py         # pure pandas: sma/ema/rsi/macd/bollinger/rolling_volatility/crossover
-│   ├── risk.py               # RiskManager + RiskConfig (sizing, allocate(), caps, band, daily-loss)
+│   ├── risk.py               # RiskManager + RiskConfig (sizing, allocate(), caps, band,
+│   │                         #   daily-loss, bracket_prices)
 │   ├── allocation.py         # Allocator ABC + equal/inverse_vol/explicit + registry
 │   ├── selection.py          # Selector/RankedSelector ABCs + momentum (reverse=reversal)
 │   │                         #   + low_vol top-K w/ hysteresis + regime_switch
@@ -76,9 +80,13 @@ Keep these in sync when workflows or invariants change.
 │   ├── walkforward.py        # fold-based out-of-sample evaluation (backtest --walk-forward)
 │   ├── portfolio.py          # cost-basis + realised-PnL accounting (sim)
 │   ├── backtest.py           # Backtester + BacktestResult (metrics)
-│   ├── models.py             # Order/Fill/Position/Trade/Side, BAR_COLUMNS, utcnow
-│   ├── broker/               # Broker ABC, AlpacaBroker (lazy SDK), DryRunBroker
-│   ├── data/                 # synthetic, csv loader, ReplayData, AlpacaData, BarCache
+│   ├── models.py             # Order (incl. bracket prices)/Fill/Position/Trade/Side,
+│   │                         #   opens_exposure, BAR_COLUMNS, utcnow
+│   ├── notify.py             # Notifier protocol + Log/Null/Webhook/Multi (stdlib urllib)
+│   ├── broker/               # Broker ABC, AlpacaBroker (lazy SDK; bracket/OTO mapping),
+│   │                         #   DryRunBroker (simulates resting bracket legs)
+│   ├── data/                 # synthetic, csv loader, ReplayData, AlpacaData, BarCache,
+│   │                         #   stream.py (AlpacaStream websocket + FakeStream)
 │   ├── engine.py             # live/paper/dry-run rebalance loop
 │   ├── storage.py            # SQLite: orders + equity snapshots + bars (tradebot.db)
 │   ├── config.py             # Settings (YAML) + AlpacaCredentials (env) + live gate
@@ -154,11 +162,24 @@ componentised), `static/` (built, gitignored).
   is the only place weights become share quantities. Selectors (`selection.py`)
   only *gate* membership (force non-members flat); they never size or weight.
   The no-trade band lives in `RiskManager.material_delta` (full exits always
-  execute), shared by all three loops.
+  execute), shared by all three loops. Bracket levels are risk too:
+  `RiskManager.bracket_prices` turns the configured percentages into absolute
+  prices, and `models.opens_exposure` — shared by the engine and `DryRunBroker`
+  so they cannot disagree — decides what counts as an entry worth protecting.
 - **Backtest == live.** Backtester and live `Engine` share the same `Strategy` +
   `RiskManager`. The arena's stepped `simulation.simulate` must stay consistent
   with `Backtester` — guarded by `tests/test_arena_simulation.py`. If you touch
   either execution loop, keep that test green.
+  **One deliberate, documented exception: bracket exits** (`RiskConfig.
+  stop_loss_pct` / `take_profit_pct`). They are resting orders the *broker*
+  holds between passes; neither simulation loop models them, so a backtest of a
+  bracketed config shows the un-bracketed result. This divergence is intended —
+  modelling intrabar stop fills from daily OHLC would be inventing a fill path
+  the data cannot support (which is why `DryRunBroker` fills them
+  pessimistically: stop-before-target on the same bar, gap-through fills at the
+  open, target never better than its limit). Never quote a backtest as evidence
+  about a stop. Do not "fix" the divergence by adding brackets to the
+  Backtester.
 - **Import isolation.** The Alpaca SDK and `python-dotenv` are imported *lazily*
   (inside methods/functions), so the core works without them. The whole `web/`
   package must not be imported by the trading core. Keep these boundaries.
@@ -481,6 +502,34 @@ Note `frontend/node_modules` is not installed locally by default, so
   leading `required_history - 1` rows flat, which also covers the mirror case
   (`vol_window > lookback`). Masking a *leading run* keeps prefix-stability.
   Any future composed selector needs the same guard.
+- **A bracket protects BETWEEN passes; it does not veto a live signal.** After a
+  stop fires, the next `rebalance()` re-enters if the strategy still says long —
+  that is a rebalancing bot working correctly, not a bug, and
+  `test_a_forward_test_stops_out_and_books_the_loss` asserts exactly that
+  behaviour so nobody "fixes" it by accident. If you want a cooldown, that is a
+  *strategy* decision (emit flat), not a broker one. Two more properties worth
+  keeping: brackets ride only on fills that **add** risk (`models.opens_exposure`,
+  shared by the engine and `DryRunBroker` so they cannot drift), and
+  `DryRunBroker.check_brackets` is duck-typed rather than on the `Broker` ABC —
+  a real broker holds the resting legs itself, so only the simulator needs a
+  polling hook and the ABC stays four methods wide.
+- **Streaming is an arrival optimisation, not a second source of truth.**
+  `data/stream.py` pushes bars; `StreamSeasonFeed` buffers them back into the
+  season's pull-shaped `next()`. Bars remain the source of truth and the PK
+  dedup still backstops duplicates, so a streamed season and a polled season
+  accumulate the same history (asserted by
+  `test_a_streamed_season_accumulates_the_same_bars_as_a_replay`). The `Engine`
+  deliberately keeps polling — its loop is timer-driven by design and a socket
+  would only add a failure mode. `start(background=False)` runs a `FakeStream`
+  inline, which is what makes the tests deterministic without sleeps or joins.
+- **A notifier is an observer and can never break a trade.** Every `send` is
+  wrapped (`Engine._notify`) and `WebhookNotifier` swallows every URL/OS error,
+  because an unreachable endpoint halting the trade loop is exactly backwards.
+  `build_notifier` returns log **plus** webhook, never webhook-only: the log
+  line is the local audit trail and stays useful when the remote is down. The
+  webhook adapter is tested against a real loopback `http.server` — the offline
+  guard allows `127.0.0.1` exactly so adapters can be tested for real instead of
+  through a mock that would also pass if the code posted nothing.
 
 ## Roadmap
 
@@ -822,6 +871,21 @@ pack as a reality check on cost and calendar behaviour.**
 Both bounds are doing their job. The attempt counter climbs every time a
 gauntlet is re-run (`xs_momentum` is at 42 after this session's re-derivations),
 and that is working as intended — it is measuring exactly what it should.
+
+**Live-execution backlog — DONE 2026-08-05** (owner ask: "complete the
+roadmap"). The three locked Spec 4 designs in `docs/DESIGN-HANDOFF.md` shipped
+together; 4d stays deferred on its own rationale (threat model, not effort).
+- **4a bracket orders** — `RiskConfig.stop_loss_pct`/`take_profit_pct` →
+  `RiskManager.bracket_prices` → absolute prices on `Order`. `AlpacaBroker`
+  maps both legs to `order_class=bracket` and one leg to `oto`; `DryRunBroker`
+  simulates the resting legs from each bar's high/low so the whole feature is
+  offline-testable. Deliberate backtest divergence — see the invariant.
+- **4b websocket streaming** — `data/stream.py` (`AlpacaStream` lazy +
+  `FakeStream`) and `arena/season.py StreamSeasonFeed`. The season is the first
+  consumer; the `Engine` still polls, on purpose.
+- **4c notifications** — `notify.py` (`Notifier` protocol, `LogNotifier`
+  default, `WebhookNotifier` on stdlib urllib, `MultiNotifier`); `notify:`
+  config block; the engine emits `order`, `bracket_exit` and `halt` events.
 
 Deferred (decided, do not re-propose without a new ask):
 - **Container/gVisor containment** — the strongest, OS-level tier, for fully

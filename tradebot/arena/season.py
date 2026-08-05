@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 from contextlib import closing
 from dataclasses import dataclass, field
@@ -332,6 +333,50 @@ class AlpacaSeasonFeed:
                 continue  # already delivered this bar
             self._last_ts[symbol] = ts
             bar[symbol] = last
+        return bar or None
+
+
+class StreamSeasonFeed:
+    """Adapts a push-based bar stream (``data/stream.py``) to the feed protocol.
+
+    A season pulls one bar per symbol per tick; a stream pushes whenever the
+    provider sends. This buffers the difference: pushed bars queue per symbol
+    and ``next()`` drains one from each. Nothing is dropped and nothing is
+    reordered, so a season fed by a stream accumulates exactly what a polling
+    feed would have — the season's PK dedup still backstops duplicates.
+
+    ``start(background=False)`` runs the stream inline, which is what makes a
+    ``FakeStream`` deterministic in tests: it pushes every bar and returns
+    before a single ``next()`` is called. Live callers want the daemon thread.
+    """
+
+    def __init__(self, stream, symbols) -> None:
+        self._stream = stream
+        self._symbols = list(symbols)
+        self._pending: dict[str, list[pd.DataFrame]] = {s: [] for s in self._symbols}
+        self._lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+
+    def _on_bar(self, symbol: str, frame: pd.DataFrame) -> None:
+        with self._lock:
+            self._pending.setdefault(symbol, []).append(frame)
+
+    def start(self, background: bool = True) -> None:
+        if background:
+            self._thread = threading.Thread(
+                target=self._stream.run, args=(self._symbols, self._on_bar),
+                name="season-stream", daemon=True,
+            )
+            self._thread.start()
+        else:
+            self._stream.run(self._symbols, self._on_bar)
+
+    def stop(self) -> None:
+        self._stream.stop()
+
+    def next(self) -> dict[str, pd.DataFrame] | None:
+        with self._lock:
+            bar = {s: q.pop(0) for s, q in self._pending.items() if q}
         return bar or None
 
 

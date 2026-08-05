@@ -75,6 +75,9 @@ class Settings:
     #: applied to allocator weights in order. Requires an allocation scheme.
     overlays: list[dict[str, Any]] = field(default_factory=list)
     risk: RiskConfig = field(default_factory=RiskConfig)
+    #: Optional webhook for order/halt events (see tradebot.notify). None keeps
+    #: notifications log-only.
+    notify_webhook_url: str | None = None
     db_path: str = "tradebot.db"
     commission: float = 0.0
     slippage_bps: float = 1.0
@@ -132,6 +135,12 @@ class Settings:
 
         return build_universe(self.universe_name, self.universe_params)
 
+    def build_notifier(self):
+        """Instantiate the configured notifier (log-only unless a webhook is set)."""
+        from .notify import build_notifier
+
+        return build_notifier(self.notify_webhook_url)
+
     def build_overlays(self) -> list:
         """Instantiate the configured overlay chain (empty list when unset)."""
         if not self.overlays:
@@ -172,6 +181,7 @@ class Settings:
             universe_params=(raw.get("universe", {}) or {}).get("params", {}) or {},
             overlays=list(portfolio.get("overlays", []) or []),
             risk=RiskConfig(**risk_raw),
+            notify_webhook_url=(raw.get("notify", {}) or {}).get("webhook_url"),
             db_path=raw.get("db_path", "tradebot.db"),
             commission=float(raw.get("commission", 0.0)),
             slippage_bps=float(raw.get("slippage_bps", 1.0)),

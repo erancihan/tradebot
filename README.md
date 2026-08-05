@@ -83,9 +83,10 @@ accident. The design reflects that:
 | `tradebot/walkforward.py` | Walk-forward evaluation: per-fold out-of-sample metrics |
 | `tradebot/portfolio.py` | Cost-basis & realised-P&L accounting (backtest) |
 | `tradebot/backtest.py` | Event-driven backtester + performance metrics |
-| `tradebot/broker/` | `Broker` interface + Alpaca adapter (lazy SDK import) |
-| `tradebot/data/` | Alpaca history, synthetic generator, CSV loader |
+| `tradebot/broker/` | `Broker` interface + Alpaca adapter (lazy SDK import), bracket exits |
+| `tradebot/data/` | Alpaca history, synthetic generator, CSV loader, websocket stream |
 | `tradebot/engine.py` | Live/paper rebalance loop |
+| `tradebot/notify.py` | Fill / circuit-breaker notifications (log + optional webhook) |
 | `tradebot/storage.py` | SQLite persistence of orders + equity |
 | `tradebot/config.py` | YAML config + env secrets + live-trading gate |
 | `tradebot/cli.py` | `demo` / `backtest` / `run` / `status` commands |
@@ -190,6 +191,47 @@ risk:
   max_gross_exposure: 1.0    # ≤100% of equity deployed at once
   max_daily_loss_pct: 0.03   # flatten + halt after a 3% daily drawdown
 ```
+
+### Bracket exits (stop-loss / take-profit)
+
+Two optional risk knobs attach exit legs to every order that *adds* exposure —
+opening or adding to a position, or flipping its direction. Reductions and exits
+never carry them:
+
+```yaml
+risk:
+  stop_loss_pct: 0.05        # exit 5% below the entry price
+  take_profit_pct: 0.15      # exit 15% above it   (either may be set alone)
+```
+
+Live, these become a real Alpaca bracket order (`oto` when only one leg is set),
+so the broker holds the legs even if the bot is offline. In a dry-run they are
+simulated from each bar's high/low, pessimistically: on a bar that touches both
+levels the **stop** wins, a gap through the stop fills at the **open** (a stop is
+a trigger, not a guaranteed price), and a target never fills better than its
+limit.
+
+Two things to be clear about:
+
+- **Backtests do not model brackets.** Neither the backtester nor the arena
+  simulates resting orders, so a backtest of a bracketed config shows the
+  un-bracketed result. Never quote a backtest as evidence about a stop.
+- **A bracket protects between rebalances, not against your own signal.** If the
+  strategy still says long after a stop fires, the next pass buys back in. If you
+  want it to stay out, that belongs in the strategy.
+
+### Notifications
+
+Order fills, bracket exits and circuit-breaker halts are always logged. Point
+them at a webhook to get them as JSON too (stdlib `urllib` — no new dependency):
+
+```yaml
+notify:
+  webhook_url: https://hooks.example.com/tradebot
+```
+
+Delivery failures are logged and swallowed. An unreachable endpoint slows a pass
+by at most the 5s timeout; it never halts trading.
 
 ## Portfolio: selection + allocation
 
@@ -518,16 +560,26 @@ make test     # ~260 tests, fully offline
 
 ## Roadmap / ideas
 
-The FastAPI dashboard listed here as an idea has shipped — see "Web dashboard"
-above. Remaining backlog, with locked designs in `docs/DESIGN-HANDOFF.md`:
+**The backlog is empty as of 2026-08-05.** Everything once listed here has
+shipped: the FastAPI dashboard (see "Web dashboard"), and the three
+live-execution items below.
 
-- Bracket / stop-loss / take-profit order types
-- Telegram or email notifications on fills and circuit-breaker trips
-- Streaming data via Alpaca websockets instead of polling
+- ✅ Bracket / stop-loss / take-profit order types — `risk.stop_loss_pct` /
+  `take_profit_pct`; see "Bracket exits" above.
+- ✅ Notifications on fills and circuit-breaker trips — the `notify:` block.
+- ✅ Streaming data via Alpaca websockets — `tradebot/data/stream.py`, consumed
+  by the arena season.
 
-> **Note (2026-07-25):** a full audit found a look-ahead in the sizing path of
-> both backtest loops, plus 15 other defects. Backtest and arena numbers are
-> under retraction pending re-derivation. Scope and staged plan: `docs/PLAN.md`.
+One item is deferred on purpose: **container/gVisor isolation** for arena
+contestants. Contestant code is human-reviewed before it runs, so the existing
+`--harden` (no disk writes + network namespace) and `--seccomp` tiers match the
+threat model. Rationale and the implementation seam are in `CLAUDE.md`.
+
+> **Note (2026-07-25, resolved):** a full audit found a look-ahead in the sizing
+> path of both backtest loops, plus 15 other defects. The engine is fixed and
+> the research record re-derived — the corrected record is in `CLAUDE.md`, and
+> it still shows **no contestant passing the promotion gate**. Scope and staged
+> plan: `docs/PLAN.md`.
 
 ## Disclaimer
 

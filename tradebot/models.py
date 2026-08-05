@@ -58,6 +58,12 @@ class Order:
     time_in_force: TimeInForce = TimeInForce.DAY
     limit_price: float | None = None
     client_order_id: str | None = None
+    #: Bracket exit levels as *absolute prices*, not offsets — the engine
+    #: computes them from the entry price and RiskConfig at submit time, so the
+    #: broker adapter never has to know how they were derived. Either leg may be
+    #: None (one-sided bracket).
+    stop_loss: float | None = None
+    take_profit: float | None = None
     created_at: datetime = field(default_factory=utcnow)
 
     def __post_init__(self) -> None:
@@ -65,6 +71,27 @@ class Order:
             raise ValueError(f"Order qty must be positive, got {self.qty}")
         if self.type is OrderType.LIMIT and self.limit_price is None:
             raise ValueError("LIMIT order requires a limit_price")
+        for name in ("stop_loss", "take_profit"):
+            price = getattr(self, name)
+            if price is not None and price <= 0:
+                raise ValueError(f"Order {name} must be a positive price, got {price}")
+
+    @property
+    def has_bracket(self) -> bool:
+        return self.stop_loss is not None or self.take_profit is not None
+
+
+def opens_exposure(current: float, delta: float) -> bool:
+    """True when a fill *adds* risk: it grows the position or flips its sign.
+
+    The execution seam for bracket exits. Shared by the engine (which decides
+    what to attach) and the dry-run broker (which decides what to keep resting)
+    so the two can never disagree about what counts as an entry.
+    """
+    after = current + delta
+    if abs(after) < 1e-9:
+        return False
+    return abs(after) > abs(current) or after * current < 0
 
 
 @dataclass(frozen=True)

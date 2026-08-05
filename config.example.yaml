@@ -124,3 +124,17 @@ risk:
   rebalance_band_pct: 0.0     # no-trade band: skip drift trades smaller than
                               # this fraction of equity (exits always execute);
                               # try 0.01-0.02 with an allocator to cut churn
+  # Bracket exits attached to entries, as fractions of the entry price. Both are
+  # optional; either can be set alone. LIVE-EXECUTION ONLY — the backtester does
+  # not model them, so a backtest will not show their effect. A bracket protects
+  # BETWEEN rebalance passes: if the signal is still long after a stop fires,
+  # the next pass re-enters.
+  # stop_loss_pct: 0.05       # exit 5% below the entry price
+  # take_profit_pct: 0.15     # exit 15% above it
+
+# --- Notifications ------------------------------------------------------------
+# Order fills and circuit-breaker halts are always written to the log. Set a
+# webhook to also POST them as JSON (stdlib urllib; no new dependency). Delivery
+# failures are logged and swallowed — an unreachable endpoint never halts trading.
+# notify:
+#   webhook_url: https://hooks.example.com/tradebot

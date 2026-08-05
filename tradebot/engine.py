@@ -20,7 +20,8 @@ from dataclasses import dataclass
 
 from .broker.base import Broker
 from .config import Settings
-from .models import Order, Side
+from .models import Order, Side, opens_exposure
+from .notify import LogNotifier
 from .risk import RiskManager
 from .storage import Storage
 from .strategies.base import Strategy
@@ -52,6 +53,7 @@ class Engine:
         allocator=None,              # optional tradebot.allocation.Allocator
         selector=None,               # optional tradebot.selection.Selector
         overlays=None,               # optional list of tradebot.overlays.Overlay
+        notifier=None,               # optional tradebot.notify.Notifier
     ) -> None:
         # The live gate is skipped for dry-runs (no real broker can be reached).
         if enforce_live_ack:
@@ -67,6 +69,7 @@ class Engine:
         self.allocator = allocator
         self.selector = selector
         self.overlays = list(overlays or [])
+        self.notifier = notifier or LogNotifier()
         # Label used for logs and storage tagging (e.g. "dry_run").
         self._mode_label = mode_label or settings.mode
         self._session_start_equity: float | None = None
@@ -101,6 +104,35 @@ class Engine:
             out[sym] = stored if stored is not None and len(stored) >= len(window) else window
         return out
 
+    def _notify(self, event: dict) -> None:
+        """Emit an observability event. A notifier can never break a trade pass."""
+        try:
+            self.notifier.send({"mode": self.mode, **event})
+        except Exception:
+            log.exception("Notifier failed for event %s", event.get("type"))
+
+    def _check_brackets(self) -> None:
+        """Let a simulating broker fire its resting stops/targets for this bar.
+
+        Duck-typed on purpose: a real broker holds the bracket legs itself and
+        exposes no such hook, so this is a no-op live and the `Broker` ABC stays
+        as small as it was.
+        """
+        check = getattr(self.broker, "check_brackets", None)
+        if check is None:
+            return
+        try:
+            fills = check() or []
+        except Exception:
+            log.exception("Bracket check failed; continuing the pass")
+            return
+        for fill in fills:
+            self._notify({
+                "type": "bracket_exit", "symbol": fill.symbol,
+                "qty": fill.qty, "price": fill.price,
+                "ts": fill.timestamp.isoformat(),
+            })
+
     def _lookback_days(self) -> int:
         # Ensure enough history for every history-hungry component (strategy,
         # selector, allocator, overlays) plus headroom for weekends/holidays.
@@ -129,14 +161,29 @@ class Engine:
             log.info("%s: target=%d, holding %.4f shares (no order)", symbol, target, current)
             return action
 
-        order = Order(symbol=symbol, qty=abs(delta), side=Side.from_delta(delta))
+        # Brackets ride on entries only: a reduction is already an exit, and
+        # attaching a stop to it would rest an exit against a position that is
+        # on its way out.
+        stop = target_price = None
+        if opens_exposure(current, delta):
+            stop, target_price = self.risk.bracket_prices(delta, price)
+
+        order = Order(symbol=symbol, qty=abs(delta), side=Side.from_delta(delta),
+                      stop_loss=stop, take_profit=target_price)
         action.submitted_id = self.broker.submit(order)
         log.info(
-            "%s: target=%d, %s %.4f @~%.2f (order %s)",
+            "%s: target=%d, %s %.4f @~%.2f (order %s)%s",
             symbol, target, order.side.value, abs(delta), price, action.submitted_id,
+            f" bracket stop={stop:.2f}" if stop else "",
         )
         if self.storage:
             self.storage.record_order(order, action.submitted_id, self.mode)
+        self._notify({
+            "type": "order", "symbol": symbol, "side": order.side.value,
+            "qty": abs(delta), "price": price, "target": target,
+            "order_id": action.submitted_id,
+            "stop_loss": stop, "take_profit": target_price,
+        })
         return action
 
     def rebalance(self) -> list[RebalanceAction]:
@@ -145,6 +192,10 @@ class Engine:
         if not self.broker.is_market_open():
             log.info("Market closed; skipping rebalance.")
             return []
+
+        # Before anything reads the account: a stop that fired on this bar has
+        # to be booked first, or sizing would be done against stale equity.
+        self._check_brackets()
 
         acct = self.broker.account()
         if self._session_start_equity is None:
@@ -159,6 +210,11 @@ class Engine:
                 self._session_start_equity, acct.equity,
             )
             self.broker.cancel_all()
+            self._notify({
+                "type": "halt", "reason": "daily_loss",
+                "start_equity": self._session_start_equity, "equity": acct.equity,
+                "limit_pct": self.risk.config.max_daily_loss_pct,
+            })
             return []
 
         # 1) Gather bars, latest target and price per symbol. A failing symbol

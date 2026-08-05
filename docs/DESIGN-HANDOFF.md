@@ -13,6 +13,11 @@ enough to implement without re-deriving decisions.
 > "next move" guidance in Spec 1 and Spec 2 below. The Spec 4 backlog designs
 > (4a bracket orders, 4b streaming, 4c notifications) are unaffected and still
 > apply as written.
+>
+> **Every spec in this document is now BUILT (4a/4b/4c shipped 2026-08-05),
+> except 4d, which is deferred by owner decision.** Nothing here is
+> outstanding work; it reads as the record of what was specified and what the
+> implementation decided. New work needs a new design.
 
 ## Working agreements (all models)
 
@@ -124,9 +129,28 @@ below; the validation run used the affordable contestants only.
   time-budget or process-isolated recompute (acceptable follow-up work:
   plumb `isolation=` through `SeasonConfig`).
 
-## Spec 4 — backlog (build only on explicit ask; designs locked here)
+## Spec 4 — backlog
 
-### 4a. Bracket / stop-loss / take-profit orders
+**4a, 4b and 4c are BUILT (2026-08-05)** on the owner ask "complete the
+roadmap". The designs below are kept verbatim as the record of what was
+specified; each carries a note on where it landed and where the implementation
+made a call the design left open. 4d remains deferred.
+
+### 4a. Bracket / stop-loss / take-profit orders — DONE 2026-08-05
+
+**Built as specified**, with three decisions the design left open:
+- `models.opens_exposure(current, delta)` is the shared entry predicate, so the
+  engine (what to attach) and `DryRunBroker` (what to keep resting) cannot
+  disagree. A **flip** counts as an entry; a reduction never does.
+- `DryRunBroker.check_brackets()` is duck-typed off the `Broker` ABC (the spec
+  said "no new methods" — a real broker holds the legs itself, so only the
+  simulator needs the hook). `Engine._check_brackets` calls it via `getattr`,
+  **before** it reads the account, so a stop that fired this bar is booked
+  before sizing.
+- One leg only maps to Alpaca `order_class=oto`, not `bracket` (Alpaca rejects a
+  one-sided bracket).
+- Documented, deliberate: a bracket protects *between* passes. If the signal is
+  still long after a stop fires, the next pass re-enters. Asserted by test.
 - Config: `risk: {stop_loss_pct, take_profit_pct}` (both optional, fractions
   of entry price). They live on `RiskConfig` — risk stays centralised;
   strategies still emit only {-1, 0, +1}.
@@ -145,7 +169,13 @@ below; the validation run used the affordable contestants only.
 - Tests: DryRunBroker trigger unit tests (gap-through-stop, same-bar both,
   no-trigger) + a replay dry-run showing a stopped-out position.
 
-### 4b. Websocket streaming data
+### 4b. Websocket streaming data — DONE 2026-08-05
+
+**Built as specified.** `StreamSeasonFeed` (in `season.py`, next to the other
+feeds) is the push→pull adapter rather than a `stream=` kwarg on the live feed:
+the feed protocol is `next()`, so buffering pushed bars per symbol and draining
+one each keeps the season loop untouched. `start(background=False)` runs the
+stream inline, which is what makes `FakeStream` deterministic in tests.
 - New `data/stream.py`: `AlpacaStream` wrapping `alpaca-py`'s
   `StockDataStream` (lazy import), interface
   `run(symbols, on_bar: Callable[[str, pd.DataFrame], None])` delivering
@@ -158,7 +188,12 @@ below; the validation run used the affordable contestants only.
 - Tests: FakeStream-driven season tick test; no `[live]` extra imports at
   module top (import isolation invariant).
 
-### 4c. Notifications (fills + circuit breaker)
+### 4c. Notifications (fills + circuit breaker) — DONE 2026-08-05
+
+**Built as specified**, plus a third event: `bracket_exit` (4a's synthetic
+exits). `build_notifier` returns log **and** webhook when a URL is set, never
+webhook-only — the log line is the local audit trail and survives a dead
+endpoint.
 - New `notify.py`: `Notifier` protocol with `send(event: dict) -> None`;
   `WebhookNotifier(url)` POSTing JSON via stdlib `urllib` (no new deps);
   `LogNotifier` default. Config block: `notify: {webhook_url: ...}`.

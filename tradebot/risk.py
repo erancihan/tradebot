@@ -31,6 +31,13 @@ class RiskConfig:
     #: equity (full exits always execute). 0 disables the band. Cuts the drip
     #: of tiny drift trades that eat returns via slippage.
     rebalance_band_pct: float = 0.0
+    #: Bracket exits attached to *entries*, as fractions of the entry price
+    #: (0.05 == 5% away). None disables that leg. These live here — not on a
+    #: strategy — because they are risk limits: strategies still emit only
+    #: {-1, 0, +1}. Live-execution concern; the backtester does not model them
+    #: (see the bracket note in CLAUDE.md's invariants).
+    stop_loss_pct: float | None = None
+    take_profit_pct: float | None = None
 
     def __post_init__(self) -> None:
         for name in ("max_position_pct", "max_gross_exposure", "max_daily_loss_pct",
@@ -38,6 +45,10 @@ class RiskConfig:
             v = getattr(self, name)
             if not 0 <= v <= 1:
                 raise ValueError(f"{name} must be in [0, 1], got {v}")
+        for name in ("stop_loss_pct", "take_profit_pct"):
+            v = getattr(self, name)
+            if v is not None and not 0 < v <= 1:
+                raise ValueError(f"{name} must be in (0, 1] when set, got {v}")
 
 
 class DailyLossLimitError(RuntimeError):
@@ -138,6 +149,26 @@ class RiskManager:
         if abs(delta) * price < band * equity:
             return 0.0
         return delta
+
+    def bracket_prices(
+        self, direction: float, entry_price: float
+    ) -> tuple[float | None, float | None]:
+        """Absolute ``(stop_loss, take_profit)`` prices for an entry.
+
+        ``direction`` is the *signed* quantity being added, so the levels flip
+        for a short: the stop sits above the entry and the target below. Returns
+        ``(None, None)`` when neither leg is configured.
+        """
+        cfg = self.config
+        if entry_price <= 0 or direction == 0:
+            return (None, None)
+        long = direction > 0
+        stop = target = None
+        if cfg.stop_loss_pct is not None:
+            stop = entry_price * (1 - cfg.stop_loss_pct) if long else entry_price * (1 + cfg.stop_loss_pct)
+        if cfg.take_profit_pct is not None:
+            target = entry_price * (1 + cfg.take_profit_pct) if long else entry_price * (1 - cfg.take_profit_pct)
+        return (stop, target)
 
     def daily_loss_tripped(self, start_equity: float, current_equity: float) -> bool:
         """True when today's drawdown breaches ``max_daily_loss_pct``."""
