@@ -220,3 +220,130 @@ the `ContainerRunner` seam are recorded in CLAUDE.md's Deferred section).
 
 Mean-variance/Markowitz, Black-Litterman, fundamentals screens, shorting by
 default, yfinance. See CLAUDE.md Roadmap.
+
+---
+
+## Spec 5 — the consortium (owner ask 2026-08-05)
+
+> **Locked design. Written before any code, per the working agreements.**
+
+### The problem it solves
+
+The pass gate is a **promotion** device: one candidate, binary verdict, all or
+nothing. Nothing has ever passed it, so nothing ships, and the project has been
+stuck there for two arcs. The owner's reframing: don't bet on one algorithm —
+run many side by side, show what each recommends, and let *voice* be continuous
+rather than membership binary. A member that loses money is not evicted; it is
+progressively silenced, and it can recover.
+
+That changes the gate's job rather than retiring it. The gate becomes an
+**admission** test (is this sane, complete, non-catastrophic?), which is exactly
+the split the M5 resolution just made explicit: absolute drawdown → admission,
+relative drawdown → competitiveness → voice.
+
+### What already exists (do not rebuild)
+
+`arena` runs N contestants side by side. `league`/`season` evolve their
+standings over wall-clock time, durably. `strategies/meta.py` already does
+adaptive weighting (`FollowTheLeader`) and agreement (`EnsembleVote`) — but over
+sub-*strategies*, not over arena contestants. The gap is one layer: nothing
+aggregates *contestant* recommendations into a single book with attribution.
+
+### Core definition
+
+A member's **recommendation** at bar `t` is the book it would hold if it were
+trading the whole account alone: a weight vector over symbols. This is a
+modelling choice and it must be stated wherever results are quoted — a member
+sized against the consortium's capital is not the same object as a member sized
+against a slice of it.
+
+Recommendations are extracted at the one point where all three contestant kinds
+converge: the `desired` quantities `simulate` hands to `RiskManager.allocate`.
+Vectorized, event and portfolio members therefore all produce the same shape,
+and cross-sectional members are first-class rather than a special case.
+
+- `simulation.simulate` gains an **optional `on_decision` callback**, invoked
+  once per bar with `(i, ts, targets, desired, equity, prices)`. It observes;
+  it must not influence the loop. Default `None` keeps every existing call
+  byte-identical, so the backtest/arena lockstep test is untouched.
+- `arena/panel.py` runs each member **once** through `simulate` with that hook
+  and returns a per-member `DataFrame` of weights (bars × symbols) plus the
+  member's own equity curve. Cost is `O(members × bars)`, not
+  `O(members × bars²)` — the trap `_TailBounded` was invented for.
+
+### Voice
+
+`tradebot/consortium.py`:
+
+- `EqualVoice` — every member `1/N`. **The default, and the baseline any other
+  scheme has to beat.** Equal weighting over a diverse panel is famously hard
+  to improve on.
+- `HedgeVoice(eta, floor)` — exponential weights: `w_m ∝ exp(eta · cumulative
+  log return of m up to t-1)`, renormalised, with a **floor** so no member is
+  ever fully silenced. The floor is the owner's requirement made literal:
+  failures stay in the mix and can recover. Hedge is chosen over greedy
+  leader-following because it carries a regret bound — it provably does no
+  worse than the best member in hindsight, up to a log term. `FollowTheLeader`
+  carries no such guarantee, and the canary evidence in CLAUDE.md says
+  trailing-return selection is a coin flip at these sample sizes.
+
+Voice at bar `t` uses member curves strictly before `t` — the same one-bar
+discipline as every other decision in the codebase, and prefix-stable by
+construction.
+
+### Combination
+
+```
+score(s, t) = Σ_m voice_m(t) · weight_m(s, t)      # signed
+target(s, t) = sign(score)                          # stays in {-1, 0, +1}
+raw_weight(s, t) = |score|                          # agreement == conviction
+```
+
+Weights are then normalised across symbols and handed to `RiskManager` exactly
+like an allocator's output. **Sizing stays with the RiskManager** — the
+consortium proposes, risk disposes. Disagreement shrinks a position rather than
+producing a coin flip, which is the property that makes the panel worth having.
+
+### Part A — the advisory panel (build first)
+
+Read-only. No capital at risk, no research risk.
+
+- `web/services/consortium_service.py` — builds the panel from stored bars +
+  loaded algos, via `arena/panel.py`.
+- `/api/consortium` (JSON), `/partials/consortium`, and a `/consortium` page:
+  every member, its current recommendation per symbol, its voice, its trailing
+  performance. Server-rendered partial reusing the existing `partialLoader` —
+  no new TS, same approach as the allocations card.
+- Layering stays `routes → services → repository`; the trading core still must
+  not import `web/`.
+
+### Part B — the consortium as a contestant (build second)
+
+`algos/consortium.py`, registered like any other contestant, so it must beat
+`buy_and_hold` on the same gauntlet as everything else. Being the framework
+earns it no exemption — that is the whole point of building it this way.
+
+- **Self-exclusion is mandatory and tested.** A consortium whose member paths
+  include `./algos` would load itself and recurse forever. Members are filtered
+  by a marker attribute, not by name matching.
+- The `algos/` head-count goes 12 → 13. Four test files assert on it (see the
+  CLAUDE.md gotcha); update all four.
+- Run it through the balanced factor library and the real `xs_*` pack, journal
+  the attempts, and record the verdict **whatever it says**.
+
+### Known limits — state these wherever results are quoted
+
+1. **The current roster is not diverse.** Twelve contestants, mostly
+   trend/reversion variants over one equity-beta pool. Averaging correlated
+   members reduces estimation noise, not systematic exposure. A consortium over
+   this roster is one strategy wearing twelve hats, and its measured benefit
+   will be correspondingly small. The binding next constraint is *new member
+   kinds*, not a better combiner. Do not report a consortium result without
+   this caveat.
+2. **"Any financial loss is a fail" is the consortium's objective, not a
+   per-member gate.** Applied literally per member, only cash survives and the
+   panel is empty. Losses set a member's voice; they never evict it.
+3. **Adaptive voice must earn its place.** `HedgeVoice` is itself a research
+   claim. Ship `EqualVoice` as the default and treat any adaptive scheme as a
+   contestant that has to beat it — the project's own methodology, applied to
+   the combiner.
