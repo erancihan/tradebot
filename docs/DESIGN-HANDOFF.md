@@ -14,10 +14,11 @@ enough to implement without re-deriving decisions.
 > (4a bracket orders, 4b streaming, 4c notifications) are unaffected and still
 > apply as written.
 >
-> **Every spec in this document is now BUILT (4a/4b/4c shipped 2026-08-05),
-> except 4d, which is deferred by owner decision.** Nothing here is
-> outstanding work; it reads as the record of what was specified and what the
-> implementation decided. New work needs a new design.
+> **Every spec in this document is now BUILT** — 4a/4b/4c and Spec 5 (the
+> consortium) shipped 2026-08-05 — **except 4d, which is deferred by owner
+> decision.** Nothing here is outstanding work; it reads as the record of what
+> was specified and what the implementation decided. New work needs a new
+> design.
 
 ## Working agreements (all models)
 
@@ -347,3 +348,36 @@ earns it no exemption — that is the whole point of building it this way.
    claim. Ship `EqualVoice` as the default and treat any adaptive scheme as a
    contestant that has to beat it — the project's own methodology, applied to
    the combiner.
+
+
+### Spec 5 — what the implementation decided
+
+Three departures from the design above, each for a reason found while building:
+
+1. **Placement: `algos/consortium/`, not `algos/`.** The spec said the field
+   head-count would go 12 → 13. It stayed at 12. A consortium costs the *sum of
+   its members* — measured at 68.6s for one factor scenario (8 symbols × 500
+   bars), of which `meta_leader` is 23.9s and `meta_vote` 19.7s — so adding it
+   to the field would slow every ordinary tournament and blow the default 10s
+   budget. It lives in a subdirectory the non-recursive glob never reaches,
+   exactly like `algos/canaries/`, and is opt-in via
+   `--algos ./algos ./algos/consortium --time-budget 200`. This also means the
+   four test files that assert on the head-count needed no changes.
+
+2. **No renormalisation of the consensus.** The spec said weights are
+   "normalised across symbols". They are not, because they do not need to be:
+   the blend is a *convex* combination of valid weight vectors, so it is already
+   one. Renormalising would have quietly re-levered a deliberately diluted book.
+
+3. **`prepare` must be idempotent, not merely deduplicated.** The consortium
+   fills two roles at once — its own signal and its own weighting — so it
+   reaches the prepare hook as two distinct objects (the policy wrapper and the
+   allocator). Identity dedup does not catch that. Left unguarded it built the
+   panel twice, turned 68s into 137s, and returned **TIMEOUT on every scenario**
+   at a 120s budget, which reads exactly like "the candidate is too slow". The
+   guard lives on the expensive call, keyed on a frame fingerprint.
+
+The `on_decision` seam turned out to be the load-bearing idea: reading a
+member's recommendation where the loop hands `desired` quantities to the
+RiskManager is what lets vectorized, event-driven and cross-sectional members be
+read identically, at one simulation pass each. Everything else follows from it.

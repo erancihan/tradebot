@@ -558,6 +558,15 @@ larger time budget.
 > diversified committee. What makes a consortium worth having is member
 > *diversity*, which is a roster problem rather than a combiner problem.
 
+**What it actually scored.** Over the balanced 7-scenario factor library the
+consortium **fails the gate**, and it fails the opposite way to everything
+before it: mean CAGR 3.37% vs `buy_and_hold`'s 9.17%, but a better worst fold in
+5 of 7 scenarios (at every fold count tried) and a shallower drawdown than the
+baseline in both crashes (−33.64% vs −45.93%, −40.56% vs −49.11%). It is the
+textbook diversification trade — smoother, safer, and it gives up return in
+roughly the proportion it takes out risk. That is exactly the signature the
+caveat above predicts, which is the point: it was written before the run.
+
 ## Dashboard (web UI)
 
 A FastAPI dashboard visualises everything the bot records: the equity curve,

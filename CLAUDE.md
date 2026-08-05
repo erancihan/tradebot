@@ -968,6 +968,49 @@ Verified: on `crash_recovery` the candidate fails the absolute bound at
 -36.38% while `buy_and_hold` takes **-52.91%**, and the new relative check
 *passes*. The verdict did not move. Nothing was converted.
 
+**Consortium arc (owner ask 2026-08-05): BUILT, and the first verdict is in.**
+The reframing was the owner's: stop betting on one algorithm, run a panel, make
+voice continuous rather than membership binary. That changes the gate's job —
+it becomes an *admission* test rather than a promotion decision — which is the
+same split the M5 resolution made explicit. Design locked in
+`docs/DESIGN-HANDOFF.md` Spec 5 before any code, with the implementation's
+three departures recorded underneath it.
+
+**Balanced factor library, 7 scenarios, equal voice, engine e2 — FAIL:**
+
+| criterion | result | |
+|---|---|---|
+| completes | 7/7 | ✓ |
+| mean CAGR | **3.37% vs 9.17%** | ✗ |
+| worst fold >= baseline | **5/7** (k=3..8: 4,4,4,5,5,4 — never fails) | ✓ |
+| drawdown vs −35% | −40.56% (baseline −49.11%) | ✗ |
+| drawdown vs baseline where confounded | 2/2 | ✓ |
+
+**This is the textbook diversification trade, and its failure mode is the exact
+opposite of `xs_momentum_vt`'s.** The consortium is more robust than the
+baseline on every robustness measure — it wins worst-fold at *every* fold count
+tried, and it beats `buy_and_hold`'s drawdown in both crash scenarios
+(−33.64% vs −45.93%, −40.56% vs −49.11%). It fails on **return**, and it fails
+there systematically: it dilutes the rallies (`xs_vol_spike_up` 76.60% vs
+136.64%, `xs_momentum_crash` 1.77% vs 20.90%). Averaging correlated members
+lowers variance and drawdown roughly in proportion to how much return it gives
+up. That is what averaging correlated things does.
+
+**So the pre-registered caveat was confirmed, not refuted.** It was written into
+the spec, the code and the dashboard page *before* the gauntlet ran: this roster
+is twelve trend/mean-reversion variants over one equity-beta pool, so a panel
+over it is one strategy wearing many hats. The measured result is precisely that
+signature. **The binding constraint is member diversity — a roster problem, not
+a combiner problem.** Do not respond to this FAIL by tuning voice; the next
+useful work is member kinds that are actually uncorrelated with the existing
+twelve.
+
+Worth noting where the M5 split earned its keep on its first real use: the
+absolute bound is the binding criterion here and it is *confounded* in the
+scenario that breaks it (baseline −49.11%), while the relative check passes 2/2.
+Without the split this would have read as "too risky" when the candidate was in
+fact the *safer* of the two books in every crash.
+
 **Live-execution backlog — DONE 2026-08-05** (owner ask: "complete the
 roadmap"). The three locked Spec 4 designs in `docs/DESIGN-HANDOFF.md` shipped
 together; 4d stays deferred on its own rationale (threat model, not effort).
