@@ -87,6 +87,7 @@ accident. The design reflects that:
 | `tradebot/data/` | Alpaca history, synthetic generator, CSV loader, websocket stream |
 | `tradebot/engine.py` | Live/paper rebalance loop |
 | `tradebot/notify.py` | Fill / circuit-breaker notifications (log + optional webhook) |
+| `tradebot/consortium.py` | Blend many algorithms into one book, weighted by voice |
 | `tradebot/storage.py` | SQLite persistence of orders + equity |
 | `tradebot/config.py` | YAML config + env secrets + live-trading gate |
 | `tradebot/cli.py` | `demo` / `backtest` / `run` / `status` commands |
@@ -517,6 +518,45 @@ and paper credentials; replaying afterwards needs neither.
 > install a syscall filter denying `execve`/`execveat`/`ptrace` (blocks
 > `subprocess`/`os.system`). The next tier up is OS-level container/gVisor
 > containment; see `CLAUDE.md`.
+
+## Consortium (many algorithms, one book)
+
+Rather than betting on a single algorithm, run a panel of them and blend what
+each *would* hold. A member that loses money is not thrown out — its **voice**
+shrinks, and it can earn it back. Membership is permanent; influence is earned.
+
+```bash
+tradebot-web                       # then open /consortium
+```
+
+The page shows every member's current book side by side, its voice, and the
+blended consensus. It is **advisory** — it places no orders.
+
+Two things make the blend behave sensibly:
+
+- **Agreement is conviction.** The consensus is the voice-weighted average of
+  the member books, so a unanimous panel takes a full position, a split panel
+  takes a small one, and an evenly divided panel stands aside. Disagreement
+  shrinks the trade instead of flipping a coin.
+- **Nobody is silenced permanently.** The `hedge` voice weights members by their
+  own realised P&L, with a floor, so a member that comes good again recovers.
+
+It also competes as an ordinary contestant, with no exemption from the gauntlet:
+
+```bash
+tradebot arena gate --algos ./algos ./algos/consortium     --candidate consortium --scenarios scenarios/xs_*.yaml --time-budget 120
+```
+
+It lives in `algos/consortium/` rather than `algos/` because it costs the *sum
+of its members* to run — keep it out of ordinary tournaments and give it a
+larger time budget.
+
+> **Read any consortium result with this caveat.** The shipped members are
+> mostly trend and mean-reversion variants over one equity-beta pool. Averaging
+> correlated members reduces the noise in the estimate, not the systematic
+> exposure — this panel is closer to one strategy wearing many hats than to a
+> diversified committee. What makes a consortium worth having is member
+> *diversity*, which is a roster problem rather than a combiner problem.
 
 ## Dashboard (web UI)
 

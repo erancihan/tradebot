@@ -14,6 +14,9 @@ from ..schemas import (
     ArenaRunDetail,
     Candle,
     CandleSeries,
+    ConsortiumMember,
+    ConsortiumPosition,
+    ConsortiumView,
     EquityPoint,
     EquitySeries,
     JobRequest,
@@ -27,7 +30,7 @@ from ..schemas import (
     SeasonStanding,
     SeasonSummary,
 )
-from ..services import account_service
+from ..services import account_service, consortium_service
 from ..services.jobs_service import VALID_KINDS
 
 router = APIRouter(prefix="/api")
@@ -75,6 +78,19 @@ def allocations(mode: str | None = None,
         weights=[AllocationRow(symbol=r["symbol"], weight=float(r["weight"]))
                  for r in w["weights"]],
         universe=u["symbols"], universe_ts=u["ts"],
+    )
+
+
+@router.get("/consortium", response_model=ConsortiumView)
+def consortium(voice: str = "equal",
+               repo: TradingRepository = Depends(get_trading_repo)):
+    """What every algorithm would hold right now, plus the blended book."""
+    p = consortium_service.panel(repo, voice_name=voice)
+    return ConsortiumView(
+        voice=p["voice"], bars=p["bars"], symbols=p["symbols"],
+        members=[ConsortiumMember(**m) for m in p["members"]],
+        consensus=[ConsortiumPosition(**c) for c in p["consensus"]],
+        errors=p["errors"],
     )
 
 

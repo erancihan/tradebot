@@ -187,3 +187,82 @@ def test_empty_databases_render_gracefully(tmp_path):
     assert c.get("/arena").status_code == 200
     assert c.get("/api/equity").json()["points"] == []
     assert c.get("/api/arena/runs").json() == []
+
+
+# --- the consortium panel ------------------------------------------------------
+
+def _panel_client(tmp_path, symbols=("SPY", "QQQ"), periods=40):
+    """A store with enough bars for a panel, and a client over it."""
+    from tradebot.data.synthetic import synthetic_ohlcv
+
+    db = tmp_path / "panel.db"
+    st = Storage(str(db))
+    for i, sym in enumerate(symbols):
+        st.record_bars(sym, "1day", synthetic_ohlcv(periods=periods, seed=i + 1), "paper")
+    st.record_equity(10_000, 5_000, "paper")
+    st.close()
+    return TestClient(create_app(trading_db=str(db)))
+
+
+def test_the_panel_page_shows_every_member_and_the_blend(tmp_path):
+    client = _panel_client(tmp_path)
+    body = client.get("/consortium").text
+
+    assert "Consortium" in body
+    assert "Consensus book" in body
+    for member in ("sma_trend", "rsi_dip", "xs_momentum"):
+        assert member in body                     # all three contestant kinds
+    # The diversity caveat travels with the view, not just the docs.
+    assert "strategy wearing many hats" in body
+
+
+def test_the_panel_api_reports_voice_and_consensus(tmp_path):
+    client = _panel_client(tmp_path)
+    data = client.get("/api/consortium").json()
+
+    assert data["voice"] == "equal"
+    assert data["bars"] > 0
+    assert set(data["symbols"]) == {"SPY", "QQQ"}
+    assert len(data["members"]) == 12
+    assert data["errors"] == []
+
+    voices = [m["voice"] for m in data["members"]]
+    assert sum(voices) == pytest.approx(1.0)
+    assert all(v == pytest.approx(1 / 12) for v in voices)
+
+    for row in data["consensus"]:
+        assert row["target"] in (-1, 0, 1)
+        assert row["weight"] >= 0
+
+
+def test_the_hedge_voice_is_selectable_and_differs_from_equal(tmp_path):
+    client = _panel_client(tmp_path)
+    equal = client.get("/api/consortium?voice=equal").json()
+    hedge = client.get("/api/consortium?voice=hedge").json()
+
+    assert hedge["voice"] == "hedge"
+    equal_voices = {m["name"]: m["voice"] for m in equal["members"]}
+    hedge_voices = {m["name"]: m["voice"] for m in hedge["members"]}
+    assert equal_voices != hedge_voices
+    assert sum(hedge_voices.values()) == pytest.approx(1.0)
+
+
+def test_an_empty_store_renders_a_panel_instead_of_failing(tmp_path):
+    """No bars is a normal state, not a 500."""
+    db = tmp_path / "empty.db"
+    Storage(str(db)).close()
+    client = TestClient(create_app(trading_db=str(db)))
+
+    page = client.get("/consortium")
+    assert page.status_code == 200
+    assert "No panel yet" in page.text
+    assert client.get("/api/consortium").json()["members"] == []
+
+
+def test_the_panel_partial_is_reusable_on_its_own(tmp_path):
+    client = _panel_client(tmp_path)
+    partial = client.get("/partials/consortium")
+
+    assert partial.status_code == 200
+    assert "Consensus book" in partial.text
+    assert "<html" not in partial.text          # a fragment, not a page

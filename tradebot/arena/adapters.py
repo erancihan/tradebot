@@ -91,9 +91,15 @@ def simulation_args(contestant: Contestant) -> tuple[Policy, dict]:
     """
     if contestant.kind == "portfolio":
         spec = contestant.make()
+        # A signal that needs to know *which* symbol it is answering for can
+        # supply its own Policy: `VectorizedPolicy` drops the symbol name,
+        # because a `Strategy` is by definition symbol-agnostic. The consortium
+        # is the first thing that needs it — its consensus is a table indexed by
+        # (bar, symbol). Opt-in, so every existing contestant is unaffected.
+        as_policy = getattr(spec.strategy, "as_policy", None)
         # Strategies are stateless (pure functions of bars), so handing the
         # spec's instance out through a factory is round-safe.
-        policy = VectorizedPolicy(lambda: spec.strategy)
+        policy = as_policy() if callable(as_policy) else VectorizedPolicy(lambda: spec.strategy)
         return policy, {
             "allocator": spec.allocator,
             "selector": spec.selector,

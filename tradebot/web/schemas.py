@@ -158,3 +158,27 @@ class JobView(BaseModel):
     summary: dict | None = None
     equity: EquityCurve | None = None
     error: str | None = None
+
+
+class ConsortiumMember(BaseModel):
+    name: str
+    voice: float
+    total_return: float
+    book: dict[str, float]
+
+
+class ConsortiumPosition(BaseModel):
+    symbol: str
+    target: int
+    weight: float
+
+
+class ConsortiumView(BaseModel):
+    """The advisory panel. `consensus` is the blend; `members` are its inputs."""
+
+    voice: str
+    bars: int
+    symbols: list[str]
+    members: list[ConsortiumMember]
+    consensus: list[ConsortiumPosition]
+    errors: list[str] = []

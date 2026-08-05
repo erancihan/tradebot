@@ -12,7 +12,7 @@ from ..dependencies import (
     templates,
 )
 from ..repository import ArenaRepository, SeasonRepository, TradingRepository
-from ..services import account_service, metrics_service
+from ..services import account_service, consortium_service, metrics_service
 
 router = APIRouter()
 
@@ -95,3 +95,14 @@ def _render_arena(request, repo, runs, run_id):
         "active": "arena",
     }
     return templates.TemplateResponse(request, "pages/arena.html", context)
+
+
+@router.get("/consortium", response_class=HTMLResponse)
+def consortium_page(request: Request, voice: str = "equal",
+                    repo: TradingRepository = Depends(get_trading_repo)):
+    """The advisory panel: what every algorithm would hold right now."""
+    panel = consortium_service.panel(repo, voice_name=voice)
+    return templates.TemplateResponse(
+        request, "pages/consortium.html",
+        {"panel": panel, "voice": panel["voice"], "active": "consortium"},
+    )

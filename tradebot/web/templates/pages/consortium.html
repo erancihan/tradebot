@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Consortium · tradebot{% endblock %}
+{% block content %}
+{# Server-rendered once, deliberately NOT on the auto-refresh poll: building a
+   panel costs one simulation pass per member, so polling it every few seconds
+   would burn the box to re-derive a view that changes once per bar. The
+   /partials/consortium endpoint exists for an explicit refresh. #}
+<section class="space-y-4">
+  <div class="flex items-baseline justify-between">
+    <h1 class="text-lg font-semibold text-slate-100">Consortium</h1>
+    <div class="flex gap-2 text-sm">
+      <a href="/consortium?voice=equal"
+         class="{{ 'text-emerald-400' if voice == 'equal' else 'text-slate-400 hover:text-slate-200' }}">equal voice</a>
+      <span class="text-slate-700">·</span>
+      <a href="/consortium?voice=hedge"
+         class="{{ 'text-emerald-400' if voice == 'hedge' else 'text-slate-400 hover:text-slate-200' }}">hedge voice</a>
+    </div>
+  </div>
+
+  <p class="max-w-3xl text-sm text-slate-400">
+    Every algorithm's current book, side by side. Nobody is evicted for losing —
+    a member that does badly is progressively silenced and can earn its voice
+    back. This view is <span class="text-slate-300">advisory</span>: it places no
+    orders.
+  </p>
+
+  {% include "components/consortium_panel.html" %}
+
+  <div class="rounded-lg border border-slate-800 bg-slate-900/40 p-4 text-xs text-slate-500">
+    <div class="mb-1 font-medium uppercase tracking-wide">Read this with the caveat</div>
+    <p>
+      These members are mostly trend and mean-reversion variants over one
+      equity-beta pool. Averaging correlated members lowers the noise in the
+      estimate, not the systematic exposure — a panel like this is closer to one
+      strategy wearing many hats than to a diversified committee. What makes a
+      consortium worth having is member <em>diversity</em>, which is a roster
+      problem rather than a combiner problem.
+    </p>
+  </div>
+</section>
+{% endblock %}

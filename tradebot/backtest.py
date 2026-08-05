@@ -57,6 +57,29 @@ def _sizing_marks(
     return marks
 
 
+def _prepare_components(aligned: dict, *components) -> None:
+    """Give any component that wants it one look at the whole aligned frame set.
+
+    Duck-typed, opt-in, and a no-op for everything that ships today. It exists
+    for components whose per-bar answer is cheap only if a full-frame pass runs
+    first — the consortium being the motivating case, where recomputing the
+    member panel on every growing window would be quadratic.
+
+    This is the same discipline selectors already get implicitly: `membership()`
+    is called once over the full frame and then `.shift(1)`-ed, which is sound
+    because the component is prefix-stable. **A component that uses this hook
+    owes the same guarantee** — precompute freely, but never let bar `t`'s
+    answer depend on a bar after `t`. Both execution loops call this at the same
+    point, right after alignment, so the two cannot drift.
+    """
+    for component in components:
+        if component is None:
+            continue
+        prepare = getattr(component, "prepare", None)
+        if callable(prepare):
+            prepare(aligned)
+
+
 @dataclass
 class BacktestResult:
     equity_curve: pd.Series
@@ -183,6 +206,8 @@ class Backtester:
         # ragged indexes — which real bars do, and every lockstep fixture does
         # not.
         aligned = {s: df.reindex(common) for s, df in data.items()}
+        _prepare_components(aligned, self.strategy, self.allocator, self.selector,
+                            *self.overlays)
 
         # Pre-compute shifted targets per symbol: decide on t, act on t+1.
         targets: dict[str, pd.Series] = {}

@@ -83,6 +83,7 @@ Keep these in sync when workflows or invariants change.
 │   ├── models.py             # Order (incl. bracket prices)/Fill/Position/Trade/Side,
 │   │                         #   opens_exposure, BAR_COLUMNS, utcnow
 │   ├── notify.py             # Notifier protocol + Log/Null/Webhook/Multi (stdlib urllib)
+│   ├── consortium.py         # panel of algos -> one book: Voice (equal/hedge) + consensus
 │   ├── broker/               # Broker ABC, AlpacaBroker (lazy SDK; bracket/OTO mapping),
 │   │                         #   DryRunBroker (simulates resting bracket legs)
 │   ├── data/                 # synthetic, csv loader, ReplayData, AlpacaData, BarCache,
@@ -94,6 +95,8 @@ Keep these in sync when workflows or invariants change.
 │   ├── arena/                # competition system (see below)
 │   └── web/                  # FastAPI dashboard (see below)
 ├── algos/                    # example arena contestants + how-to README
+│   ├── canaries/             # non-promotable diagnostics (opt-in subdir)
+│   └── consortium/           # the consortium contestants (opt-in: costs the field)
 ├── scenarios/                # arena scenario YAMLs incl. the regime library
 │                             #   (bull_trend/sideways_chop/crash_recovery/vol_spike)
 │                             #   + factor library (xs_bull_dispersion/xs_crash_haven/
@@ -123,6 +126,7 @@ simulation_args), `simulation.py` (stepped core), `scenario.py`, `runner.py`,
 `scoring.py` (incl. worst_fold/consistency), `gate.py` (promotion pass gate),
 `result.py`, `tournament.py`, `league.py` (standings over a season),
 `season.py` (durable, resumable real-time league + feeds + daemon),
+`panel.py` (read every member's book in one pass each; self-exclusion),
 `market.py` (US market-hours + partial-bar helpers), `contestant.py`, `sandbox.py`
 (`--harden`: no-write + net isolation), `store.py` (runs + experiments
 journal).
@@ -535,6 +539,46 @@ Note `frontend/node_modules` is not installed locally by default, so
   deliberately keeps polling — its loop is timer-driven by design and a socket
   would only add a failure mode. `start(background=False)` runs a `FakeStream`
   inline, which is what makes the tests deterministic without sleeps or joins.
+- **A consortium is a decision rule, so it obeys every rule a decision rule
+  obeys.** `consortium.py` blends member books into one; the danger is that
+  `prepare()` hands it the *whole* frame at once, which is exactly the shape
+  that makes look-ahead easy to introduce by accident. Precomputing is licensed
+  only because every member is causal, and two absolute guards hold it there:
+  `test_the_consortium_cannot_see_the_future` (perturb a late bar, assert no
+  earlier decision moves) and `test_the_consensus_is_prefix_stable`. Voice has
+  its own guard — a member's performance on bar `t` must not change its
+  influence on bar `t`.
+  Three more properties worth keeping: the blend is **convex**, so it can never
+  lever past what its members already asked for and needs no renormalisation;
+  **agreement is conviction**, so a split panel shrinks the position instead of
+  flipping a coin; and voice has a **floor**, so a silenced member can recover
+  (it is a dimmer, not a door).
+- **The consortium is opt-in for a reason, and it is not the roster's cost.**
+  It lives in `algos/consortium/` — a subdirectory `loader._expand`'s
+  non-recursive glob never reaches — like `algos/canaries/`. It costs the *sum
+  of its members* by construction (~17s for 250 bars × 2 symbols with the
+  current field, dominated by the metas), so putting it in `algos/` would slow
+  every ordinary tournament and blow the default 10s budget. Run it with
+  `--algos ./algos ./algos/consortium --time-budget 120`. Do **not** trim the
+  roster to fit a budget — that is fitting to the harness, same rule as the
+  metas. Self-exclusion is guarded twice (the subdirectory, plus an
+  `is_consortium` marker attribute rather than a name match) because a
+  consortium that loads itself recurses until the process dies.
+- **A consortium over a correlated roster is one strategy wearing many hats.**
+  The current twelve members are mostly trend/mean-reversion variants over one
+  equity-beta pool. Averaging correlated members reduces the noise in the
+  estimate, not the systematic exposure. The binding constraint on a consortium
+  being *worth* anything is member **diversity** — a roster problem, not a
+  combiner problem — so the next real work is new member kinds, not a cleverer
+  weighting. This caveat is rendered on the dashboard page itself, not just
+  written here, so it travels with the numbers.
+- **Adaptive voice is a research claim, not infrastructure.** `HedgeVoice`
+  weights members by trailing P&L, which is a momentum bet on your own
+  strategies — the same class of rule the canaries measured at 4 wins in 8
+  draws. `EqualVoice` is the default and the baseline any scheme must beat;
+  Hedge is used rather than greedy leader-following because it carries a regret
+  bound. `eta` is a declared researcher degree of freedom: state it when
+  quoting any result.
 - **A notifier is an observer and can never break a trade.** Every `send` is
   wrapped (`Engine._notify`) and `WebhookNotifier` swallows every URL/OS error,
   because an unreachable endpoint halting the trade loop is exactly backwards.

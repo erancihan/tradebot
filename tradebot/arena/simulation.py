@@ -18,7 +18,12 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from ..backtest import BacktestResult, _infer_periods_per_year, _sizing_marks
+from ..backtest import (
+    BacktestResult,
+    _infer_periods_per_year,
+    _prepare_components,
+    _sizing_marks,
+)
 from ..portfolio import Portfolio
 from ..risk import RiskManager
 from .adapters import Policy
@@ -39,6 +44,7 @@ def simulate(
     allocator=None,           # optional tradebot.allocation.Allocator
     selector=None,            # optional tradebot.selection.Selector
     overlays=None,            # optional list of tradebot.overlays.Overlay
+    on_decision=None,         # optional observer; see the call site below
 ) -> BacktestResult:
     if not frames:
         raise ValueError("No data provided to simulate")
@@ -56,6 +62,7 @@ def simulate(
 
     symbols = list(frames)
     aligned = {s: frames[s].reindex(common) for s in symbols}
+    _prepare_components(aligned, policy, allocator, selector, *overlays)
     opens = {s: aligned[s]["open"] for s in symbols}
     closes = {s: aligned[s]["close"] for s in symbols}
 
@@ -104,6 +111,15 @@ def simulate(
             for overlay in overlays:
                 weights = overlay.transform(weights, bar_targets, history)
         desired = risk.allocate(bar_targets, equity, bar_prices, weights)
+
+        # Observer only — it must never influence the loop. This is the one
+        # point where all three contestant kinds converge on a single shape
+        # (signed quantities for the whole book), which is what makes a
+        # consortium able to read every kind of member the same way. Default
+        # None keeps this call byte-identical for every existing caller, so the
+        # backtest/arena lockstep test is unaffected.
+        if on_decision is not None:
+            on_decision(i, ts, dict(bar_targets), dict(desired), equity, dict(bar_prices))
 
         for s, want in desired.items():
             price = bar_prices[s]
