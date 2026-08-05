@@ -513,22 +513,32 @@ outcome. Several make passing **harder**; that is the test of good faith.
   baseline itself takes −48%. That combination is close to unsatisfiable for any
   long-only book. **Pre-register separately, ship alone, never alongside a
   library change or a candidate run.**
-  **PARTLY DONE 2026-08-05 — diagnostic half only, criterion deliberately
-  unchanged.** The gate now prints the baseline's own deepest drawdown beside
-  the candidate's and names the mismatch when the baseline also breaches the
-  limit. Measured on the spot: `crash_recovery` fails the candidate at −36.38%
-  while `buy_and_hold` takes **−52.91%** in the same scenario — so on that
-  scenario the absolute bound is substantially measuring the regime, exactly as
-  M5 predicted, and the FAIL reads very differently once you can see it.
-  **The criterion half is NOT shipped, and should not be shipped by whoever
-  reads this next without an explicit owner decision.** Making the bound
-  relative would convert the recorded synthetic FAIL (candidate short by
-  1.38pp), and this document's own admissibility test disqualifies any change
-  whose effect on the candidate in flight is known in advance — which it now
-  is, and cannot be un-known. M5 was admissible when written and stopped being
-  admissible the moment the re-derived record was published. That is not a
-  reason to abandon it; it is a reason it must be pre-registered by the owner,
-  with the predicted effect stated up front, and shipped alone.
+  **DONE 2026-08-05 (owner decision).** Resolved by *splitting* the two frames
+  rather than replacing one with the other — which is what M5 actually called
+  for; conflating them into a single absolute number was the original error.
+
+    absolute (-35%)  "is this catastrophic?"        -> admission
+    relative         "is this worse than holding?"  -> competitiveness
+
+  Both are required, so the change can only turn a PASS into a FAIL. That is
+  what made it admissible with no pre-registration ceremony: this document's own
+  test says a change that makes the candidate in flight fail *harder* is
+  admissible. **The rejected alternative was `absolute OR relative`**, which
+  would have converted the recorded synthetic FAIL (short by 1.38pp). Do not
+  re-propose it.
+
+  The relative check is **scoped to scenarios where the baseline itself
+  breaches the absolute limit** — precisely the regimes where M5 says the
+  absolute bound stops measuring the candidate. Unscoped it is unsatisfiable:
+  an all-cash baseline takes zero drawdown, so no long-only candidate could
+  ever match it. That is the same trivial optimum that makes `worst_fold`
+  degenerate as a standalone metric, and it was caught by an existing test
+  rather than by inspection. Where the baseline stays calm the check reports
+  itself not applicable and the absolute bound stands alone.
+
+  Verified on `bull_trend` + `crash_recovery`: verdict unchanged (FAIL on the
+  absolute bound and worst-fold), and the new check *passes* — the candidate
+  takes -36.38% where `buy_and_hold` takes -52.91%. Nothing converted.
 - **M6 — `worst_fold` at a hardcoded `k=4` is an undeclared researcher degree of
   freedom.** The verdict is reportedly not stable to it. `min()` over a
   partition is an order statistic of a tiny dependent sample — maximally

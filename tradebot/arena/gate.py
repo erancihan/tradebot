@@ -387,28 +387,61 @@ def evaluate_gate(
             f"{wins}/{len(ok_rows)} scenarios (need {need}); "
             f"across k=3..8: {sensitivity}"))
 
-        # M5 (diagnostic half only). Three criteria are relative to the
-        # baseline; this one is absolute. In a scenario where the baseline
-        # itself breaches the limit, an absolute bound is measuring the
-        # *scenario*, not the candidate — and the combination is close to
-        # unsatisfiable for any long-only book. The frame mismatch used to be
-        # invisible here, so a FAIL read as "the candidate is too risky" when it
-        # sometimes meant "this regime is". The baseline's own drawdown is now
-        # printed beside it, and the mismatch is named when it bites.
+        # M5 — the two drawdown criteria, deliberately kept SEPARATE.
         #
-        # The criterion is deliberately UNCHANGED. Making the bound relative
-        # would convert a recorded FAIL (synthetic, by 1.38pp), and PLAN.md's
-        # admissibility test disqualifies any change whose effect on the
-        # candidate in flight is known in advance. That call is the owner's, and
-        # it must be pre-registered and shipped alone.
+        # The original error was conflating them into one absolute number.
+        # They measure different things and belong to different decisions:
+        #
+        #   absolute  "is this catastrophic?"            -> admission
+        #   relative  "is this worse than holding?"      -> competitiveness
+        #
+        # Splitting them is what actually resolves M5; it is not a loosening.
+        # Both are required, so this can only ever turn a PASS into a FAIL —
+        # which is precisely what makes it admissible under PLAN.md's test (a
+        # change that makes the candidate in flight fail *harder*). The earlier
+        # proposal — replacing the absolute bound with `absolute OR relative` —
+        # would have converted the recorded synthetic FAIL and was rejected for
+        # exactly that reason. Do not re-propose it.
         deepest = min(r["cand_max_drawdown"] for r in ok_rows)
         base_deepest = min(r["base_max_drawdown"] for r in ok_rows)
         detail = f"deepest {deepest:.2%} (baseline {base_deepest:.2%})"
         if base_deepest < -max_drawdown_limit:
-            detail += (f" — NOTE: the baseline also breaches -{max_drawdown_limit:.0%}, "
-                       "so this absolute bound is partly measuring the regime")
+            detail += (f" — NOTE: the baseline also breaches -{max_drawdown_limit:.0%} "
+                       "here, so this bound is partly measuring the regime; the "
+                       "relative check below is the commensurable one")
         report.checks.append(GateCheck(
             f"max drawdown never worse than -{max_drawdown_limit:.0%}",
             deepest >= -max_drawdown_limit, detail))
+
+        # The relative check is SCOPED to the scenarios where the absolute one
+        # is confounded — i.e. where the baseline itself breaches the limit.
+        # Two reasons, and the second is the one that bites:
+        #
+        # 1. Where the baseline stays inside the bound, the absolute bound is
+        #    doing its job and is the right test. Nothing to add.
+        # 2. An unscoped version is UNSATISFIABLE against a defensive baseline.
+        #    A flat, all-cash baseline takes zero drawdown, so no long-only
+        #    candidate can ever match it — the same trivial optimum `worst_fold`
+        #    has, and the same reason it is degenerate as a standalone metric.
+        #    Scoping makes it inert exactly where it would be degenerate.
+        #
+        # Compared per scenario, never on the global minimum: the deepest
+        # candidate drawdown and the deepest baseline drawdown can come from
+        # different scenarios, and comparing across them compares nothing.
+        confounded = [r for r in ok_rows
+                      if r["base_max_drawdown"] < -max_drawdown_limit]
+        if confounded:
+            dd_wins = sum(1 for r in confounded
+                          if r["cand_max_drawdown"] >= r["base_max_drawdown"])
+            dd_need = len(confounded) // 2 + 1
+            report.checks.append(GateCheck(
+                "drawdown >= baseline where the absolute bound is confounded",
+                dd_wins >= dd_need,
+                f"{dd_wins}/{len(confounded)} such scenarios (need {dd_need})"))
+        else:
+            report.notes.append(
+                "relative drawdown check not applicable: the baseline stays "
+                f"inside -{max_drawdown_limit:.0%} everywhere, so the absolute "
+                "bound is measuring the candidate, not the regime")
 
     return report

@@ -471,9 +471,14 @@ an over-budget contestant but cannot kill it, so a slow algo leaks a busy thread
 every tick until the season crawls. Process isolation makes the budget a hard
 kill (and sandboxes each contestant).
 
-The gate checks four things: the candidate completes every scenario, beats
+The gate checks five things: the candidate completes every scenario, beats
 the baseline's mean return net of costs, is at least as robust (`worst_fold`)
-in a majority of regimes, and never breaches the drawdown bound. The verdict
+in a majority of regimes, never breaches the absolute drawdown bound, and — in
+any scenario where the *baseline itself* breaches that bound — is no worse than
+the baseline. The last two are separate on purpose: an absolute bound answers
+"is this catastrophic", a relative one answers "is this worse than just
+holding", and in a crash regime only the second is measuring the candidate. The
+verdict
 prints alongside the family's journal attempt count — a gate passed on the
 20th try means much less than one passed on the 2nd.
 

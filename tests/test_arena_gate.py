@@ -156,7 +156,7 @@ def test_cli_gate_journals_only_the_candidate_family(tmp_path, capsys):
 
 
 def test_the_drawdown_check_shows_the_frame_it_is_judging_in():
-    """M5 (diagnostic half): three criteria are relative, this one is absolute.
+    """M5: three criteria are relative, the absolute one needs its frame shown.
 
     When the baseline itself breaches the bound, an absolute limit is partly
     measuring the *scenario* rather than the candidate. The check has to say so
@@ -188,3 +188,67 @@ def test_the_regime_note_stays_quiet_when_the_baseline_is_inside_the_bound():
     assert not dd.passed
     assert "baseline" in dd.detail
     assert "measuring the regime" not in dd.detail
+
+
+def test_the_relative_bound_only_applies_where_the_absolute_one_is_confounded():
+    """M5: the relative frame is for regimes where the absolute bound stops
+    measuring the candidate — not a second bound applied everywhere.
+
+    Unscoped, it is unsatisfiable: an all-cash baseline takes zero drawdown, so
+    no long-only candidate could ever match it. Same trivial optimum that makes
+    `worst_fold` degenerate on its own.
+    """
+    calm_base = list(np.linspace(100, 97, 41))         # -3%: nowhere near -35%
+    sinker = list(np.linspace(100, 75, 41))            # -25%: deeper, still legal
+
+    report = evaluate_gate("cand", "base",
+                           [("chop", _outcome(_entry("cand", sinker),
+                                              _entry("base", calm_base)))],
+                           max_drawdown_limit=0.35)
+    labels = [c.label for c in report.checks]
+
+    # The candidate is 22pp deeper than the baseline and the check does not fire,
+    # because the absolute bound is the meaningful test in a calm regime.
+    assert not any("confounded" in x for x in labels)
+    assert any("not applicable" in n for n in report.notes)
+
+    # Now a regime where the baseline itself blows through the bound: the
+    # relative comparison is the one carrying information, and it bites.
+    wrecked_base = (list(np.linspace(100, 120, 21))
+                    + list(np.linspace(120, 40, 20)))          # ~-67%
+    worse_cand = (list(np.linspace(100, 120, 21))
+                  + list(np.linspace(120, 25, 20)))            # ~-79%, worse still
+    report = evaluate_gate("cand", "base",
+                           [("crash", _outcome(_entry("cand", worse_cand),
+                                               _entry("base", wrecked_base)))],
+                           max_drawdown_limit=0.35)
+    relative = [c for c in report.checks if "confounded" in c.label][0]
+    assert not relative.passed
+    assert not report.passed
+
+
+def test_adding_the_relative_bound_can_only_make_the_gate_stricter():
+    """The property that made this admissible: it converts no recorded FAIL.
+
+    A required check can only turn PASS into FAIL. If this ever rescues a
+    candidate, the criterion has been rewritten rather than added to.
+    """
+    deep = (list(np.linspace(100, 150, 21))
+            + list(np.linspace(150, 55, 11))[1:]
+            + list(np.linspace(55, 60, 11))[1:])          # breaches -35%
+    worse_base = (list(np.linspace(100, 150, 21))
+                  + list(np.linspace(150, 30, 11))[1:]
+                  + list(np.linspace(30, 35, 11))[1:])    # baseline is deeper still
+
+    report = evaluate_gate("cand", "base",
+                           [("crash", _outcome(_entry("cand", deep),
+                                               _entry("base", worse_base)))],
+                           max_drawdown_limit=0.35)
+    relative = [c for c in report.checks if "confounded" in c.label][0]
+    absolute = [c for c in report.checks if "never worse than" in c.label][0]
+
+    # The candidate beats the baseline on drawdown and STILL fails the gate:
+    # winning the relative check cannot rescue an absolute breach.
+    assert relative.passed
+    assert not absolute.passed
+    assert not report.passed

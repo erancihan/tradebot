@@ -885,20 +885,32 @@ Both bounds are doing their job. The attempt counter climbs every time a
 gauntlet is re-run (`xs_momentum` is at 42 after this session's re-derivations),
 and that is working as intended — it is measuring exactly what it should.
 
-**But read the drawdown FAIL with its new context (2026-08-05).** The gate now
-prints the baseline's own deepest drawdown beside the candidate's, because
-three criteria are relative and this one is absolute — M5's incommensurability,
-previously invisible at the point of use. On `crash_recovery` the candidate
-fails at −36.38% while `buy_and_hold` takes **−52.91%** in the same scenario.
-The bound is therefore partly measuring the *regime*, not the candidate, and
-the gate now says so in the check's own detail line.
-**The criterion itself is unchanged, and changing it is the owner's call.** A
-relative bound would convert the recorded synthetic FAIL (short by 1.38pp), and
-`docs/PLAN.md`'s admissibility test rules out any change whose effect on the
-candidate in flight is known in advance — which it now is. M5 was admissible
-when it was written and stopped being admissible the moment the re-derived
-record was published. It must be pre-registered with its predicted effect
-stated up front, and shipped alone. Do not ship it as part of other work.
+**M5 resolved 2026-08-05 (owner decision): the gate now has TWO drawdown
+criteria, because they measure different things.** Conflating them into one
+absolute number was the original error.
+
+| check | asks | role |
+|---|---|---|
+| absolute, `-35%` | is this catastrophic? | admission |
+| relative, vs baseline | is this worse than just holding? | competitiveness |
+
+Both are required, so the change can only turn a PASS into a FAIL — which is
+what made it admissible with no pre-registration ceremony (`docs/PLAN.md`'s own
+test: a change that makes the candidate in flight fail *harder* is admissible).
+**The rejected alternative was `absolute OR relative`**, which would have
+converted the recorded synthetic FAIL by 1.38pp. Do not re-propose it.
+
+The relative check is **scoped to scenarios where the baseline itself breaches
+the limit** — exactly where the absolute bound stops measuring the candidate
+and starts measuring the regime. Unscoped it is *unsatisfiable*: an all-cash
+baseline takes zero drawdown, so no long-only candidate could match it. Same
+trivial optimum that makes `worst_fold` degenerate alone; caught by an existing
+CLI test, not by inspection. Where the baseline stays calm the gate prints
+"not applicable" and the absolute bound stands by itself.
+
+Verified: on `crash_recovery` the candidate fails the absolute bound at
+-36.38% while `buy_and_hold` takes **-52.91%**, and the new relative check
+*passes*. The verdict did not move. Nothing was converted.
 
 **Live-execution backlog — DONE 2026-08-05** (owner ask: "complete the
 roadmap"). The three locked Spec 4 designs in `docs/DESIGN-HANDOFF.md` shipped
