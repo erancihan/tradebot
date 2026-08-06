@@ -671,6 +671,10 @@ Two things worth knowing before you leave it running:
   isolation makes the budget a hard kill.
 - **Recompute is O(history) per tick.** That is fine at daily cadence for years,
   but a minute-bar season over a large field will not keep up.
+- **Downtime heals itself, up to a point.** The feed delivers every bar that
+  settled since it last ran, so a reboot or a laptop asleep over a weekend costs
+  nothing — bars are keyed by timestamp, so re-delivery is idempotent. Past ~30
+  bars of downtime, re-run `season seed` for the gap.
 
 ## Running it for free, continuously
 

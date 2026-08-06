@@ -329,6 +329,17 @@ CI**; check the actual run before claiming a gate passed.
   for the same reason — the newest persisted bar is usually still forming, and
   under first-write-wins that partial would be frozen onto the decision path
   permanently.
+- **A live feed must deliver every missed bar, not just the newest.** The
+  season feed returned `df.iloc[[-1]]`, so any gap between polls — a machine
+  asleep over a weekend, a reboot, a crashed daemon — punched a *permanent* hole
+  in the history. Bars are the source of truth and standings are recomputed from
+  them, so a hole silently changes every later ranking while the season reports
+  healthy: the same failure shape as B2. Measured on a 9-bar gap: **7 bars
+  lost.** It now delivers everything settled since the last delivery, bounded by
+  `catchup` (default 30 bars). `_last_ts` lives in memory, so a restarted daemon
+  re-offers its whole window — the right direction, because the `(season_id,
+  symbol, ts)` PK makes re-delivery idempotent, so a restart *heals* the history
+  instead of skipping it. An outage longer than `catchup` needs a re-seed.
 - **A fresh daily season measures nothing for months — seed it.**
   `MomentumSelector(lookback=60)` is flat for its first 61 bars, so a season
   started from zero spends a quarter with nobody deployed and its standings are

@@ -431,3 +431,124 @@ def test_cli_seed_refuses_when_there_are_no_bars(tmp_path, capsys):
     assert main(["arena", "season", "seed", "1", "--start", "2026-01-02",
                  "--end", "2026-03-12", "--cache-dir", str(tmp_path / "nope"),
                  "--db", db]) == 2
+
+
+# --- the live feed must survive downtime ---------------------------------------
+
+class _WindowedData:
+    """A provider whose visible history grows — like real bars over real time."""
+
+    def __init__(self, full):
+        self.full = full
+        self.upto = 0
+
+    def history(self, symbol, timeframe=None, lookback=5):
+        return self.full.iloc[max(0, self.upto - lookback):self.upto]
+
+
+def _daily(periods, seed=1):
+    import pandas as pd
+
+    df = synthetic_ohlcv(periods=periods, seed=seed)
+    df.index = pd.date_range("2026-01-02", periods=periods, freq="1D", tz="UTC")
+    return df
+
+
+def _settled_clock():
+    import pandas as pd
+
+    return lambda: pd.Timestamp("2026-06-01", tz="UTC")   # everything has closed
+
+
+def test_the_live_feed_delivers_every_bar_missed_while_it_was_down():
+    """A gap between polls must not punch a hole in the season's history.
+
+    Returning only the newest bar meant a machine asleep over a weekend, a
+    reboot, or a crashed daemon silently lost every bar in between — and because
+    standings are recomputed from accumulated bars, a hole quietly changes every
+    later ranking while the season still reports healthy. Measured before the
+    fix: 7 of 9 bars lost.
+    """
+    from tradebot.arena.season import AlpacaSeasonFeed
+
+    full = _daily(10)
+    data = _WindowedData(full)
+    data.upto = 5
+    feed = AlpacaSeasonFeed(["X"], "1day", "k", "s", data=data, clock=_settled_clock())
+
+    delivered = list(feed.next()["X"].index)
+    data.upto = 9                                  # four sessions passed, unobserved
+    delivered += list(feed.next()["X"].index)
+
+    assert set(delivered) == set(full.index[:9])   # nothing lost
+    assert delivered == sorted(delivered)          # and still in order
+
+
+def test_a_settled_bar_is_never_delivered_twice():
+    from tradebot.arena.season import AlpacaSeasonFeed
+
+    data = _WindowedData(_daily(6))
+    data.upto = 6
+    feed = AlpacaSeasonFeed(["X"], "1day", "k", "s", data=data, clock=_settled_clock())
+
+    first = feed.next()
+    assert first is not None and len(first["X"]) == 6
+    assert feed.next() is None                     # nothing new has settled
+
+
+def test_a_restarted_feed_re_offers_its_window_rather_than_skipping():
+    """`_last_ts` is in memory, so a fresh process starts blind.
+
+    Re-offering is the safe direction: the season's (season, symbol, ts) primary
+    key makes it idempotent, so a restart heals the history instead of skipping
+    whatever arrived while the daemon was dead.
+    """
+    from tradebot.arena.season import AlpacaSeasonFeed
+
+    data = _WindowedData(_daily(8))
+    data.upto = 8
+    clock = _settled_clock()
+
+    AlpacaSeasonFeed(["X"], "1day", "k", "s", data=data, clock=clock).next()
+    restarted = AlpacaSeasonFeed(["X"], "1day", "k", "s", data=data, clock=clock)
+
+    again = restarted.next()
+    assert again is not None and len(again["X"]) == 8
+
+
+def test_downtime_longer_than_the_catchup_window_is_bounded_by_it(tmp_path):
+    """Honest limit: beyond `catchup` bars, the fix is to re-seed."""
+    from tradebot.arena.season import AlpacaSeasonFeed
+
+    full = _daily(40)
+    data = _WindowedData(full)
+    data.upto = 1
+    feed = AlpacaSeasonFeed(["X"], "1day", "k", "s", data=data,
+                            clock=_settled_clock(), catchup=5)
+    feed.next()
+
+    data.upto = 40                                  # 39 sessions missed
+    caught = feed.next()["X"]
+    assert len(caught) == 5                         # only the window
+    assert caught.index[-1] == full.index[39]
+
+
+def test_a_caught_up_feed_still_accumulates_correctly(tmp_path):
+    """End to end: a gap heals into the season's stored history."""
+    from tradebot.arena.season import AlpacaSeasonFeed
+
+    full = _daily(12)
+    data = _WindowedData(full)
+    data.upto = 4
+    feed = AlpacaSeasonFeed(["DEMO"], "1day", "k", "s", data=data,
+                            clock=_settled_clock())
+
+    with SeasonStore(tmp_path / "s.db") as store:
+        season = Season.create(store, _config(symbols=["DEMO"]))
+        season.step(feed.next())
+        data.upto = 12
+        season.step(feed.next())
+
+        stored = store.load_frames(season.id)["DEMO"]
+        assert len(stored) == 12
+        assert list(stored.index) == list(full.index)

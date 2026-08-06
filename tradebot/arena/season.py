@@ -340,9 +340,13 @@ class AlpacaSeasonFeed:
     """Live one-bar-per-poll feed (lazy Alpaca; not exercised by the test suite)."""
 
     def __init__(self, symbols, timeframe: str, api_key: str, api_secret: str,
-                 feed: str = "iex", data=None, clock=utcnow) -> None:
+                 feed: str = "iex", data=None, clock=utcnow, catchup: int = 30) -> None:
         self._symbols = list(symbols)
         self._timeframe = timeframe
+        #: How far back each poll looks. This is the outage the feed can heal
+        #: from on its own: a machine that slept through a long weekend, a
+        #: reboot, a crashed daemon. Beyond it, re-seed (`arena season seed`).
+        self._catchup = max(int(catchup), 2)
         if data is None:
             from ..data.alpaca_data import AlpacaData
 
@@ -352,31 +356,47 @@ class AlpacaSeasonFeed:
         self._last_ts: dict[str, pd.Timestamp] = {}
 
     def next(self) -> dict[str, pd.DataFrame] | None:
-        """The newest *complete* bar per symbol, each returned exactly once.
+        """Every *complete* bar per symbol that has not been delivered yet.
 
-        Completeness is filtered HERE, before the dedup — not by the caller.
-        The daemon also drops still-forming bars, and when that was the only
-        filter a bar first polled while it was still forming got marked as seen,
-        then thrown away, and was never offered again once it settled. A live
-        daily season accumulated zero bars while reporting healthy ticks.
+        Two things this must get right, both learned the hard way:
+
+        1. **Completeness is filtered HERE, before the dedup** — not by the
+           caller. The daemon also drops still-forming bars, and when that was
+           the only filter a bar first polled while it was still forming got
+           marked as seen, then thrown away, and was never offered again once it
+           settled. A live daily season accumulated zero bars while reporting
+           healthy ticks.
+        2. **Every new bar, not just the newest one.** Returning only
+           ``df.iloc[[-1]]`` meant any gap between polls punched a permanent
+           hole in the season's history: a machine asleep over a weekend, a
+           reboot, a crashed daemon. Bars are the source of truth and standings
+           are recomputed from them, so a hole silently changes every later
+           ranking while the season still reports healthy — the same failure
+           shape as the bug in (1). Measured on a 9-bar gap: 7 bars lost.
+
+        Because ``_last_ts`` lives in memory, a fresh process re-offers its whole
+        catch-up window; the season's ``(season_id, symbol, ts)`` primary key
+        makes that idempotent, so a restart heals rather than skips. An outage
+        longer than ``catchup`` needs ``arena season seed``.
         """
         from .market import drop_incomplete_bars
 
         now = self._clock()
         bar: dict[str, pd.DataFrame] = {}
         for symbol in self._symbols:
-            df = self._data.history(symbol, timeframe=self._timeframe, lookback=5)
+            df = self._data.history(symbol, timeframe=self._timeframe,
+                                    lookback=self._catchup)
             if df is None or df.empty:
                 continue
             df = drop_incomplete_bars(df, self._timeframe, now)
             if df is None or len(df) == 0:
                 continue
-            last = df.iloc[[-1]]
-            ts = pd.Timestamp(last.index[-1])
-            if self._last_ts.get(symbol) == ts:
-                continue  # already delivered this bar
-            self._last_ts[symbol] = ts
-            bar[symbol] = last
+            seen = self._last_ts.get(symbol)
+            fresh = df if seen is None else df[df.index > seen]
+            if not len(fresh):
+                continue  # nothing settled since the last poll
+            self._last_ts[symbol] = pd.Timestamp(fresh.index[-1])
+            bar[symbol] = fresh
         return bar or None
 
 
