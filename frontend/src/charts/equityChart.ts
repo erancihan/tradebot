@@ -89,10 +89,11 @@ export function equityOption(series: EquitySeries, orders: OrderRow[] = []): ECh
 /** ECharts option for contestants' total-return over a live season's steps. */
 export function seasonOption(curves: SeasonCurve[]): EChartsOption {
   const option = baseLineOption();
-  const steps = curves.reduce<number[]>(
-    (acc, c) => (c.steps.length > acc.length ? c.steps : acc),
-    [],
-  );
+  // The union of every contestant's steps, not the longest single run. A
+  // contestant that errored or timed out on a tick is simply absent from that
+  // standings snapshot, so its `steps` has holes — and picking one curve's
+  // steps as the axis would leave the others describing different ticks.
+  const steps = [...new Set(curves.flatMap((c) => c.steps))].sort((a, b) => a - b);
   option.xAxis = { ...option.xAxis, data: steps.map((s) => `#${s}`) };
   option.yAxis = {
     ...option.yAxis,
@@ -107,9 +108,24 @@ export function seasonOption(curves: SeasonCurve[]): EChartsOption {
     showSymbol: false,
     lineStyle: { color: LINE_COLORS[i % LINE_COLORS.length], width: 2 },
     itemStyle: { color: LINE_COLORS[i % LINE_COLORS.length] },
-    data: curve.total_return,
+    // Placed BY STEP, never by position. Feeding the raw array lets ECharts
+    // map index 0 to the first tick of the season rather than to this
+    // contestant's first tick, which silently slides a late joiner's whole
+    // curve to the left and makes it look like it was scoring when it was not
+    // even running. `null` leaves an honest gap.
+    data: alignToSteps(curve, steps),
   }));
   return option;
+}
+
+/** A curve's values placed against a shared step axis, with gaps for missing ticks. */
+function alignToSteps(curve: SeasonCurve, steps: number[]): (number | null)[] {
+  const byStep = new Map<number, number>();
+  curve.steps.forEach((step, i) => {
+    const value = curve.total_return[i];
+    if (value !== undefined) byStep.set(step, value);
+  });
+  return steps.map((step) => byStep.get(step) ?? null);
 }
 
 /** ECharts option for many contestants' equity curves (the arena). */

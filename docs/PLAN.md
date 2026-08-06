@@ -279,9 +279,16 @@ tournament reports `ok` — this contradicts the module's own "never silently
 downgrade" rule and deserves a gotcha even before it is fixed.
 `arena/season.py` increments `ticks` after every `continue`, so `max_ticks`
 bounds *applied* ticks but cannot terminate a run whose feed is dry.
-`frontend/src/charts/equityChart.ts` `seasonOption` feeds each series
+~~`frontend/src/charts/equityChart.ts` `seasonOption` feeds each series
 positionally against the longest curve, shifting late-joining contestants onto
-the wrong steps.
+the wrong steps.~~ **FIXED 2026-08-06** — the axis is now the *union* of every
+contestant's steps and each series is placed by step, with `null` for ticks a
+contestant missed. The failure mode was quietly bad: a contestant absent from
+some standings snapshot had its whole curve slid left, so it appeared to be
+scoring during ticks when it was not even running. `arenaOption` shares the
+positional pattern but cannot misalign — every arena curve comes from one
+simulation over one shared index, and a contestant that fails contributes no
+curve at all.
 
 ---
 
