@@ -231,6 +231,12 @@ offline-first invariant says the suite passes without them, and
 that starts reaching the network breaks loudly rather than becoming flaky.
 Note `frontend/node_modules` is not installed locally by default, so
 `npm run typecheck` needs `make install-web` before it can run on your machine.
+**And the lesson repeated itself, mildly:** the workflow existed from
+2026-07-26 and the `pytest (offline)` job was red on *every* commit from then
+until 2026-08-06, while local runs were green — the same commit that added CI
+also made unenforceable sandbox containment fatal, and GitHub's runners do not
+grant a network namespace. Nobody looked. **A green local suite is not a green
+CI**; check the actual run before claiming a gate passed.
 
 ## Conventions
 
@@ -434,11 +440,22 @@ Note `frontend/node_modules` is not installed locally by default, so
   manifests — "fixing" it makes `_spans` reject `real_full_cycle`'s own declared
   window and reintroduces the bug commit `33379b9` fixed. Changing it needs a
   manifest migration.
-- **A failed sandbox tier is not reported.** `arena/runner.py` discards the
-  capability report from `apply_hardening`, so if `unshare(CLONE_NEWNET)` fails
-  the contestant runs with full network access while the tournament prints a
-  clean `ok`. This contradicts the module's own "never silently downgrade" rule
-  for isolation modes. Unverified but plausible; B14 in `docs/PLAN.md`.
+- **A sandbox tier that the kernel refuses is REPORTED, not fatal.** The
+  capability report from `apply_hardening` used to be discarded entirely, so a
+  failed `unshare(CLONE_NEWNET)` left a contestant fully networked while the
+  tournament printed a clean `ok` (B14). The first fix over-corrected: it failed
+  the contestant outright, which turned **CI red on every commit** — GitHub
+  Actions runners will not grant a network namespace to an unprivileged process,
+  so all 12 contestants died with `SandboxError` and the leaderboard came back
+  empty. That is a portability fact, not a threat model; unprivileged
+  containers and macOS behave the same way.
+  The rule "never silently downgrade" is satisfied by **saying so**, not by
+  refusing to run. Unenforceable containment now logs one loud warning per
+  mechanism (not per contestant — twelve identical lines train everyone to
+  ignore it) and the run proceeds. `--require-sandbox` / `require_sandbox=True`
+  restores the hard failure for anyone whose threat model needs the guarantee;
+  contestant code here is human-reviewed, which is the same reasoning that
+  defers the container tier.
 - **A scenario must be checked for degeneracy before it is trusted.** Both
   prior gauntlets silently measured nothing: 4/5 synthetic scenarios were
   single-symbol, and the real pack froze membership. In both, a cross-sectional

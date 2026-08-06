@@ -399,6 +399,7 @@ def cmd_arena_run(args: argparse.Namespace) -> int:
         args.algos, scenario, metric=args.score, time_budget_s=args.time_budget,
         isolation=args.isolation, cpu_seconds=args.cpu_seconds, memory_mb=args.memory_mb,
         harden=args.harden, seccomp=args.seccomp,
+        require_sandbox=getattr(args, "require_sandbox", False),
     )
     print(outcome.leaderboard.table())
     for e in outcome.load_errors:
@@ -942,6 +943,12 @@ def build_parser() -> argparse.ArgumentParser:
     ar.add_argument("--no-harden", dest="harden", action="store_false", default=True,
                     help="disable the contestant sandbox (no-disk-writes / no-network); "
                          "hardening is ON by default for process isolation")
+    ar.add_argument("--require-sandbox", dest="require_sandbox", action="store_true",
+                    default=False,
+                    help="fail a contestant outright when requested containment "
+                         "cannot be enforced (default: run it and warn loudly). "
+                         "Kernels in CI and unprivileged containers commonly "
+                         "refuse a network namespace.")
     ar.add_argument("--seccomp", action="store_true", default=False,
                     help="adversarial tier: also install a seccomp filter denying "
                          "execve/execveat/ptrace (blocks subprocess/os.system); "

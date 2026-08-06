@@ -122,9 +122,11 @@ def _apply_limits(cpu_seconds: int | None, memory_mb: int | None) -> None:
 
 
 def _subprocess_work(contestant, frames, risk_config, config, result_queue,
-                     cpu_seconds, memory_mb, harden, seccomp) -> None:
+                     cpu_seconds, memory_mb, harden, seccomp,
+                     require_sandbox=False) -> None:
     """Child entrypoint: apply limits, optionally sandbox, simulate, ship back."""
     _apply_limits(cpu_seconds, memory_mb)
+    denied: list[str] = []
     if harden or seccomp:
         from .sandbox import apply_hardening
 
@@ -132,28 +134,37 @@ def _subprocess_work(contestant, frames, risk_config, config, result_queue,
         # we still keep the default no-write/no-network layers on when hardening.
         report = apply_hardening(no_write=harden, isolate_network=harden,
                                  max_open_files=256 if harden else 0, seccomp=seccomp)
-        # Never silently downgrade. The capability report used to be discarded,
-        # so a failed `unshare(CLONE_NEWNET)` left the contestant with full
-        # network access while the tournament printed a clean `ok` — exactly the
-        # silent downgrade this module's isolation modes refuse to do.
+        # Never silently downgrade. The capability report used to be discarded
+        # entirely, so a failed `unshare(CLONE_NEWNET)` left the contestant with
+        # full network access while the tournament printed a clean `ok`.
+        #
+        # But "never silent" is satisfied by *reporting*, not by refusing to run.
+        # Refusing made the arena unusable anywhere the kernel will not grant a
+        # network namespace to an unprivileged process — CI runners, ordinary
+        # containers, macOS — which is not a threat model, it is a portability
+        # bug. Contestant code here is human-reviewed (see the deferred
+        # container tier in CLAUDE.md), so the default is to run and say so
+        # loudly; `require_sandbox` turns it into a hard failure for anyone
+        # whose threat model actually needs the guarantee.
         denied = sorted(k for k, enforced in report.items() if not enforced)
-        if denied:
+        if denied and require_sandbox:
             result_queue.put(("error",
                               "SandboxError: requested containment not enforced: "
-                              + ", ".join(denied)))
+                              + ", ".join(denied), denied))
             return
     try:
         policy, extra = simulation_args(contestant)
         result = simulate(policy, frames, RiskManager(risk_config), config, **extra)
-        result_queue.put(("ok", result))
+        result_queue.put(("ok", result, denied))
     except BaseException as exc:  # noqa: BLE001 - incl. MemoryError; isolate
-        result_queue.put(("error", f"{type(exc).__name__}: {exc}"))
+        result_queue.put(("error", f"{type(exc).__name__}: {exc}", denied))
 
 
 class SubprocessRunner:
     def __init__(self, time_budget_s: float = 10.0,
                  cpu_seconds: int | None = None, memory_mb: int | None = None,
-                 harden: bool = False, seccomp: bool = False) -> None:
+                 harden: bool = False, seccomp: bool = False,
+                 require_sandbox: bool = False) -> None:
         if not fork_available():
             raise RuntimeError("SubprocessRunner requires the 'fork' start method (POSIX).")
         self.time_budget_s = time_budget_s
@@ -163,6 +174,10 @@ class SubprocessRunner:
         self.memory_mb = memory_mb
         self.harden = harden
         self.seccomp = seccomp
+        self.require_sandbox = require_sandbox
+        #: Containment that was asked for and could not be enforced, collected
+        #: across runs so a caller can report it once rather than per contestant.
+        self.degraded: set[str] = set()
         self._ctx = mp.get_context("fork")
 
     def run(self, contestant, frames, risk, config, scorer) -> ContestantResult:
@@ -171,7 +186,8 @@ class SubprocessRunner:
         proc = self._ctx.Process(
             target=_subprocess_work,
             args=(contestant, frames, risk.config, config, result_queue,
-                  self.cpu_seconds, self.memory_mb, self.harden, self.seccomp),
+                  self.cpu_seconds, self.memory_mb, self.harden, self.seccomp,
+                  self.require_sandbox),
             name=f"arena-{contestant.name}", daemon=True,
         )
         proc.start()
@@ -193,7 +209,18 @@ class SubprocessRunner:
         if proc.is_alive():
             self._kill(proc)
 
-        status, payload = message
+        status, payload, denied = message
+        if denied:
+            # Loud, and only once per mechanism: a per-contestant warning would
+            # print twelve identical lines and train everyone to ignore it.
+            for mechanism in denied:
+                if mechanism not in self.degraded:
+                    self.degraded.add(mechanism)
+                    log.warning(
+                        "sandbox: %r could NOT be enforced in this environment; "
+                        "contestants are running with that containment missing. "
+                        "Pass --require-sandbox to make this a hard failure.",
+                        mechanism)
         if status == "ok":
             return _ok(contestant, payload, scorer, duration)
         return _error(contestant, str(payload), duration)
@@ -221,7 +248,8 @@ class SubprocessRunner:
 
 def default_runner(time_budget_s: float = 10.0, isolation: str = "process",
                    cpu_seconds: int | None = None, memory_mb: int | None = None,
-                   harden: bool = True, seccomp: bool = False) -> Runner:
+                   harden: bool = True, seccomp: bool = False,
+                   require_sandbox: bool = False) -> Runner:
     """Select a runner from an isolation mode.
 
     - ``"process"`` (default): hard subprocess isolation. **Raises** if fork is
@@ -229,6 +257,9 @@ def default_runner(time_budget_s: float = 10.0, isolation: str = "process",
       With ``harden=True`` the child is additionally sandboxed (no disk writes,
       no network) — see :mod:`tradebot.arena.sandbox`. ``seccomp=True`` adds the
       adversarial tier: a syscall filter denying ``execve``/``ptrace``.
+      Containment the kernel refuses to grant (commonly a network namespace, in
+      CI and unprivileged containers) is **reported loudly and once**, not
+      silently dropped; pass ``require_sandbox=True`` to make it fatal instead.
     - ``"thread"``: the soft in-process runner (explicit opt-in to weak limits).
     - ``"auto"``: process if fork is available, otherwise a warned fall back to
       the in-process runner.
@@ -259,4 +290,5 @@ def default_runner(time_budget_s: float = 10.0, isolation: str = "process",
             "automatically."
         )
     return SubprocessRunner(time_budget_s, cpu_seconds, memory_mb,
-                            harden=harden, seccomp=seccomp)
+                            harden=harden, seccomp=seccomp,
+                            require_sandbox=require_sandbox)
