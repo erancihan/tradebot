@@ -28,7 +28,7 @@ classic roster + experiment journal + cross-sectional portfolio contestants +
 meta strategies + promotion pass gate; no contestant has passed the gate yet —
 see Roadmap arc status). The live-execution backlog (bracket exits, websocket
 streaming, notifications) shipped 2026-08-05, so **`docs/DESIGN-HANDOFF.md` has
-no outstanding specs left**. **316 tests, all offline & green** (web tests skip
+no outstanding specs left**. **383 tests, all offline & green** (web tests skip
 without fastapi; the Alpaca bracket-mapping test skips without the `[live]`
 extra); frontend has a strict `tsc` gate.
 
@@ -207,7 +207,8 @@ make web                # build frontend + serve dashboard at :8000
 ```
 CLI: `tradebot {backtest,run,status,demo,arena,data,universe}` and `tradebot-web`.
 `run --dry-run`/`--replay` = forward-test;
-`arena {list,run,validate,history,show,league,season,gate,journal}`.
+`arena {list,run,validate,history,show,league,season,gate,journal}`;
+`season {create,seed,list,standings,run}` — **seed before running a real one**.
 `make test` ends with a **simulated balances** ledger (start → final per money
 test; `tests/conftest.py` wraps `Backtester.run` + arena `simulate`).
 
@@ -328,6 +329,18 @@ CI**; check the actual run before claiming a gate passed.
   for the same reason — the newest persisted bar is usually still forming, and
   under first-write-wins that partial would be frozen onto the decision path
   permanently.
+- **A fresh daily season measures nothing for months — seed it.**
+  `MomentumSelector(lookback=60)` is flat for its first 61 bars, so a season
+  started from zero spends a quarter with nobody deployed and its standings are
+  an artefact of warmup. `arena season seed <id> --start .. --end ..` backfills
+  real bars from the cache (falling back to the provider), which is sound
+  because bars are the source of truth and every contestant is causal — a
+  replay of real history is exactly what running live over it would have given.
+  **But backfilled standings are not a live-forward claim**: the window was
+  chosen after the fact and everything in it was knowable when the field was
+  written. `seeded_through` records the boundary (additive column, older DBs
+  migrate on open) and `season standings` prints it. Seeding is idempotent —
+  the bars PK makes re-seeding a no-op.
 - **Season = bars are source of truth.** A live `Season` (`season.py`) persists
   only the accumulated bars (+ a standings snapshot per tick) to SQLite; each
   tick re-ranks the field with `run_tournament(..., frames=accumulated)`. No

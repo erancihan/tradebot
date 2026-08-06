@@ -687,6 +687,46 @@ def cmd_season_create(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_season_seed(args: argparse.Namespace) -> int:
+    """Backfill real history into a season so the field starts warmed up.
+
+    Bars come from the local cache, and from Alpaca only on a miss — so a season
+    seeded once re-seeds offline forever, like every other cached path.
+    """
+    from .arena.season import Season, SeasonStore, seed_season
+    from .data.cache import BarCache, build_default_fetcher
+
+    cache = BarCache(args.cache_dir)
+    fetcher = build_default_fetcher()
+    with SeasonStore(args.db) as store:
+        season = Season.load(store, args.season_id)
+        frames = {}
+        for symbol in season.config.symbols:
+            try:
+                df = cache.get(symbol, season.config.timeframe,
+                               args.start, args.end, fetcher)
+            except RuntimeError as exc:
+                print(f"  {symbol}: {exc}", file=sys.stderr)
+                return 2
+            if len(df):
+                frames[symbol] = df
+            print(f"  {symbol}: {len(df)} bars")
+
+        if not frames:
+            print("No bars to seed. Pull them first: tradebot data pull "
+                  "--symbols ... --start ... --end ...", file=sys.stderr)
+            return 2
+        written = seed_season(season, frames)
+        boundary = store.seeded_through(season.id)
+
+    print(f"\nSeeded season #{season.id} with {written} bars "
+          f"across {len(frames)} symbols, through {boundary[:10]}.")
+    print("Standings over seeded bars are BACKFILLED, not live-earned: the "
+          "window was chosen\nafter the fact. `season standings` marks the "
+          "boundary; keep the two claims apart.")
+    return 0
+
+
 def cmd_season_list(args: argparse.Namespace) -> int:
     from .arena.season import SeasonStore
 
@@ -708,11 +748,21 @@ def cmd_season_standings(args: argparse.Namespace) -> int:
 
     with SeasonStore(args.db) as store:
         snap = store.latest_standings(args.season_id)
+        seeded = store.seeded_through(args.season_id)
     if snap is None:
         print(f"Season #{args.season_id} has no standings yet.", file=sys.stderr)
         return 1
     print(f"Season #{args.season_id} standings (step {snap.step}, {snap.timestamp[:19]}):")
     print(_format_standings(snap))
+    if seeded:
+        # Say it at the point of use, not only in a doc: a table built on
+        # backfilled bars looks exactly like one earned live, and the window was
+        # chosen after the fact.
+        live = "none yet — everything here is backfilled"
+        if snap.timestamp > seeded:
+            live = f"live since {seeded[:10]}"
+        print(f"\n  ~ seeded through {seeded[:10]}; {live}. Standings over "
+              f"backfilled bars are\n    not a live-forward result.")
     return 0
 
 
@@ -1001,6 +1051,14 @@ def build_parser() -> argparse.ArgumentParser:
                     help="per-contestant seconds per tick (default 10)")
     sc.add_argument("--db", default="season.db")
     sc.set_defaults(func=cmd_season_create)
+
+    ss = aSsub.add_parser("seed", help="backfill real history so the field starts warmed up")
+    ss.add_argument("season_id", type=int)
+    ss.add_argument("--start", required=True, help="ISO date, inclusive")
+    ss.add_argument("--end", required=True, help="ISO date")
+    ss.add_argument("--cache-dir", dest="cache_dir", default="data/cache")
+    ss.add_argument("--db", default="season.db")
+    ss.set_defaults(func=cmd_season_seed)
 
     sl = aSsub.add_parser("list", help="list seasons")
     sl.add_argument("--db", default="season.db")

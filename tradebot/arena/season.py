@@ -116,7 +116,33 @@ class SeasonStore:
         self._conn.row_factory = sqlite3.Row
         with closing(self._conn.cursor()) as cur:
             cur.executescript(_SCHEMA)
+        self._migrate()
         self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Additive columns only, so an older season DB keeps working."""
+        cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(seasons)")}
+        if "seeded_through" not in cols:
+            self._conn.execute("ALTER TABLE seasons ADD COLUMN seeded_through TEXT")
+
+    def set_seeded_through(self, season_id: int, ts: str) -> None:
+        """Mark where backfilled history ends and live accumulation begins.
+
+        Seeding is legitimate — bars are bars, and every contestant is causal, so
+        replaying real history is exactly what running the season over that
+        period would have produced. But standings earned over backfilled bars are
+        NOT the same claim as standings earned live: the window was chosen after
+        the fact, and everything in it was knowable when the field was written.
+        Recording the boundary is what keeps those two claims separable.
+        """
+        self._conn.execute("UPDATE seasons SET seeded_through = ? WHERE id = ?",
+                           (ts, season_id))
+        self._conn.commit()
+
+    def seeded_through(self, season_id: int) -> str | None:
+        row = self._conn.execute(
+            "SELECT seeded_through FROM seasons WHERE id = ?", (season_id,)).fetchone()
+        return row["seeded_through"] if row else None
 
     def create_season(self, config: SeasonConfig) -> int:
         now = utcnow().isoformat()
@@ -352,6 +378,41 @@ class AlpacaSeasonFeed:
             self._last_ts[symbol] = ts
             bar[symbol] = last
         return bar or None
+
+
+def seed_season(season: "Season", frames: dict[str, pd.DataFrame],
+                recompute: bool = True) -> int:
+    """Backfill real history into a season so the field starts warmed up.
+
+    A daily season started from zero has no standings worth reading for months:
+    `MomentumSelector(lookback=60)` alone is flat for 61 bars, so the first
+    quarter of a fresh season measures nothing. Seeding is the fix, and it is
+    legitimate — bars are the source of truth, every contestant is causal, and
+    the season re-ranks from accumulated bars anyway, so replaying real history
+    produces exactly what running live over that period would have.
+
+    What it is *not* is the same claim as live results. The seed window was
+    chosen after the fact and everything in it was knowable when the field was
+    written, so `seeded_through` records the boundary and every reader is
+    expected to keep the two apart.
+
+    Returns the number of bars written. Idempotent: the bars table is keyed on
+    ``(season_id, symbol, ts)``, so re-seeding the same window changes nothing.
+    """
+    if not frames:
+        return 0
+    season.store.append_bars(season.id, frames)
+    written = sum(len(df) for df in frames.values())
+    last = max(pd.Timestamp(df.index[-1]) for df in frames.values() if len(df))
+    season.store.set_seeded_through(season.id, last.isoformat())
+
+    if recompute:
+        # One standings snapshot over the whole seeded history, so the season
+        # has a starting table instead of an empty one. Ranking is recomputed
+        # from bars on every later tick regardless, so this is a convenience,
+        # never a source of truth.
+        season.step({})
+    return written
 
 
 class StreamSeasonFeed:

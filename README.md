@@ -610,6 +610,68 @@ npm run watch:js      # rebuild bundle on change (also: watch:css)
 > Built assets (`tradebot/web/static/`) are gitignored and reproduced by
 > `npm run build`. The dashboard is read-only — it never places orders.
 
+## Running a long paper season
+
+A season ranks the whole field over wall-clock time, persisting only the bars —
+so it survives restarts, and resuming is just reloading and stepping again.
+
+**Seed it first.** A daily season started from zero measures nothing for
+months: `MomentumSelector(lookback=60)` is flat for its first 61 bars, so a
+fresh season spends a quarter with nobody deployed. Backfilling real history
+fixes that, and it is sound — bars are the source of truth and every contestant
+is causal, so replaying real history is exactly what running live over that
+period would have produced.
+
+```bash
+# 1. pull the history once (needs the [live] extra + free data keys)
+tradebot data pull --symbols XLK XLE XLV XLF XLY XLP XLI XLB XLU TLT GLD SHY \
+    --timeframe 1day --start 2025-01-02 --end 2026-08-01
+
+# 2. create the season — process isolation for anything long-running
+tradebot arena season create --name paper1 \
+    --symbols XLK XLE XLV XLF XLY XLP XLI XLB XLU TLT GLD SHY \
+    --algos ./algos --score sharpe \
+    --isolation process --time-budget 30 --db season.db
+
+# 3. backfill, so the field starts warmed up
+tradebot arena season seed 1 --start 2025-01-02 --end 2026-08-01 --db season.db
+
+# 4. run the daemon (market-hours gated; --simulate dry-runs it offline)
+tradebot arena season run 1 --db season.db
+```
+
+Standings built on seeded bars are **backfilled, not live-earned** — the window
+was chosen after the fact and everything in it was knowable when the field was
+written. `season seed` records the boundary and `season standings` prints it, so
+the two claims stay separable. Read the live portion as the result.
+
+Watch it at `/seasons` in the dashboard.
+
+### Keeping it alive
+
+The daemon is a normal long-running process: supervise it however you already
+supervise things. It sleeps through closed markets and holidays on its own, and
+because bars are the only state, a hard kill loses at most the tick in flight.
+
+```ini
+# /etc/systemd/system/tradebot-season.service
+[Service]
+ExecStart=/path/to/.venv/bin/tradebot arena season run 1 --db /var/lib/tradebot/season.db
+WorkingDirectory=/path/to/tradebot
+EnvironmentFile=/etc/tradebot.env      # ALPACA_API_KEY / ALPACA_API_SECRET
+Restart=always
+RestartSec=60
+```
+
+Two things worth knowing before you leave it running:
+
+- **Use `--isolation process`.** The default `thread` runner is faster but its
+  time budget is soft — it can flag an over-budget contestant but not kill it,
+  so a slow algo leaks a busy thread every tick until the season crawls. Process
+  isolation makes the budget a hard kill.
+- **Recompute is O(history) per tick.** That is fine at daily cadence for years,
+  but a minute-bar season over a large field will not keep up.
+
 ## Running it for free, continuously
 
 For a $0 deployment, run the loop on any always-on machine you already have
@@ -620,7 +682,7 @@ tier.
 ## Testing
 
 ```bash
-make test     # ~260 tests, fully offline
+make test     # 383 tests, fully offline
 ```
 
 ## Roadmap / ideas

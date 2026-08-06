@@ -203,12 +203,24 @@ class SeasonRepository:
         )
 
     def get_season(self, season_id: int) -> dict | None:
+        # `seeded_through` is read defensively: this repository is read-only and
+        # must not migrate the writer's schema, so a season DB written before
+        # seeding existed simply reports None.
         rows = _read(
             self.db_path,
             "SELECT id, name, symbols, timeframe, metric, status, updated_at "
             "FROM seasons WHERE id = ?", (season_id,),
         )
-        return rows[0] if rows else None
+        if not rows:
+            return None
+        season = rows[0]
+        try:
+            extra = _read(self.db_path,
+                          "SELECT seeded_through FROM seasons WHERE id = ?", (season_id,))
+            season["seeded_through"] = extra[0]["seeded_through"] if extra else None
+        except Exception:
+            season["seeded_through"] = None
+        return season
 
     def latest_standings(self, season_id: int) -> list[dict]:
         rows = _read(

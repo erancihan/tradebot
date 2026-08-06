@@ -266,3 +266,46 @@ def test_the_panel_partial_is_reusable_on_its_own(tmp_path):
     assert partial.status_code == 200
     assert "Consensus book" in partial.text
     assert "<html" not in partial.text          # a fragment, not a page
+
+
+def test_a_seeded_season_says_so_on_the_dashboard(tmp_path):
+    """Provenance has to travel with the numbers, not just live in a doc.
+
+    A standings table built on backfilled bars looks exactly like one earned
+    live. The seasons page marks the boundary so a reader cannot confuse them.
+    """
+    import pandas as pd
+
+    from tradebot.arena.season import Season, SeasonConfig, SeasonStore, seed_season
+    from tradebot.data.synthetic import synthetic_ohlcv
+
+    db = tmp_path / "season.db"
+    with SeasonStore(db) as store:
+        season = Season.create(store, SeasonConfig(
+            name="seeded", symbols=["A", "B"], metric="total_return",
+            algo_paths=[str(ALGOS)]))
+        idx = pd.date_range("2026-01-02", periods=30, freq="1D", tz="UTC")
+        frames = {}
+        for i, sym in enumerate(["A", "B"]):
+            df = synthetic_ohlcv(periods=30, seed=i + 1)
+            df.index = idx
+            frames[sym] = df
+        seed_season(season, frames)
+        sid = season.id
+
+    client = TestClient(create_app(season_db=str(db)))
+    body = client.get(f"/seasons/{sid}").text
+
+    assert "Backfilled through" in body
+    assert "2026-01-31" in body
+    assert "not a live-forward result" in body
+
+
+def test_an_unseeded_season_shows_no_backfill_banner(tmp_path):
+    """The banner is a signal, not decoration."""
+    db = tmp_path / "season.db"
+    _seed_season(db)
+    client = TestClient(create_app(season_db=str(db)))
+
+    body = client.get("/seasons/1").text
+    assert "Backfilled through" not in body

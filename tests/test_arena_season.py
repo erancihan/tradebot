@@ -282,3 +282,152 @@ def test_an_older_season_row_still_loads(tmp_path):
 
     assert old.time_budget_s == 10.0
     assert old.isolation == "thread"
+
+
+# --- seeding: starting a season warmed up ---------------------------------------
+
+def _seed_frames(periods=80, symbols=("A", "B")):
+    import pandas as pd
+
+    idx = pd.date_range("2026-01-02", periods=periods, freq="1D", tz="UTC")
+    frames = {}
+    for i, sym in enumerate(symbols):
+        df = synthetic_ohlcv(periods=periods, seed=i + 1)
+        df.index = idx
+        frames[sym] = df
+    return frames
+
+
+def test_seeding_backfills_history_and_records_the_boundary(tmp_path):
+    """A daily season started from zero measures nothing for months.
+
+    `MomentumSelector(lookback=60)` alone is flat for 61 bars, so the first
+    quarter of a fresh season has no contestant deployed. Seeding fixes that,
+    and the boundary is recorded because backfilled standings are NOT the same
+    claim as live-earned ones.
+    """
+    from tradebot.arena.season import seed_season
+
+    with SeasonStore(tmp_path / "s.db") as store:
+        season = Season.create(store, _config(symbols=["A", "B"]))
+        written = seed_season(season, _seed_frames())
+
+        assert written == 160
+        assert season.step_index == 80
+        assert store.seeded_through(season.id).startswith("2026-03-22")
+        assert store.latest_standings(season.id) is not None
+
+
+def test_seeding_is_idempotent(tmp_path):
+    """Bars are keyed on (season, symbol, ts), so re-seeding changes nothing."""
+    from tradebot.arena.season import seed_season
+
+    with SeasonStore(tmp_path / "s.db") as store:
+        season = Season.create(store, _config(symbols=["A", "B"]))
+        frames = _seed_frames()
+        seed_season(season, frames, recompute=False)
+        before = {s: len(f) for s, f in store.load_frames(season.id).items()}
+        seed_season(season, frames, recompute=False)
+
+        assert {s: len(f) for s, f in store.load_frames(season.id).items()} == before
+
+
+def test_a_seeded_season_resumes_and_keeps_accumulating(tmp_path):
+    """The whole point of seeding: warmed up now, live from here."""
+    import pandas as pd
+
+    from tradebot.arena.season import seed_season
+
+    db = tmp_path / "s.db"
+    with SeasonStore(db) as store:
+        season = Season.create(store, _config(symbols=["A", "B"]))
+        seed_season(season, _seed_frames())
+        season_id = season.id
+
+    # A fresh process would do exactly this: reload and keep stepping.
+    with SeasonStore(db) as store:
+        resumed = Season.load(store, season_id)
+        assert resumed.step_index == 80
+
+        later = pd.date_range("2026-03-23", periods=4, freq="1D", tz="UTC")
+        live = {}
+        for i, sym in enumerate(["A", "B"]):
+            df = synthetic_ohlcv(periods=4, seed=50 + i)
+            df.index = later
+            live[sym] = df
+        assert run_season(resumed, ReplaySeasonFeed(live), max_ticks=4) == 4
+        assert resumed.step_index == 84
+        # The boundary stays where the seed ended; live bars are past it.
+        assert store.seeded_through(season_id).startswith("2026-03-22")
+
+
+def test_seeding_nothing_is_a_no_op(tmp_path):
+    from tradebot.arena.season import seed_season
+
+    with SeasonStore(tmp_path / "s.db") as store:
+        season = Season.create(store, _config())
+        assert seed_season(season, {}) == 0
+        assert store.seeded_through(season.id) is None
+
+
+def test_an_older_season_db_gains_the_boundary_column(tmp_path):
+    """Additive migration: a DB written before seeding existed still opens."""
+    import sqlite3
+
+    db = tmp_path / "old.db"
+    conn = sqlite3.connect(db)
+    conn.executescript("""
+        CREATE TABLE seasons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+            symbols TEXT NOT NULL, timeframe TEXT NOT NULL, metric TEXT NOT NULL,
+            config_json TEXT NOT NULL, status TEXT NOT NULL,
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    """)
+    conn.execute("INSERT INTO seasons (name, symbols, timeframe, metric, config_json,"
+                 " status, created_at, updated_at) VALUES"
+                 " ('old', 'A', '1day', 'sharpe', '{}', 'created', 'x', 'x')")
+    conn.commit()
+    conn.close()
+
+    with SeasonStore(db) as store:
+        assert store.seeded_through(1) is None
+        store.set_seeded_through(1, "2026-01-01T00:00:00+00:00")
+        assert store.seeded_through(1).startswith("2026-01-01")
+
+
+def test_cli_seed_reports_the_boundary_in_standings(tmp_path, capsys):
+    from tradebot.data.cache import BarCache
+
+    cache_dir = tmp_path / "cache"
+    cache = BarCache(str(cache_dir))
+    frames = _seed_frames(periods=70)
+    for sym, df in frames.items():
+        cache.store(sym, "1day", df)
+        cache.record_coverage(sym, "1day", df.index[0], df.index[-1])
+
+    db = str(tmp_path / "s.db")
+    assert main(["arena", "season", "create", "--name", "p", "--symbols", "A", "B",
+                 "--algos", str(ALGOS), "--score", "total_return", "--db", db]) == 0
+    capsys.readouterr()
+
+    assert main(["arena", "season", "seed", "1", "--start", "2026-01-02",
+                 "--end", "2026-03-12", "--cache-dir", str(cache_dir),
+                 "--db", db]) == 0
+    assert "BACKFILLED" in capsys.readouterr().out
+
+    assert main(["arena", "season", "standings", "1", "--db", db]) == 0
+    out = capsys.readouterr().out
+    assert "seeded through" in out
+    assert "not a live-forward result" in out
+
+
+def test_cli_seed_refuses_when_there_are_no_bars(tmp_path, capsys):
+    db = str(tmp_path / "s.db")
+    assert main(["arena", "season", "create", "--name", "p", "--symbols", "A",
+                 "--algos", str(ALGOS), "--db", db]) == 0
+    capsys.readouterr()
+
+    # No cache, no credentials: it must say so rather than seed an empty season.
+    assert main(["arena", "season", "seed", "1", "--start", "2026-01-02",
+                 "--end", "2026-03-12", "--cache-dir", str(tmp_path / "nope"),
+                 "--db", db]) == 2
