@@ -1005,6 +1005,19 @@ a combiner problem.** Do not respond to this FAIL by tuning voice; the next
 useful work is member kinds that are actually uncorrelated with the existing
 twelve.
 
+**Adaptive voice bought essentially nothing, which is the answer the design
+predicted.** `consortium_hedge` (exponential weights, eta=2.0, floor=0.02) over
+the same seven: mean CAGR **3.68% vs equal voice's 3.37%** — +0.31pp — same
+verdict, same criteria pattern, worst-fold 5/7 either way. Per scenario it is
+noisier than that net figure suggests: hedge wins `xs_vol_spike_up` by **+12pp**
+(88.84% vs 76.60%) and loses `xs_momentum_crash` and `xs_chop_dispersion`. A
+scheme whose largest single-scenario effect is 12pp and whose average effect is
+0.31pp is mostly reallocating noise.
+
+That is what the canary evidence already implied about weighting by trailing
+P&L, and it is why `EqualVoice` is the default. **Do not tune `eta`.** The
+correct reading is that voice is not where the leverage is; the roster is.
+
 Worth noting where the M5 split earned its keep on its first real use: the
 absolute bound is the binding criterion here and it is *confounded* in the
 scenario that breaks it (baseline −49.11%), while the relative check passes 2/2.

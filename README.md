@@ -567,6 +567,10 @@ textbook diversification trade — smoother, safer, and it gives up return in
 roughly the proportion it takes out risk. That is exactly the signature the
 caveat above predicts, which is the point: it was written before the run.
 
+The `hedge` voice scores 3.68% against equal voice's 3.37% over the same seven
+scenarios — +0.31pp, same verdict, same pattern. Weighting members by their
+trailing P&L mostly reallocates noise, which is why equal weight is the default.
+
 ## Dashboard (web UI)
 
 A FastAPI dashboard visualises everything the bot records: the equity curve,
