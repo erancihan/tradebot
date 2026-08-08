@@ -22,12 +22,15 @@ def dashboard(request: Request, repo: TradingRepository = Depends(get_trading_re
     equity = repo.equity_series(mode=repo.default_mode(), limit=2000)
     weights = repo.latest_weights()
     universe = repo.latest_universe()
+    orders = repo.recent_orders(limit=25)
     context = {
         "metrics": metrics_service.summarize(equity),
         "account": account_service.snapshot(repo),
-        "orders": repo.recent_orders(limit=25),
+        "orders": orders,
         "modes": repo.modes(),
         "allocations": {**weights, "universe": universe["symbols"]},
+        # Nothing recorded at all -> tell the visitor why, not just empty tables.
+        "fresh": not equity and not orders,
         "active": "dashboard",
     }
     return templates.TemplateResponse(request, "pages/dashboard.html", context)

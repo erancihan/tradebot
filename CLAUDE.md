@@ -28,7 +28,7 @@ classic roster + experiment journal + cross-sectional portfolio contestants +
 meta strategies + promotion pass gate; no contestant has passed the gate yet —
 see Roadmap arc status). The live-execution backlog (bracket exits, websocket
 streaming, notifications) shipped 2026-08-05, so **`docs/DESIGN-HANDOFF.md` has
-no outstanding specs left**. **383 tests, all offline & green** (web tests skip
+no outstanding specs left**. **401 tests, all offline & green** (web tests skip
 without fastapi; the Alpaca bracket-mapping test skips without the `[live]`
 extra); frontend has a strict `tsc` gate.
 
@@ -131,10 +131,11 @@ simulation_args), `simulation.py` (stepped core), `scenario.py`, `runner.py`,
 (`--harden`: no-write + net isolation), `store.py` (runs + experiments
 journal).
 
-`tradebot/web/`: `app.py` (factory), `repository.py` (read-only SQLite),
-`services/` (metrics, account, jobs), `routes/` (pages, partials, api, sse),
-`schemas.py` (Pydantic), `dependencies.py`, `server.py`, `templates/` (Jinja,
-componentised), `static/` (built, gitignored).
+`tradebot/web/`: `app.py` (factory; `cache_dir` param), `repository.py`
+(read-only SQLite), `services/` (metrics, account, jobs incl. the strategy
+catalog, consortium, cache — read-only bar-cache inventory), `routes/` (pages,
+partials, api, sse), `schemas.py` (Pydantic), `dependencies.py`, `server.py`,
+`templates/` (Jinja, componentised), `static/` (built, gitignored).
 
 ## Invariants — do not break these
 
@@ -632,6 +633,20 @@ CI**; check the actual run before claiming a gate passed.
   Hedge is used rather than greedy leader-following because it carries a regret
   bound. `eta` is a declared researcher degree of freedom: state it when
   quoting any result.
+- **The dashboard never fetches, and every simulation result is labelled with
+  its data.** The browser Run page has two sources: `synthetic` (seeded path on
+  an artificial calendar starting 2023-01-02 — long runs stamp dates far into
+  the future; they are axis labels, not forecasts) and `real` (the local
+  `data/cache` **only**, `BarCache.get(..., fetcher=None)`). An uncovered range
+  is answered with the exact `tradebot data pull` command instead of a network
+  call — keeping the web layer credential-free is a design property, not a
+  missing feature. Every job carries a `provenance` record (source, symbol,
+  window, bars, note) rendered as a badge on the result, and empty
+  dashboard/arena/consortium pages say which command fills them. This exists
+  because the owner walked a fresh dashboard (2026-08-08) and reasonably
+  concluded the system traded imaginary data in 2035: the only interactive
+  surface was the synthetic toy, nothing was labelled, and the real-data layer
+  had no frontend door. Keep results labelled; never let the web layer fetch.
 - **A notifier is an observer and can never break a trade.** Every `send` is
   wrapped (`Engine._notify`) and `WebhookNotifier` swallows every URL/OS error,
   because an unreachable endpoint halting the trade loop is exactly backwards.
@@ -1079,6 +1094,20 @@ together; 4d stays deferred on its own rationale (threat model, not effort).
 - **4c notifications** — `notify.py` (`Notifier` protocol, `LogNotifier`
   default, `WebhookNotifier` on stdlib urllib, `MultiNotifier`); `notify:`
   config block; the engine emits `order`, `bracket_exit` and `halt` events.
+
+**Dashboard simulation UX — DONE 2026-08-08 (owner ask: "the user experience
+needs to be revised, at least for the simulation case").** The Run page gained a
+data-source selector (synthetic / cached real bars via `/api/cache`), a
+provenance badge on every result (stored in the job payload so it cannot
+detach), a registry-fed strategy dropdown (`/api/strategies` — constructor
+params introspected into form fields; rosters and `None` defaults stay
+config-file affairs), and date pickers bounded by cache coverage. Empty
+dashboard/arena/consortium pages now say which command fills them. Two scope
+decisions made with the owner: the dashboard **never fetches** (an uncovered
+range shows the exact `tradebot data pull` command — credential-free web stays
+an invariant), and launching *arena* runs stays CLI-only (a browser "re-run"
+button one click from the attempt journal invites data-snooping; a read-only
+scenario browser is the furthest the frontend should go if ever asked).
 
 Deferred (decided, do not re-propose without a new ask):
 - **Container/gVisor containment** — the strongest, OS-level tier, for fully

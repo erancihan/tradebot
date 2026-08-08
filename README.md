@@ -577,9 +577,22 @@ A FastAPI dashboard visualises everything the bot records: the equity curve,
 account stats, recent orders and positions (from the SQLite log, with a live
 Alpaca overlay when credentials are present), the **target allocations** of the
 latest rebalance (weight bars + the resolved candidate universe, refreshed
-live), plus the **arena leaderboards** with each contestant's equity curve. The **Run** page launches a backtest or dry-run
-forward-test from the browser (a background job → polled → summary + equity
-chart), all on synthetic data with no credentials. The **Chart** page shows a
+live), plus the **arena leaderboards** with each contestant's equity curve.
+
+The **Run** page launches a backtest or dry-run forward-test from the browser
+(a background job → polled → summary + equity chart) on either of two data
+sources: **synthetic** (a seeded, invented path on an artificial calendar —
+long runs stamp dates years ahead; they are labels, not forecasts) or **cached
+real bars** (whatever `tradebot data pull` already put in `data/cache`, picked
+by symbol and date range). Every result wears a **provenance badge** saying
+which one produced it, so a synthetic curve can never pass for a real one. The
+dashboard itself **never fetches from the network** — ask for an uncached range
+and it answers with the exact pull command to run instead. The strategy
+dropdown lists the whole registry, with its parameters introspected into form
+fields. Empty pages (dashboard, arena, consortium on a fresh machine) say which
+command fills them rather than presenting blank tables.
+
+The **Chart** page shows a
 candlestick of the bars the bot acted on, with buy/sell order pins overlaid. A
 live account header (equity/cash/buying-power/market status) and the equity curve
 update live over a single **SSE** stream while a session runs, with a one-click
@@ -686,7 +699,7 @@ tier.
 ## Testing
 
 ```bash
-make test     # 383 tests, fully offline
+make test     # 401 tests, fully offline
 ```
 
 ## Roadmap / ideas

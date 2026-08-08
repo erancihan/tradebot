@@ -189,6 +189,17 @@ def test_empty_databases_render_gracefully(tmp_path):
     assert c.get("/api/arena/runs").json() == []
 
 
+def test_empty_pages_explain_how_to_fill_themselves(tmp_path):
+    """An empty page must say why it is empty and which command fills it."""
+    app = create_app(trading_db=str(tmp_path / "missing.db"),
+                     arena_db=str(tmp_path / "missing2.db"),
+                     season_db=str(tmp_path / "missing3.db"))
+    c = TestClient(app)
+    assert "tradebot run --dry-run --replay" in c.get("/").text
+    assert "tradebot arena run --algos ./algos" in c.get("/arena").text
+    assert "tradebot run --dry-run --replay" in c.get("/consortium").text
+
+
 # --- the consortium panel ------------------------------------------------------
 
 def _panel_client(tmp_path, symbols=("SPY", "QQQ"), periods=40):

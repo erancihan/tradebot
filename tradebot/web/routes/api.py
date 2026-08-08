@@ -12,6 +12,7 @@ from ..schemas import (
     AllocationsView,
     ArenaCurve,
     ArenaRunDetail,
+    CacheEntry,
     Candle,
     CandleSeries,
     ConsortiumMember,
@@ -29,9 +30,10 @@ from ..schemas import (
     SeasonDetail,
     SeasonStanding,
     SeasonSummary,
+    StrategySpec,
 )
-from ..services import account_service, consortium_service
-from ..services.jobs_service import VALID_KINDS
+from ..services import account_service, cache_service, consortium_service
+from ..services.jobs_service import VALID_KINDS, VALID_SOURCES, strategy_catalog
 
 router = APIRouter(prefix="/api")
 
@@ -173,14 +175,34 @@ def season_detail(season_id: int, repo: SeasonRepository = Depends(get_season_re
     )
 
 
+@router.get("/strategies", response_model=list[StrategySpec])
+def strategies():
+    """Every registered strategy with the params a form can express."""
+    return [StrategySpec(**s) for s in strategy_catalog()]
+
+
+@router.get("/cache", response_model=list[CacheEntry])
+def cache(request: Request):
+    """What the local bar cache holds — the reach of the Run page's real mode."""
+    return [CacheEntry(**e) for e in cache_service.inventory(request.app.state.cache_dir)]
+
+
 @router.post("/jobs")
 def create_job(req: JobRequest, request: Request):
     if req.kind not in VALID_KINDS:
         raise HTTPException(status_code=400, detail=f"kind must be one of {VALID_KINDS}")
+    if req.source not in VALID_SOURCES:
+        raise HTTPException(status_code=400,
+                            detail=f"source must be one of {VALID_SOURCES}")
+    if req.source == "real" and not req.symbol:
+        raise HTTPException(status_code=400, detail="real-data jobs need a symbol")
     job_id = request.app.state.jobs.submit(
         req.kind,
         {"strategy": req.strategy, "periods": req.periods, "seed": req.seed,
-         "initial_cash": req.initial_cash, "params": req.params or {}},
+         "initial_cash": req.initial_cash, "params": req.params or {},
+         "source": req.source, "symbol": req.symbol, "timeframe": req.timeframe,
+         "start": req.start, "end": req.end,
+         "cache_dir": request.app.state.cache_dir},
     )
     return {"job_id": job_id}
 
@@ -191,4 +213,5 @@ def read_job(job_id: str, request: Request):
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
     return JobView(id=job.id, kind=job.kind, state=job.state,
-                   summary=job.summary, equity=job.equity, error=job.error)
+                   summary=job.summary, equity=job.equity,
+                   provenance=job.provenance, error=job.error)

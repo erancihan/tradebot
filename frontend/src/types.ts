@@ -89,13 +89,54 @@ export interface EquityCurve {
   equity: number[];
 }
 
+export interface StrategyParam {
+  name: string;
+  type: string; // "int" | "float" | "bool" | "str"
+  default: number | boolean | string;
+}
+
+export interface StrategySpec {
+  name: string;
+  params: StrategyParam[];
+}
+
+export interface CacheWindow {
+  start: string | null;
+  end: string | null;
+}
+
+export interface CacheEntry {
+  symbol: string;
+  timeframe: string;
+  bars: number;
+  first: string;
+  last: string;
+  coverage: CacheWindow[];
+}
+
+export interface Provenance {
+  source: string; // "synthetic" | "real"
+  symbol: string;
+  bars: number;
+  start: string;
+  end: string;
+  note: string;
+  seed?: number;
+  timeframe?: string;
+}
+
 export interface JobRequest {
   kind: string;
   strategy: string;
+  source: string;
   periods: number;
   seed: number;
+  symbol?: string;
+  timeframe?: string;
+  start?: string;
+  end?: string;
   initial_cash: number;
-  params: Record<string, number>;
+  params: Record<string, number | boolean | string>;
 }
 
 export interface JobView {
@@ -104,5 +145,6 @@ export interface JobView {
   state: string;
   summary?: Record<string, number | string> | null;
   equity?: EquityCurve | null;
+  provenance?: Provenance | null;
   error?: string | null;
 }

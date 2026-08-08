@@ -15,6 +15,17 @@
     </div>
   </div>
 
+  {% if fresh %}
+    <div class="rounded-lg border border-dashed border-slate-800 p-6 text-sm text-slate-500">
+      <p class="mb-2">Nothing recorded yet: this page charts the trading database, and
+      no engine has run on this machine. (A running season lives on the
+      <a href="/seasons" class="text-emerald-400 hover:underline">Seasons</a> page —
+      it keeps its own records.)</p>
+      <p class="mb-1 text-slate-400">Fill it with an offline replay, then refresh:</p>
+      <code class="block overflow-x-auto rounded bg-slate-900 px-2 py-1 font-mono text-xs text-slate-300">tradebot run --dry-run --replay</code>
+    </div>
+  {% endif %}
+
   <div class="grid grid-cols-2 gap-3 rounded-lg border border-slate-800 bg-slate-900/40 p-4 sm:grid-cols-5">
     <div>
       <div class="text-xs uppercase tracking-wide text-slate-500">Equity</div>

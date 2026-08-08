@@ -24,6 +24,15 @@
     orders.
   </p>
 
+  {% if not panel.members %}
+    <div class="rounded-lg border border-dashed border-slate-800 p-6 text-sm text-slate-500">
+      <p class="mb-2">No panel yet: the consortium reads stored bars from the trading
+      database, and the engine has not recorded any on this machine.</p>
+      <p class="mb-1 text-slate-400">Give it history with an offline replay, then refresh:</p>
+      <code class="block overflow-x-auto rounded bg-slate-900 px-2 py-1 font-mono text-xs text-slate-300">tradebot run --dry-run --replay</code>
+    </div>
+  {% endif %}
+
   {% include "components/consortium_panel.html" %}
 
   <div class="rounded-lg border border-slate-800 bg-slate-900/40 p-4 text-xs text-slate-500">
