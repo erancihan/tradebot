@@ -663,6 +663,29 @@ npm run watch:js      # rebuild bundle on change (also: watch:css)
 > Built assets (`tradebot/web/static/`) are gitignored and reproduced by
 > `npm run build`. The dashboard is read-only — it never places orders.
 
+### Reaching it from your phone
+
+By default the dashboard listens on loopback only and needs no login. To open
+it from a phone on the same network:
+
+```bash
+export TRADEBOT_WEB_TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(24))")
+tradebot-web --host 0.0.0.0 --allow-host 192.168.1.20   # your LAN IP or hostname
+```
+
+Then open `http://192.168.1.20:8000/login?token=<the token>` **once** on the
+phone: it sets a long-lived, HttpOnly session cookie (holding an HMAC of the
+token, not the token) and redirects to the dashboard. Add it to the home screen
+from there. Scripts can send `Authorization: Bearer <token>` instead.
+
+Three guards are always on, token or not: requests for an unlisted `Host` are
+refused (`--allow-host` / `TRADEBOT_ALLOWED_HOSTS` extend the loopback default;
+`'*'` disables the check, with a warning), and every state-changing request must
+carry `X-Requested-With: tradebot`, which the bundled frontend sends and a
+cross-site form cannot. Prefer the env var to `--token`: command-line arguments
+are visible to other users in `ps`. The connection is plain HTTP, so keep it on
+a network you trust (or put HTTPS in front; the cookie is then marked `Secure`).
+
 ## Running a long paper season
 
 A season ranks the whole field over wall-clock time, persisting only the bars —

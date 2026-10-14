@@ -30,6 +30,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="extra Host header to serve, e.g. your LAN IP or hostname "
                              "(repeatable; '*' disables the check). Also read from "
                              "TRADEBOT_ALLOWED_HOSTS, comma separated")
+    parser.add_argument("--token", default=os.getenv("TRADEBOT_WEB_TOKEN"),
+                        help="require this access token (default: $TRADEBOT_WEB_TOKEN; "
+                             "unset = open, for local use). Log a browser in once "
+                             "with /login?token=...")
     parser.add_argument("--reload", action="store_true")
     args = parser.parse_args(argv)
 
@@ -39,10 +43,12 @@ def main(argv: list[str] | None = None) -> int:
 
     app = create_app(trading_db=args.trading_db, arena_db=args.arena_db,
                      season_db=args.season_db, settings_path=args.config,
-                     allowed_hosts=allowed_hosts(args.allow_host))
+                     allowed_hosts=allowed_hosts(args.allow_host),
+                     access_token=args.token or None)
     print(f"Dashboard: http://{args.host}:{args.port}  "
           f"(trading={args.trading_db}, arena={args.arena_db}, season={args.season_db}, "
-          f"config={app.state.settings_path or 'defaults'})")
+          f"config={app.state.settings_path or 'defaults'}, "
+          f"token={'required' if args.token else 'off'})")
     uvicorn.run(app, host=args.host, port=args.port)
     return 0
 

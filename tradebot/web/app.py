@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from ..config import Settings
+from .access import AccessToken
 from .guard import SameOriginGuard
 from .routes import api, pages, partials, sse
 from .services.jobs import JobRegistry
@@ -49,7 +50,8 @@ def load_settings(settings_path: str | None) -> tuple[Settings, str | None]:
 def create_app(trading_db: str = "tradebot.db", arena_db: str = "arena.db",
                season_db: str = "season.db", cache_dir: str = "data/cache",
                settings_path: str | None = None,
-               allowed_hosts: list[str] | None = None) -> FastAPI:
+               allowed_hosts: list[str] | None = None,
+               access_token: str | None = None) -> FastAPI:
     app = FastAPI(title="tradebot dashboard", docs_url="/api/docs")
     app.state.settings, app.state.settings_path = load_settings(settings_path)
     app.state.trading_db = trading_db
@@ -70,17 +72,21 @@ def create_app(trading_db: str = "tradebot.db", arena_db: str = "arena.db",
     app.include_router(partials.router)
     app.include_router(api.router)
     app.include_router(sse.router)
-    _install_middleware(app, allowed_hosts)
+    _install_middleware(app, allowed_hosts, access_token)
     return app
 
 
-def _install_middleware(app: FastAPI, allowed_hosts: list[str] | None) -> None:
+def _install_middleware(app: FastAPI, allowed_hosts: list[str] | None,
+                        access_token: str | None) -> None:
     """Starlette runs the LAST middleware added FIRST, so add innermost first.
 
-    Request order: trusted host -> same-origin guard -> routes. A request for a
-    foreign Host is refused before anything else looks at it.
+    Request order: trusted host -> access token -> same-origin guard -> routes.
+    A foreign Host is refused before anything else looks at it, and an
+    unauthenticated caller learns nothing about which routes exist.
     """
     app.add_middleware(SameOriginGuard)
+    if access_token:
+        app.add_middleware(AccessToken, token=access_token)
     hosts = list(DEFAULT_ALLOWED_HOSTS if allowed_hosts is None else allowed_hosts)
     if "*" in hosts:
         log.warning("Host checking is disabled (--allow-host '*'): the dashboard "
