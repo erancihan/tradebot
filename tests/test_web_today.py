@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import time
+
+import pandas as pd
 import pytest
 
 pytest.importorskip("fastapi")
@@ -9,8 +12,12 @@ pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from tradebot.config import AlpacaCredentials  # noqa: E402
+from tradebot.data.cache import BarCache  # noqa: E402
+from tradebot.data.synthetic import synthetic_ohlcv  # noqa: E402
 from tradebot.storage import Storage  # noqa: E402
 from tradebot.web.app import create_app  # noqa: E402
+from tradebot.web.services import advisor_service  # noqa: E402
 
 from .test_advisor import dummy_proposal  # noqa: E402
 
@@ -88,3 +95,134 @@ def test_proposal_partial_matches_the_page_list(tmp_path):
     _store_dummy(tmp_path)
     body = _client(tmp_path, _config(tmp_path)).get("/partials/proposal").text
     assert 'data-line="SPY"' in body and "<html" not in body
+
+
+# --- refresh: server-side, cache first, network only with credentials ----------
+
+LOOKBACK = 25 + advisor_service.LOOKBACK_HEADROOM     # sma_crossover(5, 20) warmup + headroom
+
+
+def _seed_cache(tmp_path, symbols=("SPY", "QQQ"), periods=120):
+    cache = BarCache(tmp_path / "cache")
+    for i, sym in enumerate(symbols):
+        df = synthetic_ohlcv(periods=periods, seed=10 + i)
+        cache.store(sym, "1day", df)
+        cache.record_coverage(sym, "1day", df.index.min(), df.index.max())
+
+
+def _wait(client, job_id, timeout=15.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        job = client.get(f"/api/jobs/{job_id}").json()
+        if job["state"] in ("done", "error"):
+            return job
+        time.sleep(0.05)
+    raise AssertionError("job did not finish in time")
+
+
+def _refresh(client):
+    r = client.post("/api/proposal/refresh")
+    assert r.status_code == 200
+    return _wait(client, r.json()["job_id"])
+
+
+@pytest.fixture
+def offline(monkeypatch):
+    """No credentials, and any attempt to build a network fetcher fails loudly."""
+    def no_fetcher():
+        raise AssertionError("a fetcher was built without credentials")
+
+    monkeypatch.setattr(advisor_service, "_credentials", lambda: None)
+    monkeypatch.setattr(advisor_service, "build_default_fetcher", no_fetcher)
+
+
+def test_refresh_job_uses_cached_bars_without_credentials(tmp_path, offline):
+    _seed_cache(tmp_path)
+    client = _client(tmp_path, _config(tmp_path))
+    job = _refresh(client)
+    assert job["state"] == "done", job["error"]
+    assert job["kind"] == "proposal" and job["summary"]["lines"] == 2
+
+    p = client.get("/api/proposal").json()["proposal"]
+    assert [ln["symbol"] for ln in p["lines"]] == ["SPY", "QQQ"]
+    for line in p["lines"]:
+        assert line["action"] in ("buy", "sell", "hold")
+        assert line["reason"].startswith("sma_crossover signals")
+    prov = p["provenance"]
+    assert prov["source"] == "cache"
+    assert prov["bars"] == {"SPY": LOOKBACK, "QQQ": LOOKBACK}
+    assert prov["end"].startswith("2023-05-01")              # the cached window
+    assert prov["computed_at"] and prov["timeframe"] == "1day"
+    assert p["account_label"] == "paper (starting cash)"
+    assert p["equity"] == 10_000.0
+    assert "data-line=\"SPY\"" in client.get("/partials/proposal").text
+
+
+def test_refresh_job_fails_with_the_pull_hint_for_an_uncached_symbol(tmp_path, offline):
+    _seed_cache(tmp_path, symbols=("SPY",))
+    client = _client(tmp_path, _config(tmp_path, ("SPY", "NOPE")))
+    job = _refresh(client)
+    assert job["state"] == "error"
+    assert "tradebot data pull --symbols NOPE --timeframe 1day --start" in job["error"]
+    assert "no Alpaca credentials" in job["error"]
+    assert client.get("/api/proposal").json()["proposal"] is None   # nothing stored
+
+
+class _FakeFetcher:
+    def __init__(self):
+        self.calls: list[tuple] = []
+
+    def __call__(self, symbol, timeframe, start, end):
+        self.calls.append((symbol, timeframe, start, end))
+        idx = pd.bdate_range(end=pd.Timestamp(end).normalize(), periods=90, tz="UTC")
+        df = synthetic_ohlcv(periods=len(idx), seed=len(self.calls))
+        df.index = idx
+        return df
+
+
+class _FakeBroker:
+    def account(self):
+        from tradebot.broker.base import AccountSnapshot
+
+        return AccountSnapshot(equity=25_000.0, cash=20_000.0, buying_power=20_000.0,
+                               is_paper=True)
+
+    def positions(self):
+        from tradebot.models import Position
+
+        return {"SPY": Position("SPY", qty=4.0, avg_price=100.0)}
+
+
+def test_refresh_job_attaches_a_fetcher_only_with_credentials(tmp_path, monkeypatch):
+    fetcher = _FakeFetcher()
+    monkeypatch.setattr(advisor_service, "_credentials",
+                        lambda: AlpacaCredentials(api_key="k", api_secret="s"))
+    monkeypatch.setattr(advisor_service, "build_default_fetcher", lambda: fetcher)
+    monkeypatch.setattr(advisor_service, "_paper_broker", lambda creds: _FakeBroker())
+
+    client = _client(tmp_path, _config(tmp_path))          # empty cache
+    job = _refresh(client)
+    assert job["state"] == "done", job["error"]
+    assert [c[0] for c in fetcher.calls] == ["SPY", "QQQ"]
+    p = client.get("/api/proposal").json()["proposal"]
+    assert p["provenance"]["source"] == "alpaca"
+    assert p["account_label"] == "paper (Alpaca)"
+    assert (p["equity"], p["cash"]) == (25_000.0, 20_000.0)
+    assert {ln["symbol"]: ln["current_qty"] for ln in p["lines"]}["SPY"] == 4.0
+    # Every fetch landed in the cache, so the next refresh can replay offline.
+    assert BarCache(tmp_path / "cache").load("QQQ", "1day") is not None
+
+
+def test_settings_come_from_an_explicit_path_then_cwd_then_defaults(tmp_path, monkeypatch):
+    from tradebot.web.app import load_settings
+
+    monkeypatch.chdir(tmp_path)
+    settings, source = load_settings(None)
+    assert source is None and settings.symbols == ["SPY", "QQQ"]
+    assert settings.mode == "paper"
+    _config(tmp_path, ("XLE",))                              # ./config.yaml appears
+    settings, source = load_settings(None)
+    assert source == "config.yaml" and settings.symbols == ["XLE"]
+    other = tmp_path / "other.yaml"
+    other.write_text("symbols: [GLD]\n")
+    assert load_settings(str(other))[0].symbols == ["GLD"]

@@ -26,7 +26,7 @@ merged to master from its `feat/<epic>` branch with a no-ff merge commit.
 - [x] S3.1 tracer: `/today` shows a stored dummy proposal
 - [x] S3.2 `advisor.propose()` extracted from `Engine.rebalance`, with a lockstep test engine == advisor
 - [x] S3.3 reasons: strategy signal, selector rank, allocator weight and risk cap in one sentence per row
-- [ ] S3.4 refresh job (server-side, cache first, network only with credentials), provenance and age
+- [x] S3.4 refresh job (server-side, cache first, network only with credentials), provenance and age
 - [ ] S3.5 account state from SQLite when no broker credentials exist
 
 ## E4: Autopilot
