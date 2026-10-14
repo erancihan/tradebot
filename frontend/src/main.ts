@@ -9,6 +9,7 @@ import { arenaChart } from "./components/arena";
 import { candleChart } from "./components/candleChart";
 import { equityChart } from "./components/dashboard";
 import { jobRunner } from "./components/jobRunner";
+import { moreSheet } from "./components/moreSheet";
 import { partialLoader } from "./components/partialLoader";
 import { seasonChart } from "./components/seasonChart";
 import { startSse } from "./sse";
@@ -26,6 +27,7 @@ Alpine.data("arenaChart", arenaChart);
 Alpine.data("candleChart", candleChart);
 Alpine.data("seasonChart", seasonChart);
 Alpine.data("jobRunner", jobRunner);
+Alpine.data("moreSheet", moreSheet);
 Alpine.data("partialLoader", partialLoader);
 
 window.Alpine = Alpine;

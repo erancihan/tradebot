@@ -320,3 +320,37 @@ def test_an_unseeded_season_shows_no_backfill_banner(tmp_path):
 
     body = client.get("/seasons/1").text
     assert "Backfilled through" not in body
+
+
+def test_manifest_is_served(client):
+    r = client.get("/app/manifest.webmanifest")
+    assert r.status_code == 200
+    manifest = r.json()
+    assert manifest["name"] == "tradebot"
+    assert manifest["display"] == "standalone"
+    for icon in manifest["icons"]:
+        png = client.get(icon["src"])
+        assert png.status_code == 200
+        assert png.content.startswith(b"\x89PNG")
+
+
+PAGES = ("/", "/run", "/chart", "/arena", "/seasons", "/consortium")
+
+
+def test_tabbar_renders_on_every_page(client):
+    """The phone is the primary device: no page may ship without its nav."""
+    for path in PAGES:
+        body = client.get(path).text
+        assert "data-tabbar" in body, path
+        assert 'rel="manifest"' in body, path
+
+
+def test_tabbar_marks_the_current_page(client):
+    """The highlight comes from the page's own `active` key, so it cannot drift."""
+    import re
+
+    current = re.compile(r'href="([^"]+)"[^>]*\s+aria-current="page"')
+    for path in ("/", "/run", "/chart", "/arena"):
+        body = client.get(path).text
+        tabbar = body[body.index("data-tabbar"):]
+        assert current.search(tabbar).group(1) == path, path
