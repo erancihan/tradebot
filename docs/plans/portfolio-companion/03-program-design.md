@@ -99,3 +99,78 @@ def register(sub: argparse._SubParsersAction) -> None: ...
    invariant. The shared step helpers must be used by both loops.
 3. PWA without a service worker: pinning and full-screen work, offline does
    not. Offline is not a goal for a live trading view.
+
+## E2: What-if simulator
+
+### Files
+- `tradebot/whatif.py` (new, core). Plan and result types plus `run_whatif`.
+  If it passes 200 lines it becomes `whatif/` with `plan.py`, `run.py`,
+  `compare.py`.
+- `tradebot/backtest/runner.py`. `Backtester.run` gains an optional
+  `cash_flows` argument: a mapping from bar timestamp to a cash amount added
+  to the book before that bar is sized. Default none, so the arena loop and
+  every existing test are unchanged.
+- `tradebot/backtest/result.py`. `BacktestResult` records
+  `total_contributed` and exposes `money_gain` (final value minus every cash
+  put in) next to the existing time-weighted metrics.
+- `tradebot/web/services/jobs/whatif.py` (new). Job kind `whatif`: resolves
+  frames for every symbol from `BarCache` (cache only in this epic, with the
+  pull hint on a miss), builds the plan, runs it, returns summary, both
+  curves and provenance.
+- `tradebot/web/services/whatif_presets.py` (new). Named presets, for
+  example "Three index ETFs, 200 a month since 2021".
+- `tradebot/web/routes/api/whatif.py` (new). `POST /api/whatif`, `GET
+  /api/whatif/presets`.
+- `tradebot/web/routes/pages.py`. `GET /whatif`.
+- `tradebot/web/templates/pages/whatif.html` (new). Form, result card, chart.
+- `frontend/src/components/whatif.ts` (new). Form state, submit, poll,
+  render the two curves with the existing equity chart helpers.
+- `tests/test_whatif.py` (new), `tests/test_web_whatif.py` (new).
+
+### Types and signatures
+```python
+@dataclass(frozen=True)
+class WhatIfPlan:
+    symbols: list[str]
+    start: str                      # ISO date
+    end: str | None
+    initial_cash: float
+    monthly_contribution: float = 0.0
+    strategy: str = "buy_and_hold"
+    strategy_params: dict = field(default_factory=dict)
+    allocation: str = "equal"
+    allocation_params: dict = field(default_factory=dict)
+    selector: str | None = None
+    selector_params: dict = field(default_factory=dict)
+
+@dataclass(frozen=True)
+class WhatIfResult:
+    plan: BacktestResult
+    benchmark: BacktestResult        # equal-weight buy and hold, same cash flows
+    contributions: float             # total cash put in
+    comparison: dict[str, float]     # final_value, benchmark_final, gain, benchmark_gain, cagr, max_drawdown, vs_benchmark_pct
+
+def monthly_cash_flows(index: pd.DatetimeIndex, amount: float) -> dict[pd.Timestamp, float]: ...
+def run_whatif(plan: WhatIfPlan, frames: dict[str, pd.DataFrame], *, commission: float = 0.0, slippage_bps: float = 1.0) -> WhatIfResult: ...
+```
+
+### Call stack
+`POST /api/whatif` -> `JobRegistry.submit("whatif", params)` -> `jobs/whatif.run_job` -> `frames.resolve_many(symbols, start, end)` -> `whatif.run_whatif` -> `Backtester.run(frames, cash_flows=...)` twice (plan, benchmark) -> `WhatIfResult` -> job payload `{summary, equity, benchmark_equity, provenance}` -> page polls `/api/jobs/{id}`.
+
+### Test plan
+- `test_monthly_cash_flows_lands_on_first_bar_of_each_month`.
+- `test_contributions_raise_final_value_by_the_cash_put_in_when_prices_are_flat`.
+- `test_money_gain_excludes_contributions`.
+- `test_benchmark_is_equal_weight_buy_and_hold_with_the_same_cash_flows`.
+- `test_run_whatif_with_a_strategy_plan_matches_backtester_directly` (lockstep).
+- `test_backtester_without_cash_flows_is_unchanged` (same equity as before the argument existed, on the demo data).
+- Web: `test_whatif_job_runs_from_the_cache_and_carries_provenance`, `test_whatif_uncached_range_returns_pull_hint`, `test_whatif_page_renders_presets`.
+
+### Least confident decisions
+1. Contributions are added at the first bar of each calendar month at that
+   bar's open. Mid-month start dates get no partial first contribution.
+2. Benchmark is equal-weight buy and hold over the same symbols. A
+   single-index benchmark (SPY) is a later option, not in this epic.
+3. Time-weighted metrics (CAGR, Sharpe, drawdown) stay as they are and are
+   labelled "plan performance". Money gain is the headline number on the
+   phone because it answers the owner's question directly.
