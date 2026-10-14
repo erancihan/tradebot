@@ -18,11 +18,11 @@ queue, which is why the registry is the only thing routes touch.
 
 from __future__ import annotations
 
-from .catalog import strategy_catalog
+from .catalog import stack_catalog, strategy_catalog
 from .frames import MAX_PERIODS, MIN_REAL_BARS, VALID_SOURCES
 from .registry import VALID_KINDS, Job, JobRegistry
 
 __all__ = [
     "MAX_PERIODS", "MIN_REAL_BARS", "VALID_KINDS", "VALID_SOURCES",
-    "Job", "JobRegistry", "strategy_catalog",
+    "Job", "JobRegistry", "stack_catalog", "strategy_catalog",
 ]

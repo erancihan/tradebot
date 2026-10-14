@@ -17,7 +17,9 @@ from ..services import (
     advisor_service,
     consortium_service,
     metrics_service,
+    whatif_presets,
 )
+from ..services.jobs import stack_catalog
 
 router = APIRouter()
 
@@ -53,6 +55,14 @@ def today_page(request: Request, repo: TradingRepository = Depends(get_trading_r
 @router.get("/run", response_class=HTMLResponse)
 def run_page(request: Request):
     return templates.TemplateResponse(request, "pages/run.html", {"active": "run"})
+
+
+@router.get("/whatif", response_class=HTMLResponse)
+def whatif_page(request: Request):
+    return templates.TemplateResponse(
+        request, "pages/whatif.html",
+        {"active": "whatif", "stack": stack_catalog(),
+         "presets": whatif_presets.presets(request.app.state.cache_dir)})
 
 
 @router.get("/seasons", response_class=HTMLResponse)

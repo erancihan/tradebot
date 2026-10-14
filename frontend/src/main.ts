@@ -13,6 +13,7 @@ import { moreSheet } from "./components/moreSheet";
 import { partialLoader } from "./components/partialLoader";
 import { seasonChart } from "./components/seasonChart";
 import { today } from "./components/today";
+import { whatIf } from "./components/whatif";
 import { startSse } from "./sse";
 
 declare global {
@@ -28,6 +29,7 @@ Alpine.data("arenaChart", arenaChart);
 Alpine.data("candleChart", candleChart);
 Alpine.data("seasonChart", seasonChart);
 Alpine.data("today", today);
+Alpine.data("whatIf", whatIf);
 Alpine.data("jobRunner", jobRunner);
 Alpine.data("moreSheet", moreSheet);
 Alpine.data("partialLoader", partialLoader);

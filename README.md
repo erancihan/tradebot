@@ -632,7 +632,21 @@ dropdown lists the whole registry, with its parameters introspected into form
 fields. Empty pages (dashboard, arena, consortium on a fresh machine) say which
 command fills them rather than presenting blank tables.
 
-The **Chart** page shows a
+The **What-if** page (a bottom tab on phones) answers "what would this plan
+have made?". Pick a preset or type symbols, a start and end date, starting
+cash and a monthly contribution, then optionally a strategy, a selector (hold
+the best N) and an allocator. The server replays the plan with the same
+`Backtester` as everything else, adding the monthly cash on the first trading
+day of each month, and runs equal-weight buy and hold over the same symbols
+with the same cash as the benchmark. The result card leads with the money
+gain (final value minus everything put in), then the comparison with buy and
+hold; growth and worst drop leave contributions out. Presets come from what
+is cached (synthetic, and labelled so, when the cache is empty), the date
+pickers are bounded by cache coverage, and an uncached range shows the exact
+`tradebot data pull` command. API: `POST /api/whatif` (polled through
+`/api/jobs/{id}`) and `GET /api/whatif/presets`.
+
+The **Chart** page (under More on phones) shows a
 candlestick of the bars the bot acted on, with buy/sell order pins overlaid. A
 live account header (equity/cash/buying-power/market status) and the equity curve
 update live over a single **SSE** stream while a session runs, with a one-click

@@ -12,6 +12,7 @@ import type {
   ProposalEnvelope,
   SeasonDetail,
   StrategySpec,
+  WhatIfRequest,
 } from "../types";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -90,4 +91,8 @@ export function getProposal(): Promise<ProposalEnvelope> {
 
 export function refreshProposal(): Promise<{ job_id: string }> {
   return postJson<{ job_id: string }>("/api/proposal/refresh", {});
+}
+
+export function submitWhatIf(body: WhatIfRequest): Promise<{ job_id: string }> {
+  return postJson<{ job_id: string }>("/api/whatif", body);
 }

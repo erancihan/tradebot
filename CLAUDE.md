@@ -37,7 +37,10 @@ tradebot/
   selection/     base, ranked (momentum, low_vol), regime (regime_switch), registry in __init__
   universe/      screen (LiquidityScreen), alpaca (AlpacaLiquidityUniverse)
   backtest/      result (BacktestResult), runner (Backtester), steps (shared per-bar
-                 helpers used by BOTH the backtester and arena/simulation.py)
+                 helpers used by BOTH the backtester and arena/simulation.py), flows
+                 (cash flows + the flow-free growth index)
+  whatif/        plan (WhatIfPlan, WhatIfResult, monthly_cash_flows), run (run_whatif,
+                 plan_backtester, whatif_risk), compare (benchmark_plan, comparison)
   walkforward.py portfolio.py  models.py  notify.py  config.py
   consortium/    voice, consensus, panel
   broker/        base (Broker ABC), alpaca (lazy SDK), dryrun + brackets (BracketsMixin)
@@ -57,10 +60,11 @@ tradebot/
                  model, feeds, daemon), panel, market, contestant, store + journal
   web/           app (create_app + load_settings), server (--config), dependencies,
                  repository/ (trading, proposals, arena, season), services/ (account,
-                 advisor (Today view + build_inputs), cache, consortium, jobs/ {registry,
-                 frames, backtest, dryrun, proposal, catalog}), schemas/ (+ proposal),
-                 routes/ (pages incl. /today, partials incl. /partials/proposal, sse,
-                 api/ {trading, arena, jobs, proposal}), templates/ (pages/today.html,
+                 advisor (Today view + build_inputs), cache, consortium, whatif_presets,
+                 jobs/ {registry, frames, frames_many, backtest, dryrun, proposal, whatif,
+                 catalog}), schemas/ (+ proposal, whatif), routes/ (pages incl. /today
+                 and /whatif, partials incl. /partials/proposal, sse, api/ {trading, arena,
+                 jobs, proposal, whatif}), templates/ (pages/today.html, pages/whatif.html,
                  components/proposal_list.html, components/tabbar.html),
                  static-src/ (PWA manifest + icons, committed), static/ (built, gitignored)
 algos/           12 contestants + canaries/ and consortium/ (both opt-in)
@@ -70,7 +74,7 @@ tests/  docs/ (research-record.md, adr/, plans/)  data/cache/ (gitignored)
 config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])  Makefile
 ```
 
-Later epics add `autopilot.py`, `whatif.py` and `market/`.
+Later epics add `autopilot.py` and `market/`.
 
 ## Invariants
 
@@ -208,6 +212,16 @@ build on every push and PR, with no credentials.
   verdict depends on where its frame starts, so the engine (which reads its
   own stored bars) and the web refresh (which reads the bar cache) can pick
   differently when those histories start on different days.
+- **Contributions are not returns.** `Backtester.run(..., cash_flows=...)` adds
+  cash before a bar is sized. `BacktestResult` then reports `total_contributed`
+  and `money_gain`, and computes return, CAGR, Sharpe and drawdown on the
+  flow-free growth index (`backtest/flows.py`). With `cash_flows=None` every
+  metric takes the old code path; the arena never passes flows. What-if
+  contributions land on the first bar of each month after the first.
+- **What-if books are fully investable:** `whatif_risk()` allows 100% in one
+  name, fractional shares and a 0.5% no-trade band. The benchmark is
+  equal-weight buy and hold with the same cash on the same bars, so a buy and
+  hold plan ties it exactly.
 
 **Arena**
 - **Isolation modes.** `process` (default on POSIX) forks each contestant with
@@ -298,6 +312,8 @@ build on every push and PR, with no credentials.
   and breaks `rolling`. `JobRequest.params` stays `dict | None`.
 - **Starlette:** `templates.TemplateResponse(request, name, context)`. Equity
   curves serialise as `{index: [...], equity: [...]}`.
+- **Keep ECharts instances out of Alpine state.** A proxied instance throws on
+  multi-series updates; hold it in a closure variable (see `whatif.ts`).
 - **Dashboard refresh** uses one SSE stream (`/sse/dashboard`) into an Alpine
   `live` store. SSE fits a read-only, server-to-client feed.
 - **A green local suite is not a green CI.** Check the actual CI run before

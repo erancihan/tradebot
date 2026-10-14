@@ -59,5 +59,6 @@ class JobView(BaseModel):
     state: str
     summary: dict | None = None
     equity: EquityCurve | None = None
+    benchmark: EquityCurve | None = None  # what-if only: the buy-and-hold curve
     provenance: dict | None = None    # what data the job ran on
     error: str | None = None

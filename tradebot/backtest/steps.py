@@ -178,10 +178,12 @@ def close_prices_at(closes: dict[str, pd.Series], i: int) -> dict[str, float]:
     return {s: float(c.iloc[i]) for s, c in closes.items()}
 
 
-def build_result(points: list[float], common, pf: Portfolio, initial_cash: float) -> BacktestResult:
+def build_result(points: list[float], common, pf: Portfolio, initial_cash: float,
+                 cash_flows: pd.Series | None = None) -> BacktestResult:
     return BacktestResult(
         equity_curve=pd.Series(points, index=common, name="equity"),
         trades=pf.trades,
         initial_cash=initial_cash,
         periods_per_year=_infer_periods_per_year(common),
+        cash_flows=cash_flows,
     )

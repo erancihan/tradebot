@@ -27,6 +27,7 @@ from .proposal import (  # noqa: F401
     ProposalView,
     ProposalEnvelope,
 )
+from .whatif import WhatIfRequest  # noqa: F401
 from .season import (  # noqa: F401
     SeasonSummary,
     SeasonStanding,

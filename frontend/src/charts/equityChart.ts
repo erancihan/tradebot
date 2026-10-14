@@ -66,6 +66,28 @@ export function curveOption(name: string, curve: EquityCurve): EChartsOption {
   return option;
 }
 
+/** The what-if chart: the plan against its buy-and-hold benchmark, same bars. */
+export function comparisonOption(plan: EquityCurve, benchmark: EquityCurve | null): EChartsOption {
+  const option = curveOption("Your plan", plan);
+  if (!benchmark) return option;
+  option.legend = { textStyle: { color: "#cbd5e1" }, top: 0 };
+  option.grid = { ...option.grid, top: 36 };
+  const series = Array.isArray(option.series) ? option.series : [];
+  option.series = [
+    ...series,
+    {
+      name: "Buy and hold",
+      type: "line",
+      smooth: true,
+      showSymbol: false,
+      lineStyle: { color: LINE_COLORS[1], width: 2, type: "dashed" },
+      itemStyle: { color: LINE_COLORS[1] },
+      data: benchmark.equity,
+    },
+  ];
+  return option;
+}
+
 /** ECharts option for a single equity curve with buy/sell markers (dashboard). */
 export function equityOption(series: EquitySeries, orders: OrderRow[] = []): EChartsOption {
   const option = baseLineOption();

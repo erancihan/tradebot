@@ -145,6 +145,7 @@ export interface JobView {
   state: string;
   summary?: Record<string, number | string> | null;
   equity?: EquityCurve | null;
+  benchmark?: EquityCurve | null; // what-if only
   provenance?: Provenance | null;
   error?: string | null;
 }
@@ -182,4 +183,38 @@ export interface ProposalEnvelope {
   config_hint?: string | null;
   symbols: string[];
   proposal?: ProposalView | null;
+}
+
+export interface WhatIfRequest {
+  symbols: string[];
+  source: string; // "real" | "synthetic"
+  start?: string;
+  end?: string;
+  initial_cash: number;
+  monthly_contribution: number;
+  strategy?: string;
+  params?: Record<string, number | boolean | string>;
+  allocation?: string;
+  selector?: string;
+  selector_params?: Record<string, number>;
+}
+
+export interface WhatIfPresetRequest {
+  symbols: string[];
+  source: string;
+  start: string | null;
+  end: string | null;
+  initial_cash: number;
+  monthly_contribution: number;
+  strategy: string;
+  params: Record<string, number | boolean | string>;
+  allocation: string;
+  selector: string | null;
+  selector_params: Record<string, number>;
+}
+
+export interface WhatIfPreset {
+  name: string;
+  description: string;
+  request: WhatIfPresetRequest;
 }

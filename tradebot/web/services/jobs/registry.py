@@ -18,10 +18,23 @@ from .proposal import _run_proposal
 
 #: Kinds a browser may submit through POST /api/jobs. A proposal refresh has
 #: its own route because its parameters come from the server, not the form.
+from .whatif import _run_whatif
+
+#: Kinds the generic Run page may submit. ``whatif`` has its own endpoint and
+#: request model, so it is accepted by the registry but not listed here.
 VALID_KINDS = ("backtest", "dryrun")
 
 _RUNNERS = {"backtest": _run_backtest, "dryrun": _run_dryrun,
-            "proposal": _run_proposal}
+            "proposal": _run_proposal, "whatif": _run_whatif}
+
+
+def _as_fields(outcome) -> dict:
+    """Runners return either the classic (summary, equity, provenance) tuple
+    or a dict of Job fields (what-if adds a benchmark curve)."""
+    if isinstance(outcome, dict):
+        return outcome
+    summary, equity, provenance = outcome
+    return {"summary": summary, "equity": equity, "provenance": provenance}
 
 
 @dataclass
@@ -31,6 +44,7 @@ class Job:
     state: str = "pending"          # pending -> running -> done | error
     summary: dict | None = None
     equity: dict | None = None      # {"index": [...], "equity": [...]}
+    benchmark: dict | None = None   # what-if only: the comparison curve
     provenance: dict | None = None  # what data this ran on — travels with the result
     error: str | None = None
 
@@ -64,8 +78,6 @@ class JobRegistry:
             runner = _RUNNERS.get(kind)
             if runner is None:
                 raise ValueError(f"Unknown job kind: {kind!r}")
-            summary, equity, provenance = runner(params)
-            self._update(job_id, state="done", summary=summary, equity=equity,
-                         provenance=provenance)
+            self._update(job_id, state="done", **_as_fields(runner(params)))
         except Exception as exc:  # noqa: BLE001 - surface failures to the client
             self._update(job_id, state="error", error=f"{type(exc).__name__}: {exc}")
