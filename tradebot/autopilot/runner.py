@@ -18,6 +18,7 @@ from typing import Callable
 from ..arena import market
 from ..models import utcnow
 from . import schedule
+from .approvals import ApprovalsMixin
 from .state import AutopilotState, load_state, store_mode
 
 log = logging.getLogger("tradebot.autopilot")
@@ -25,7 +26,7 @@ log = logging.getLogger("tradebot.autopilot")
 HALT_ERROR = "daily loss halt"
 
 
-class Autopilot:
+class Autopilot(ApprovalsMixin):
     def __init__(self, engine, storage, *, poll_seconds: float,
                  clock: Callable[[], datetime] = utcnow,
                  sleep: Callable[[float], object] | None = None,
@@ -106,28 +107,11 @@ class Autopilot:
         self._expire_pending()
         self._notify({"type": "autopilot_off", "reason": "daily_loss"})
 
-    def _announce_pending(self, batch_id: int | None) -> None:
-        lines = self.storage.pending_lines(self.scope)
-        if not lines:
-            return
-        self._notify({
-            "type": "pending_trades", "batch_id": batch_id, "count": len(lines),
-            "lines": [{"id": ln["id"], "symbol": ln["symbol"], "action": ln["action"],
-                       "qty": abs(ln["order_qty"]), "notional": ln["notional"]}
-                      for ln in lines],
-        })
-
     def _notify(self, event: dict) -> None:
         try:
             self.notifier.send({"mode": self.scope, **event})
         except Exception:  # an observer never breaks the loop
             log.exception("Notifier failed for event %s", event.get("type"))
-
-    def _expire_pending(self) -> int:
-        ids = [ln["id"] for ln in self.storage.pending_lines(self.scope)]
-        if ids:
-            self.storage.set_line_status(ids, "expired")
-        return len(ids)
 
     # --- the loop --------------------------------------------------------
     def run_forever(self, max_ticks: int | None = None) -> int:

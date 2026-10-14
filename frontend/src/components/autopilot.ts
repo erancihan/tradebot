@@ -48,7 +48,8 @@ export function autopilot() {
       this.busy = true;
       this.error = "";
       try {
-        await commandAutopilot(command);
+        const view = await commandAutopilot(command);
+        this.error = view.notice ?? "";
         await this.reload();
       } catch (err) {
         this.error = err instanceof Error ? err.message : String(err);

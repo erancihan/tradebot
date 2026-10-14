@@ -21,6 +21,13 @@ def command(cmd: AutopilotCommand, request: Request):
     if len(given) != 1:
         raise HTTPException(status_code=400,
                             detail="send exactly one of: mode, approve, reject")
-    if cmd.mode is None:
-        raise HTTPException(status_code=400, detail="no pending trades to act on")
-    return autopilot_service.set_mode(request.app, cmd.mode)
+    try:
+        if cmd.mode is not None:
+            return autopilot_service.set_mode(request.app, cmd.mode)
+        if cmd.approve is not None:
+            return autopilot_service.approve(request.app, cmd.approve)
+        return autopilot_service.reject(request.app, cmd.reject)
+    except autopilot_service.AutopilotUnavailable as exc:
+        # Not an HTTP error: the page shows the reason (e.g. the pull command
+        # for missing bars) beside an unchanged state.
+        return autopilot_service.view(request.app, notice=str(exc))

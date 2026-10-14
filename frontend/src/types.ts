@@ -243,4 +243,5 @@ export interface AutopilotView {
   state: AutopilotState;
   modes: { key: AutopilotModeKey; label: string }[];
   pending: ProposalLine[];
+  notice?: string | null;
 }

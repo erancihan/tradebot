@@ -190,3 +190,75 @@ def test_set_mode_refuses_anything_but_the_three_modes(tmp_path, bad):
     pilot, _, _, _ = build(tmp_path)
     with pytest.raises(ValueError):
         pilot.set_mode(bad)
+
+
+# --- approve first ---------------------------------------------------------------
+
+def _approve_pass(tmp_path, **kw):
+    pilot, broker, clock, notifier = build(tmp_path, **kw)
+    pilot.set_mode("approve")
+    pilot.tick()
+    return pilot, broker, clock, notifier, pilot.storage.pending_lines("dry_run")
+
+
+def _statuses(pilot) -> dict[int, str]:
+    rows = pilot.storage._conn.execute("SELECT id, status FROM proposals").fetchall()
+    return {r["id"]: r["status"] for r in rows}
+
+
+def test_approve_mode_notifies_the_pending_trades(tmp_path):
+    _, _, _, notifier, pending = _approve_pass(tmp_path)
+    events = [e for e in notifier.events if e["type"] == "pending_trades"]
+    assert len(events) == 1
+    assert events[0]["count"] == len(SYMBOLS)
+    assert [ln["id"] for ln in events[0]["lines"]] == [ln["id"] for ln in pending]
+
+
+def test_approve_submits_only_the_chosen_lines_and_marks_them(tmp_path):
+    pilot, broker, _, _, pending = _approve_pass(tmp_path)
+    chosen = pending[0]
+    assert pilot.approve([chosen["id"]]) == 1
+    assert set(broker.positions()) == {chosen["symbol"]}
+    status = _statuses(pilot)
+    assert status[chosen["id"]] == "submitted"
+    assert status[pending[1]["id"]] == "pending"
+    assert pilot.approve([chosen["id"]]) == 0              # no double order
+    assert broker._order_seq == 1
+
+
+def test_reject_marks_lines_and_submits_nothing(tmp_path):
+    pilot, broker, _, _, pending = _approve_pass(tmp_path)
+    assert pilot.reject([ln["id"] for ln in pending]) == len(SYMBOLS)
+    assert broker._order_seq == 0
+    assert set(_statuses(pilot).values()) == {"rejected"}
+    assert pilot.state().pending == 0
+
+
+def test_a_stale_batch_is_replaced_by_the_next_pass_never_executed(tmp_path):
+    pilot, broker, clock, _, first = _approve_pass(tmp_path)
+    clock.sleep(300)
+    pilot.tick()
+    status = _statuses(pilot)
+    assert {status[ln["id"]] for ln in first} == {"expired"}
+    second = pilot.storage.pending_lines("dry_run")
+    assert len(second) == len(SYMBOLS)
+    assert not {ln["id"] for ln in first} & {ln["id"] for ln in second}
+    assert pilot.approve([ln["id"] for ln in first]) == 0  # expired: never executed
+    assert broker._order_seq == 0
+
+
+def test_a_late_approval_expires_the_batch_instead_of_trading(tmp_path):
+    """No pass replaced it (the market closed, the loop stopped), but the
+    prices it was sized at are older than one poll: it must not execute."""
+    pilot, broker, clock, _, pending = _approve_pass(tmp_path)
+    clock.sleep(301)
+    assert pilot.approve([ln["id"] for ln in pending]) == 0
+    assert broker._order_seq == 0
+    assert set(_statuses(pilot).values()) == {"expired"}
+
+
+def test_switching_off_expires_what_was_waiting(tmp_path):
+    pilot, broker, _, _, _ = _approve_pass(tmp_path)
+    pilot.set_mode("off")
+    assert pilot.state().pending == 0
+    assert broker._order_seq == 0

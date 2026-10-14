@@ -37,3 +37,4 @@ class AutopilotView(BaseModel):
     state: AutopilotStateView
     modes: list[AutopilotMode]
     pending: list[ProposalLineView]
+    notice: str | None = None         # what a command could not do, in words
