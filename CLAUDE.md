@@ -150,6 +150,8 @@ build on every push and PR, with no credentials.
 
 ## Gotchas
 
+- **The forked contestant never sees broker secrets.** `sandbox.scrub_secrets` deletes `ALPACA_*` and `TRADEBOT_LIVE_CONFIRM` from the child's environment before contestant code runs. Hardening blocks writes and network, not reads of `os.environ`.
+
 **Execution and data**
 - **Bad prices are flat.** NaN, inf or non-positive prices never reach sizing.
   `RiskManager` returns 0 for them and all three loops skip the symbol.
