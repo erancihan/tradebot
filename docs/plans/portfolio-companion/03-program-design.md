@@ -257,3 +257,83 @@ Engine: `Engine.rebalance` -> `advisor.propose()` -> `_submit_all(lines)`.
    hook later if the generic sentence proves too thin.
 3. The tab bar after this epic: Today, Run, What-if, More (Dashboard,
    Chart, Arena, Seasons, Consortium).
+
+## E4: Autopilot
+
+### Files
+- `tradebot/autopilot.py` (new, core; package `autopilot/` if over 200
+  lines). `AutopilotConfig`, `AutopilotState`, `Autopilot` runner.
+- `tradebot/storage/autopilot.py` (new mixin). Table `autopilot_state(key,
+  value)` and the proposal status transitions reused from
+  `storage/proposals.py`.
+- `tradebot/engine/core.py`. `rebalance(submit=True)` gains a `submit`
+  switch. With `submit=False` the pass records the proposal as pending and
+  returns it. `submit_lines(lines)` submits a given list of lines.
+- `tradebot/web/services/autopilot_service.py` (new). One `Autopilot`
+  instance per web process, created lazily from the server settings, started
+  and stopped through the API.
+- `tradebot/web/routes/api/autopilot.py` (new). `GET /api/autopilot`, `POST
+  /api/autopilot`.
+- `tradebot/web/routes/pages.py`. `GET /autopilot`.
+- `tradebot/web/templates/pages/autopilot.html` (new),
+  `components/pending_trades.html` (new partial).
+- `frontend/src/components/autopilot.ts` (new). Mode buttons, approve and
+  reject taps, polling.
+- `tradebot/cli/run.py`. `tradebot run --autopilot [--mode approve|auto]`
+  runs the same runner headless.
+- `tests/test_autopilot.py`, `tests/test_web_autopilot.py` (new).
+
+### Types and signatures
+```python
+Mode = Literal["off", "approve", "auto"]
+
+@dataclass(frozen=True)
+class AutopilotState:
+    mode: Mode
+    running: bool
+    started_at: datetime | None
+    last_pass_at: datetime | None
+    next_pass_at: datetime | None
+    last_error: str | None
+    pending: int
+
+class Autopilot:
+    def __init__(self, engine: Engine, storage: Storage, *, poll_seconds: int,
+                 calendar: MarketCalendar, clock: Callable[[], datetime] = utcnow,
+                 sleep: Callable[[float], None] = time.sleep) -> None: ...
+    def set_mode(self, mode: Mode) -> AutopilotState: ...
+    def state(self) -> AutopilotState: ...
+    def tick(self) -> AutopilotState: ...          # one pass, used by tests and the loop
+    def approve(self, line_ids: list[int]) -> int: ...
+    def reject(self, line_ids: list[int]) -> int: ...
+    def run_forever(self, max_ticks: int | None = None) -> None: ...
+```
+
+### Call stack
+Web: `POST /api/autopilot {mode}` -> `autopilot_service.get().set_mode()` ->
+thread starts `run_forever` on first non-off mode. Loop: `calendar.is_open(now)`
+-> `engine.rebalance(submit=(mode == "auto"))` -> `approve` mode writes
+pending lines and notifies -> sleep until next pass or next open.
+Approve: `POST /api/autopilot {approve: [ids]}` -> `Autopilot.approve` ->
+`engine.submit_lines(lines)` -> status `submitted`.
+
+### Test plan
+- `test_tick_in_auto_mode_submits_every_line`.
+- `test_tick_in_approve_mode_stores_pending_and_submits_nothing`.
+- `test_approve_submits_only_the_chosen_lines_and_marks_them`.
+- `test_reject_marks_lines_and_submits_nothing`.
+- `test_loop_sleeps_through_a_closed_market_with_an_injected_clock`.
+- `test_daily_loss_halt_sets_mode_off_and_records_the_error`.
+- `test_state_round_trips_through_storage_across_restart`.
+- Web: `test_autopilot_page_shows_mode_and_pending`,
+  `test_mode_switch_through_the_api`, `test_approve_through_the_api`.
+- CLI: `test_run_autopilot_headless_replay_ticks`.
+
+### Least confident decisions
+1. One runner thread inside the web process. A separate daemon is not
+   needed for a single user. The CLI path exists for headless use.
+2. A stale pending proposal (older than one poll interval) is replaced by
+   the next pass, not executed. Prices moved.
+3. Live mode keeps the existing gate and is not reachable from the web UI.
+   The mode switch changes approve/auto only. Paper versus live is the
+   config file plus the env latch, as before.
