@@ -6,14 +6,18 @@ request needs either the session cookie that ``/login?token=...`` issues or an
 ``Authorization: Bearer <token>`` header. The cookie carries an HMAC of the
 token, not the token, so a leaked cookie jar does not leak the secret that
 mints new sessions; changing the token invalidates every cookie at once.
+
+The token is posted from a form, never put in a URL: a query string lands in
+server access logs, browser history and Referer headers.
 """
 
 from __future__ import annotations
 
 import hashlib
 import hmac
+from urllib.parse import parse_qs
 
-from starlette.requests import HTTPConnection
+from starlette.requests import HTTPConnection, Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -25,15 +29,30 @@ LOGIN_PATH = "/login"
 #: A year: the point is to log a phone in once, then use the home-screen icon.
 COOKIE_MAX_AGE = 365 * 24 * 3600
 
+#: Login responses must not be cached or leak where they came from.
+_LOGIN_HEADERS = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+
 _ASK_FOR_LOGIN = """<!doctype html><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>tradebot: sign in</title>
 <p>This dashboard needs its access token.</p>
-<p>Open <code>/login?token=&lt;your TRADEBOT_WEB_TOKEN&gt;</code> once in this browser.</p>
+<p><a href="/login">Sign in</a> once in this browser and paste it.</p>
 """
-_WRONG_TOKEN = """<!doctype html><meta charset="utf-8">
-<title>tradebot: wrong token</title>
-<p>That token is not the one this dashboard was started with.</p>
+_LOGIN_FORM = """<!doctype html><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tradebot: sign in</title>
+<style>body{font:16px system-ui,sans-serif;max-width:24rem;margin:3rem auto;padding:0 1rem}
+input,button{font:inherit;padding:.5rem;width:100%;box-sizing:border-box;margin-top:.5rem}
+.err{color:#b91c1c}</style>
+<h1>tradebot</h1>
+{error}
+<form method="post" action="/login">
+<label for="token">Access token (TRADEBOT_WEB_TOKEN)</label>
+<input id="token" name="token" type="password" autocomplete="current-password" required autofocus>
+<button type="submit">Sign in</button>
+</form>
 """
+_WRONG_TOKEN = '<p class="err">That is not the token this dashboard was started with.</p>'
 
 
 def session_value(token: str) -> str:
@@ -55,7 +74,8 @@ class AccessToken:
             return
         conn = HTTPConnection(scope)
         if scope["type"] == "http" and scope["path"] == LOGIN_PATH:
-            await self._login(conn)(scope, receive, send)
+            response = await self._login(Request(scope, receive))
+            await response(scope, receive, send)
         elif self._authorised(conn):
             await self.app(scope, receive, send)
         elif scope["type"] == "websocket":
@@ -70,14 +90,28 @@ class AccessToken:
         scheme, _, bearer = conn.headers.get("authorization", "").partition(" ")
         return scheme.lower() == "bearer" and _same(bearer.strip(), self.token)
 
-    def _login(self, conn: HTTPConnection) -> Response:
-        if not _same(conn.query_params.get("token", ""), self.token):
-            return HTMLResponse(_WRONG_TOKEN, status_code=403)
-        response = RedirectResponse("/", status_code=303)
+    async def _login(self, request: Request) -> Response:
+        if request.method != "POST":
+            return _login_page()
+        if not _same(await _posted_token(request), self.token):
+            return _login_page(_WRONG_TOKEN, status_code=403)
+        response = RedirectResponse("/", status_code=303, headers=_LOGIN_HEADERS)
         response.set_cookie(COOKIE_NAME, self.session, max_age=COOKIE_MAX_AGE,
                             httponly=True, samesite="lax",
-                            secure=conn.url.scheme == "https")
+                            secure=request.url.scheme == "https")
         return response
+
+
+def _login_page(error: str = "", status_code: int = 200) -> Response:
+    return HTMLResponse(_LOGIN_FORM.replace("{error}", error),
+                        status_code=status_code, headers=_LOGIN_HEADERS)
+
+
+async def _posted_token(request: Request) -> str:
+    # Parsed by hand: Starlette's request.form() needs python-multipart, and
+    # one urlencoded field does not justify a dependency.
+    fields = parse_qs((await request.body()).decode("utf-8", "replace"))
+    return fields.get("token", [""])[0]
 
 
 def _is_open(path: str) -> bool:

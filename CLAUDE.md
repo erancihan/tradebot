@@ -307,7 +307,8 @@ build on every push and PR, with no credentials.
   outermost first: trusted host (loopback default, `--allow-host` extends) ->
   optional `TRADEBOT_WEB_TOKEN` gate (`web/access.py`, cookie
   `tradebot_session` = HMAC of the token, or `Authorization: Bearer`) ->
-  same-origin guard. Build test clients with `tests/web_client.local_client`
+  same-origin guard (`POST /login`, a plain form, is its only exemption;
+  the token is never accepted in a URL). Build test clients with `tests/web_client.local_client`
   (Host `localhost`): `testserver` is deliberately not on the allowlist.
 - **A green local suite is not a green CI.** Check the actual CI run before
   you claim a gate passed.

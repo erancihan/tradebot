@@ -32,8 +32,8 @@ def main(argv: list[str] | None = None) -> int:
                              "TRADEBOT_ALLOWED_HOSTS, comma separated")
     parser.add_argument("--token", default=os.getenv("TRADEBOT_WEB_TOKEN"),
                         help="require this access token (default: $TRADEBOT_WEB_TOKEN; "
-                             "unset = open, for local use). Log a browser in once "
-                             "with /login?token=...")
+                             "unset = open, for local use). Sign a browser in once "
+                             "at /login")
     parser.add_argument("--reload", action="store_true")
     args = parser.parse_args(argv)
 

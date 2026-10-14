@@ -103,23 +103,52 @@ def _locked(tmp_path, **kwargs) -> TestClient:
     return local_client(_app(tmp_path, access_token=TOKEN), **kwargs)
 
 
+def _sign_in(client: TestClient, token: str = TOKEN):
+    # A plain form post with no X-Requested-With, exactly what a browser sends.
+    return client.post("/login", data={"token": token}, follow_redirects=False)
+
+
 def _logged_in(tmp_path) -> TestClient:
     client = _locked(tmp_path)
-    assert client.get(f"/login?token={TOKEN}", follow_redirects=False).status_code == 303
+    assert _sign_in(client).status_code == 303
     return client
+
+
+def _assert_login_headers(r) -> None:
+    assert r.headers["cache-control"] == "no-store"
+    assert r.headers["referrer-policy"] == "no-referrer"
 
 
 def test_the_app_is_open_without_a_token(tmp_path):
     client = _client(tmp_path)
     assert client.get("/").status_code == 200
-    assert client.get("/login?token=x").status_code == 404
+    assert client.get("/login").status_code == 404
+
+
+def test_without_a_token_post_login_is_still_not_a_page(tmp_path):
+    assert _sign_in(_client(tmp_path)).status_code in (404, 405)
 
 
 def test_a_locked_app_asks_unauthenticated_callers_to_log_in(tmp_path):
     r = _locked(tmp_path).get("/")
     assert r.status_code == 401
     assert "text/html" in r.headers["content-type"]
-    assert "/login?token=" in r.text
+    assert 'href="/login"' in r.text
+    assert TOKEN not in r.text
+
+
+def test_the_login_page_is_a_password_form_that_posts(tmp_path):
+    r = _locked(tmp_path).get("/login")
+    assert r.status_code == 200
+    assert 'method="post"' in r.text and 'type="password"' in r.text
+    assert 'name="token"' in r.text and "<script" not in r.text
+    _assert_login_headers(r)
+
+
+def test_a_token_in_the_query_string_does_not_log_in(tmp_path):
+    r = _locked(tmp_path).get(f"/login?token={TOKEN}", follow_redirects=False)
+    assert r.status_code == 200
+    assert "set-cookie" not in r.headers
 
 
 def test_pwa_assets_stay_reachable_before_login(tmp_path):
@@ -129,8 +158,9 @@ def test_pwa_assets_stay_reachable_before_login(tmp_path):
 
 
 def test_login_sets_an_httponly_cookie_that_is_not_the_token(tmp_path):
-    r = _locked(tmp_path).get(f"/login?token={TOKEN}", follow_redirects=False)
+    r = _sign_in(_locked(tmp_path))
     assert r.status_code == 303 and r.headers["location"] == "/"
+    _assert_login_headers(r)
     cookie = r.headers["set-cookie"]
     assert cookie.startswith("tradebot_session=")
     assert "HttpOnly" in cookie and "samesite=lax" in cookie.lower()
@@ -139,15 +169,16 @@ def test_login_sets_an_httponly_cookie_that_is_not_the_token(tmp_path):
 
 
 def test_login_over_https_marks_the_cookie_secure(tmp_path):
-    client = _locked(tmp_path, base_url="https://localhost")
-    r = client.get(f"/login?token={TOKEN}", follow_redirects=False)
+    r = _sign_in(_locked(tmp_path, base_url="https://localhost"))
     assert "Secure" in r.headers["set-cookie"]
 
 
 def test_a_wrong_token_is_refused_and_sets_nothing(tmp_path):
-    r = _locked(tmp_path).get("/login?token=guess", follow_redirects=False)
+    r = _sign_in(_locked(tmp_path), token="guess")
     assert r.status_code == 403
     assert "set-cookie" not in r.headers
+    assert 'type="password"' in r.text and "not the token" in r.text
+    _assert_login_headers(r)
 
 
 def test_the_cookie_unlocks_pages_and_the_event_stream(tmp_path):
@@ -173,6 +204,12 @@ def test_a_bearer_header_works_without_a_cookie(tmp_path):
     assert ok.status_code == 200
     bad = client.get("/api/strategies", headers={"Authorization": "Bearer nope"})
     assert bad.status_code == 401
+
+
+def test_post_login_is_the_only_exemption_from_the_header_guard():
+    from tradebot.web.guard import EXEMPT
+
+    assert EXEMPT == {("POST", "/login")}
 
 
 def test_a_logged_in_post_still_needs_the_same_origin_header(tmp_path):

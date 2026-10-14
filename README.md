@@ -673,18 +673,21 @@ export TRADEBOT_WEB_TOKEN=$(python -c "import secrets; print(secrets.token_urlsa
 tradebot-web --host 0.0.0.0 --allow-host 192.168.1.20   # your LAN IP or hostname
 ```
 
-Then open `http://192.168.1.20:8000/login?token=<the token>` **once** on the
-phone: it sets a long-lived, HttpOnly session cookie (holding an HMAC of the
+Then open `http://192.168.1.20:8000/login` **once** on the phone and paste the
+token: it sets a long-lived, HttpOnly session cookie (holding an HMAC of the
 token, not the token) and redirects to the dashboard. Add it to the home screen
-from there. Scripts can send `Authorization: Bearer <token>` instead.
+from there. The token is posted from a form, never put in a URL, so it stays out
+of access logs and browser history. Scripts can send
+`Authorization: Bearer <token>` instead.
 
-Three guards are always on, token or not: requests for an unlisted `Host` are
+Two guards are always on, token or not: requests for an unlisted `Host` are
 refused (`--allow-host` / `TRADEBOT_ALLOWED_HOSTS` extend the loopback default;
 `'*'` disables the check, with a warning), and every state-changing request must
 carry `X-Requested-With: tradebot`, which the bundled frontend sends and a
-cross-site form cannot. Prefer the env var to `--token`: command-line arguments
-are visible to other users in `ps`. The connection is plain HTTP, so keep it on
-a network you trust (or put HTTPS in front; the cookie is then marked `Secure`).
+cross-site form cannot (the login form is the single exemption). Prefer the env
+var to `--token`: command-line arguments are visible to other users in `ps`. The
+connection is plain HTTP, so keep it on a network you trust (or put HTTPS in
+front; the cookie is then marked `Secure`).
 
 ## Running a long paper season
 

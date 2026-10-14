@@ -5,6 +5,10 @@ and this server sends no CORS headers, so a browser refuses to let another
 origin add one. Requiring ``X-Requested-With: tradebot`` on every mutating
 method therefore blocks CSRF without tokens, cookies-to-forms plumbing or
 per-page state. The TypeScript client sets it centrally (``api/client.ts``).
+
+The one exemption is ``POST /login``: it is a plain HTML form, which cannot
+send the header, and it only accepts the secret token itself, so a forged
+submission gains an attacker nothing.
 """
 
 from __future__ import annotations
@@ -19,6 +23,8 @@ HEADER_VALUE = "tradebot"
 POST_HEADERS = {HEADER_NAME: HEADER_VALUE}
 
 MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+#: (method, path) pairs that may skip the header. Keep this to the login form.
+EXEMPT = frozenset({("POST", "/login")})
 
 
 class SameOriginGuard:
@@ -29,6 +35,7 @@ class SameOriginGuard:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "http" and scope["method"] in MUTATING_METHODS \
+                and (scope["method"], scope["path"]) not in EXEMPT \
                 and not _has_header(scope):
             await _forbid(send)
             return
