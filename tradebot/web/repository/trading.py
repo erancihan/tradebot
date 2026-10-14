@@ -1,29 +1,10 @@
-"""Read-only access to the bot's SQLite logs.
-
-Both repositories tolerate a missing database or missing tables (returning empty
-results) so the dashboard renders cleanly before the bot has ever run. Databases
-are opened read-only so the web layer can never mutate trading data.
-"""
+"""Read-only access to the trading DB (equity, orders, bars, weights)."""
 
 from __future__ import annotations
 
 import json
-import sqlite3
-from pathlib import Path
 
-
-def _read(db_path: str, sql: str, params: tuple = ()) -> list[dict]:
-    if not Path(db_path).exists():
-        return []
-    try:
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-        conn.row_factory = sqlite3.Row
-        try:
-            return [dict(r) for r in conn.execute(sql, params).fetchall()]
-        finally:
-            conn.close()
-    except sqlite3.OperationalError:
-        return []  # table doesn't exist yet
+from ._db import _read
 
 
 class TradingRepository:
@@ -149,94 +130,3 @@ class TradingRepository:
         except (json.JSONDecodeError, TypeError):
             symbols = []
         return {"ts": rows[0]["ts"], "mode": rows[0]["mode"], "symbols": symbols}
-
-
-class ArenaRepository:
-    """Saved tournaments (runs, results, equity curves)."""
-
-    def __init__(self, db_path: str = "arena.db") -> None:
-        self.db_path = db_path
-
-    def list_runs(self) -> list[dict]:
-        return _read(
-            self.db_path,
-            "SELECT r.*, (SELECT name FROM arena_results WHERE run_id = r.id AND rank = 1)"
-            " AS winner FROM arena_runs r ORDER BY r.id DESC",
-        )
-
-    def get_run(self, run_id: int) -> dict | None:
-        run = _read(self.db_path, "SELECT * FROM arena_runs WHERE id = ?", (run_id,))
-        if not run:
-            return None
-        results = _read(
-            self.db_path,
-            "SELECT * FROM arena_results WHERE run_id = ? ORDER BY (rank IS NULL), rank",
-            (run_id,),
-        )
-        return {"run": run[0], "results": results}
-
-    def latest_run_id(self) -> int | None:
-        runs = self.list_runs()
-        return runs[0]["id"] if runs else None
-
-    @staticmethod
-    def parse_equity(equity_json: str | None) -> dict | None:
-        if not equity_json:
-            return None
-        try:
-            return json.loads(equity_json)
-        except (json.JSONDecodeError, TypeError):
-            return None
-
-
-class SeasonRepository:
-    """Read-only access to a live-league season DB (season.db)."""
-
-    def __init__(self, db_path: str = "season.db") -> None:
-        self.db_path = db_path
-
-    def list_seasons(self) -> list[dict]:
-        return _read(
-            self.db_path,
-            "SELECT id, name, symbols, timeframe, metric, status, updated_at "
-            "FROM seasons ORDER BY id DESC",
-        )
-
-    def get_season(self, season_id: int) -> dict | None:
-        # `seeded_through` is read defensively: this repository is read-only and
-        # must not migrate the writer's schema, so a season DB written before
-        # seeding existed simply reports None.
-        rows = _read(
-            self.db_path,
-            "SELECT id, name, symbols, timeframe, metric, status, updated_at "
-            "FROM seasons WHERE id = ?", (season_id,),
-        )
-        if not rows:
-            return None
-        season = rows[0]
-        try:
-            extra = _read(self.db_path,
-                          "SELECT seeded_through FROM seasons WHERE id = ?", (season_id,))
-            season["seeded_through"] = extra[0]["seeded_through"] if extra else None
-        except Exception:
-            season["seeded_through"] = None
-        return season
-
-    def latest_standings(self, season_id: int) -> list[dict]:
-        rows = _read(
-            self.db_path,
-            "SELECT standings_json FROM season_standings WHERE season_id = ? "
-            "ORDER BY step DESC LIMIT 1", (season_id,),
-        )
-        return json.loads(rows[0]["standings_json"]) if rows else []
-
-    def standings_history(self, season_id: int) -> list[dict]:
-        rows = _read(
-            self.db_path,
-            "SELECT step, ts, standings_json FROM season_standings "
-            "WHERE season_id = ? ORDER BY step", (season_id,),
-        )
-        return [
-            {"step": r["step"], "ts": r["ts"], "standings": json.loads(r["standings_json"])}
-            for r in rows
-        ]

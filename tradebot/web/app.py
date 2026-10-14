@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from .routes import api, pages, partials, sse
-from .services.jobs_service import JobRegistry
+from .services.jobs import JobRegistry
 
 
 def create_app(trading_db: str = "tradebot.db", arena_db: str = "arena.db",
