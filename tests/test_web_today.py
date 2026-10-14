@@ -18,6 +18,7 @@ from tradebot.data.synthetic import synthetic_ohlcv  # noqa: E402
 from tradebot.models import Order, Side  # noqa: E402
 from tradebot.storage import Storage  # noqa: E402
 from tradebot.web.app import create_app  # noqa: E402
+from tradebot.web.guard import POST_HEADERS  # noqa: E402
 from tradebot.web.services import advisor_service  # noqa: E402
 
 from .test_advisor import dummy_proposal  # noqa: E402
@@ -122,7 +123,7 @@ def _wait(client, job_id, timeout=15.0):
 
 
 def _refresh(client):
-    r = client.post("/api/proposal/refresh")
+    r = client.post("/api/proposal/refresh", headers=POST_HEADERS)
     assert r.status_code == 200
     return _wait(client, r.json()["job_id"])
 

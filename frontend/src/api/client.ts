@@ -22,10 +22,18 @@ async function getJson<T>(url: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+// The server refuses any mutating request without this header (web/guard.py):
+// a cross-origin form cannot set it, which is what makes it a CSRF guard.
+const SAME_ORIGIN_HEADER = { "X-Requested-With": "tradebot" } as const;
+
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...SAME_ORIGIN_HEADER,
+    },
     body: JSON.stringify(body),
   });
   if (!response.ok) {

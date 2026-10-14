@@ -8,6 +8,7 @@ pytest.importorskip("httpx")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from tradebot.web.app import create_app  # noqa: E402
+from tradebot.web.guard import POST_HEADERS  # noqa: E402
 
 
 def _client(tmp_path):
@@ -40,7 +41,7 @@ def _wait(client, job_id, timeout=15.0):
 
 def test_backtest_job_runs_to_completion(tmp_path):
     client = _client(tmp_path)
-    r = client.post("/api/jobs", json={
+    r = client.post("/api/jobs", headers=POST_HEADERS, json={
         "kind": "backtest", "strategy": "sma_crossover", "periods": 200,
         "seed": 1, "initial_cash": 10000, "params": {"fast": 5, "slow": 20},
     })
@@ -53,7 +54,7 @@ def test_backtest_job_runs_to_completion(tmp_path):
 
 def test_dryrun_job_produces_equity_curve(tmp_path):
     client = _client(tmp_path)
-    r = client.post("/api/jobs", json={
+    r = client.post("/api/jobs", headers=POST_HEADERS, json={
         "kind": "dryrun", "strategy": "rsi_reversion", "periods": 150,
         "seed": 2, "initial_cash": 10000, "params": {"period": 14, "oversold": 30},
     })
@@ -64,7 +65,7 @@ def test_dryrun_job_produces_equity_curve(tmp_path):
 
 
 def test_invalid_kind_is_rejected(tmp_path):
-    assert _client(tmp_path).post("/api/jobs", json={"kind": "nope"}).status_code == 400
+    assert _client(tmp_path).post("/api/jobs", headers=POST_HEADERS, json={"kind": "nope"}).status_code == 400
 
 
 def test_unknown_job_is_404(tmp_path):
@@ -73,7 +74,7 @@ def test_unknown_job_is_404(tmp_path):
 
 def test_bad_strategy_job_reports_error(tmp_path):
     client = _client(tmp_path)
-    r = client.post("/api/jobs", json={"kind": "backtest", "strategy": "no_such_strategy"})
+    r = client.post("/api/jobs", headers=POST_HEADERS, json={"kind": "backtest", "strategy": "no_such_strategy"})
     job = _wait(client, r.json()["job_id"])
     assert job["state"] == "error"
     assert job["error"]
@@ -154,7 +155,7 @@ def test_strategy_catalog_skips_params_a_form_cannot_express(tmp_path):
 def test_real_backtest_job_runs_offline_from_the_cache(tmp_path):
     df = _seed_cache(tmp_path, symbol="XLTEST", periods=150)
     client = _client(tmp_path)
-    r = client.post("/api/jobs", json={
+    r = client.post("/api/jobs", headers=POST_HEADERS, json={
         "kind": "backtest", "strategy": "sma_crossover",
         "source": "real", "symbol": "XLTEST",
         "start": str(df.index.min().date()), "end": str(df.index.max().date()),
@@ -174,7 +175,7 @@ def test_real_backtest_job_runs_offline_from_the_cache(tmp_path):
 def test_real_dryrun_job_runs_offline_from_the_cache(tmp_path):
     df = _seed_cache(tmp_path, symbol="XLTEST", periods=120)
     client = _client(tmp_path)
-    r = client.post("/api/jobs", json={
+    r = client.post("/api/jobs", headers=POST_HEADERS, json={
         "kind": "dryrun", "strategy": "rsi_reversion",
         "source": "real", "symbol": "XLTEST",
         "start": str(df.index.min().date()), "end": str(df.index.max().date()),
@@ -188,7 +189,7 @@ def test_real_dryrun_job_runs_offline_from_the_cache(tmp_path):
 
 def test_real_job_without_cached_bars_reports_the_exact_pull_command(tmp_path):
     client = _client(tmp_path)                     # nothing seeded
-    r = client.post("/api/jobs", json={
+    r = client.post("/api/jobs", headers=POST_HEADERS, json={
         "kind": "backtest", "strategy": "sma_crossover",
         "source": "real", "symbol": "XLNOPE",
         "start": "2025-01-02", "end": "2025-06-30",
@@ -201,13 +202,13 @@ def test_real_job_without_cached_bars_reports_the_exact_pull_command(tmp_path):
 
 
 def test_real_job_requires_a_symbol(tmp_path):
-    r = _client(tmp_path).post("/api/jobs", json={
+    r = _client(tmp_path).post("/api/jobs", headers=POST_HEADERS, json={
         "kind": "backtest", "strategy": "sma_crossover", "source": "real"})
     assert r.status_code == 400
 
 
 def test_unknown_source_is_rejected(tmp_path):
-    r = _client(tmp_path).post("/api/jobs", json={
+    r = _client(tmp_path).post("/api/jobs", headers=POST_HEADERS, json={
         "kind": "backtest", "strategy": "sma_crossover", "source": "imaginary"})
     assert r.status_code == 400
 
@@ -215,7 +216,7 @@ def test_unknown_source_is_rejected(tmp_path):
 def test_real_job_range_with_too_few_bars_is_an_error_not_a_verdict(tmp_path):
     df = _seed_cache(tmp_path, symbol="XLTEST", periods=150)
     client = _client(tmp_path)
-    r = client.post("/api/jobs", json={
+    r = client.post("/api/jobs", headers=POST_HEADERS, json={
         "kind": "backtest", "strategy": "sma_crossover",
         "source": "real", "symbol": "XLTEST",
         "start": str(df.index[10].date()), "end": str(df.index[12].date()),
@@ -227,7 +228,7 @@ def test_real_job_range_with_too_few_bars_is_an_error_not_a_verdict(tmp_path):
 
 def test_synthetic_job_carries_provenance_too(tmp_path):
     client = _client(tmp_path)
-    r = client.post("/api/jobs", json={
+    r = client.post("/api/jobs", headers=POST_HEADERS, json={
         "kind": "backtest", "strategy": "sma_crossover", "periods": 120, "seed": 9})
     job = _wait(client, r.json()["job_id"])
     assert job["state"] == "done"

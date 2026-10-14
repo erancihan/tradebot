@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from ..config import Settings
+from .guard import SameOriginGuard
 from .routes import api, pages, partials, sse
 from .services.jobs import JobRegistry
 
@@ -58,4 +59,5 @@ def create_app(trading_db: str = "tradebot.db", arena_db: str = "arena.db",
     app.include_router(partials.router)
     app.include_router(api.router)
     app.include_router(sse.router)
+    app.add_middleware(SameOriginGuard)
     return app
