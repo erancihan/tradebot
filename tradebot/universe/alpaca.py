@@ -1,85 +1,10 @@
-"""Universe selection: discover *candidate* symbols worth considering at all.
-
-This sits upstream of everything: universe → selector (which of these to hold)
-→ allocator (how much) → RiskManager (quantities). The universe changes rarely
-(resolved at process start), while the selector re-ranks every bar.
-
-The only live source is an Alpaca liquidity screen (owner decision): shortlist
-today's most-active names, keep the ones Alpaca marks active + tradable, pull
-recent daily bars in one batched request, and keep those above a minimum price
-and rolling average dollar volume. Alpaca's free IEX feed reports only ~2% of
-consolidated volume, so dollar-volume floors are conservative by construction —
-set them accordingly.
-
-Honesty note: a universe screened *today* and replayed over history is
-survivorship-biased — fine for live-forward paper trading, not evidence for
-historical claims. The engine records each resolved universe to SQLite so the
-paper trail is point-in-time.
-
-All Alpaca calls are lazy and injectable, so the screen itself tests offline.
-"""
+"""Alpaca-backed candidate discovery (lazy SDK; every fetcher injectable)."""
 
 from __future__ import annotations
 
-from typing import Any, Callable
-
 import pandas as pd
 
-#: Injectable fetcher types (tests pass fakes; live code builds Alpaca ones).
-ActivesFetcher = Callable[[int], list[str]]
-TradableFetcher = Callable[[], "set[str] | None"]
-BarsFetcher = Callable[[list[str]], "dict[str, pd.DataFrame]"]
-
-
-class LiquidityScreen:
-    """Pure-pandas liquidity gate: minimum price + rolling ADV floor.
-
-    ``window`` bars of history are required to measure average dollar volume
-    (close × volume); unmeasurable symbols never pass. Survivors are ranked by
-    ADV descending (ties alphabetical) and optionally capped at
-    ``max_symbols``.
-    """
-
-    def __init__(
-        self,
-        min_price: float = 5.0,
-        min_dollar_volume: float = 1_000_000.0,
-        window: int = 20,
-        max_symbols: int | None = None,
-    ) -> None:
-        if min_price < 0 or min_dollar_volume < 0:
-            raise ValueError("min_price and min_dollar_volume must be >= 0")
-        if window < 1:
-            raise ValueError(f"window must be >= 1, got {window}")
-        if max_symbols is not None and max_symbols < 1:
-            raise ValueError(f"max_symbols must be >= 1, got {max_symbols}")
-        self.min_price = min_price
-        self.min_dollar_volume = min_dollar_volume
-        self.window = window
-        self.max_symbols = max_symbols
-
-    def details(self, frames: dict[str, pd.DataFrame]) -> list[dict[str, float | str]]:
-        """Screen survivors with their metrics, ranked by ADV descending."""
-        rows: list[dict[str, float | str]] = []
-        for sym, df in frames.items():
-            if df is None or len(df) < self.window:
-                continue
-            price = float(df["close"].iloc[-1])
-            if not (price >= self.min_price):        # also rejects NaN
-                continue
-            dollar = (df["close"] * df["volume"]).rolling(
-                self.window, min_periods=self.window
-            ).mean()
-            adv = dollar.iloc[-1]
-            if pd.notna(adv) and float(adv) >= self.min_dollar_volume:
-                rows.append({"symbol": sym, "price": price, "adv": float(adv)})
-        rows.sort(key=lambda r: (-r["adv"], r["symbol"]))
-        if self.max_symbols is not None:
-            rows = rows[: self.max_symbols]
-        return rows
-
-    def screen(self, frames: dict[str, pd.DataFrame]) -> list[str]:
-        return [str(r["symbol"]) for r in self.details(frames)]
+from .screen import ActivesFetcher, BarsFetcher, LiquidityScreen, TradableFetcher
 
 
 class AlpacaLiquidityUniverse:
@@ -136,7 +61,7 @@ class AlpacaLiquidityUniverse:
     def _fetchers(self) -> tuple[ActivesFetcher, TradableFetcher, BarsFetcher]:
         if self._actives and self._tradable and self._bars:
             return self._actives, self._tradable, self._bars
-        from .config import AlpacaCredentials
+        from ..config import AlpacaCredentials
 
         creds = AlpacaCredentials.from_env()
         if creds is None:
@@ -182,7 +107,7 @@ class AlpacaLiquidityUniverse:
 
     def _build_bars(self, creds) -> BarsFetcher:
         def fetch(symbols: list[str]) -> dict[str, pd.DataFrame]:
-            from .data import get_alpaca_data
+            from ..data import get_alpaca_data
 
             ds = get_alpaca_data(creds.api_key, creds.api_secret, feed=creds.feed)
             # Calendar-day headroom so `window` trading days are available.
@@ -190,18 +115,3 @@ class AlpacaLiquidityUniverse:
                                    lookback=self.screen.window * 2 + 15)
 
         return fetch
-
-
-UNIVERSES: dict[str, type[AlpacaLiquidityUniverse]] = {
-    AlpacaLiquidityUniverse.name: AlpacaLiquidityUniverse,
-}
-
-
-def build_universe(name: str, params: dict[str, Any] | None = None):
-    """Instantiate a universe source by name with keyword params from config."""
-    try:
-        cls = UNIVERSES[name]
-    except KeyError:
-        known = ", ".join(sorted(UNIVERSES))
-        raise KeyError(f"Unknown universe source {name!r}. Known: {known}") from None
-    return cls(**(params or {}))
