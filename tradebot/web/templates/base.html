@@ -2,13 +2,18 @@
 <html lang="en" class="h-full">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#020617" />
     <title>{% block title %}tradebot{% endblock %}</title>
     <link rel="stylesheet" href="/static/css/app.css" />
+    <link rel="manifest" href="/app/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/app/icon-192.png" />
   </head>
   <body class="h-full bg-slate-950 text-slate-200 antialiased">
     {% include "components/nav.html" %}
-    <main class="mx-auto max-w-6xl px-4 py-6">{% block content %}{% endblock %}</main>
+    {#- Bottom padding clears the fixed phone tab bar (plus the iOS home indicator). -#}
+    <main class="mx-auto max-w-6xl px-4 pt-6 pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-6">{% block content %}{% endblock %}</main>
+    {% include "components/tabbar.html" %}
     <script type="module" src="/static/js/app.js"></script>
   </body>
 </html>

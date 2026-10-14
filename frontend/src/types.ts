@@ -1,4 +1,4 @@
-// Shapes mirror the Pydantic models in tradebot/web/schemas.py.
+// Shapes mirror the Pydantic models in tradebot/web/schemas/.
 
 export interface EquityPoint {
   ts: string;
