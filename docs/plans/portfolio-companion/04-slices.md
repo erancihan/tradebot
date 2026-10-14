@@ -42,6 +42,7 @@ merged to master from its `feat/<epic>` branch with a no-ff merge commit.
 - [ ] S4.5 `tradebot run --autopilot` headless parity
 
 ## E5: Expansion
+- [ ] S5.0 polish from the phone smoke test: equity chart axis shows dates only on daily bars, What-if presets use real cached symbols when a cache exists (verified synthetic fallback works)
 - [ ] S5.1 ntfy phone alerts documented, one-tap test button on the Autopilot page
 - [ ] S5.2 watchlist (symbols the advisor scans) editable from the Today page
 - [ ] S5.3 `MarketCalendar` protocol with `us_equities`, used by the season daemon and the autopilot, BIST stub with a holidays table
