@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import pandas as pd
 import pytest
 
-from tradebot.advisor import Proposal, ProposalLine, propose
+from tradebot.advisor import Proposal, ProposalLine, explain, propose
 from tradebot.allocation import EqualWeight
 from tradebot.broker import DryRunBroker
 from tradebot.config import Settings
@@ -196,3 +196,71 @@ def test_a_failing_signal_skips_only_that_symbol():
     by = {ln.symbol: ln for ln in proposal.lines}
     assert by["CHEAP"].action == "buy" and by["CHEAP"].order_qty == 100.0
     assert by["PRICEY"].skipped and "RuntimeError" in by["PRICEY"].reason
+
+
+# --- reasons -------------------------------------------------------------------
+
+
+def test_explain_names_every_part():
+    text = explain(strategy="sma_crossover", signal=1, action="buy", selected=True,
+                   rank=(2, 5), weight=0.234, capped=True)
+    assert text == ("sma_crossover signals long; rank 2 of 5, weight 23%, "
+                    "capped by the risk limit; buy.")
+
+
+def test_explain_without_a_selector_or_allocator_is_just_signal_and_action():
+    assert explain(strategy="rsi_reversion", signal=0, action="sell") == (
+        "rsi_reversion signals flat; sell.")
+
+
+def test_explain_says_not_selected_and_within_band():
+    assert explain(strategy="s", signal=1, action="sell", selected=False,
+                   rank=(4, 5), weight=0.5) == "s signals long; not selected (rank 4 of 5); sell."
+    assert explain(strategy="s", signal=-1, action="hold", banded=True) == (
+        "s signals short; within band, hold.")
+
+
+def _linear(start, step, periods=60):
+    vals = [start + step * i for i in range(periods)]
+    idx = pd.date_range("2024-01-01", periods=periods, freq="1D", tz="UTC")
+    return pd.DataFrame({"open": vals, "high": vals, "low": vals, "close": vals,
+                         "volume": 1000.0}, index=idx)
+
+
+def test_propose_marks_non_members_as_sell_with_a_selector_reason():
+    frames = {"UP": _linear(100, 1.0), "DOWN": _linear(200, -0.9)}
+    proposal = propose(symbols=["UP", "DOWN"], frames=frames, equity=10_000.0,
+                       positions={"DOWN": 7.0}, strategy=build_strategy("buy_and_hold"),
+                       risk=RiskManager(RiskConfig(max_position_pct=0.5)),
+                       selector=MomentumSelector(lookback=20, skip=2, top_k=1),
+                       allocator=EqualWeight())
+    by = {ln.symbol: ln for ln in proposal.lines}
+    assert by["DOWN"].action == "sell" and by["DOWN"].order_qty == -7.0
+    assert by["DOWN"].target == 0
+    assert "not selected (rank 2 of 2)" in by["DOWN"].reason
+    assert by["UP"].action == "buy" and "rank 1 of 2" in by["UP"].reason
+
+
+def test_propose_reason_names_the_strategy_signal_and_the_cap():
+    frames = {"A": _linear(100, 0.5), "B": _linear(50, 0.2)}
+    proposal = propose(symbols=["A", "B"], frames=frames, equity=10_000.0, positions={},
+                       strategy=build_strategy("buy_and_hold"),
+                       risk=RiskManager(RiskConfig(max_position_pct=0.3)),
+                       allocator=EqualWeight())
+    for line in proposal.lines:
+        assert line.reason.startswith("buy_and_hold signals long")
+        assert "weight 50%" in line.reason                # what the allocator asked
+        assert "capped by the risk limit" in line.reason  # what risk allowed
+        assert line.notional == pytest.approx(line.order_qty * line.price)
+        assert line.notional <= 0.3 * 10_000
+
+
+def test_propose_reason_says_within_band_when_the_drift_is_small():
+    frames = {"A": _linear(100, 0.0)}                     # price stays at 100
+    proposal = propose(symbols=["A"], frames=frames, equity=10_000.0, positions={"A": 9.0},
+                       strategy=build_strategy("buy_and_hold"),
+                       risk=RiskManager(RiskConfig(max_position_pct=0.1,
+                                                   rebalance_band_pct=0.05)))
+    (line,) = proposal.lines
+    assert line.desired_qty == 10.0 and line.order_qty == 0
+    assert line.action == "hold" and line.reason.endswith("within band, hold.")
