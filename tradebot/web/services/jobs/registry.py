@@ -14,7 +14,10 @@ from dataclasses import dataclass
 
 from .backtest import _run_backtest
 from .dryrun import _run_dryrun
+from .whatif import _run_whatif
 
+#: Kinds the generic Run page may submit. ``whatif`` has its own endpoint and
+#: request model, so it is accepted by the registry but not listed here.
 VALID_KINDS = ("backtest", "dryrun")
 
 
@@ -25,6 +28,7 @@ class Job:
     state: str = "pending"          # pending -> running -> done | error
     summary: dict | None = None
     equity: dict | None = None      # {"index": [...], "equity": [...]}
+    benchmark: dict | None = None   # what-if only: the comparison curve
     provenance: dict | None = None  # what data this ran on — travels with the result
     error: str | None = None
 
@@ -57,11 +61,14 @@ class JobRegistry:
         try:
             if kind == "backtest":
                 summary, equity, provenance = _run_backtest(params)
+                fields = {"summary": summary, "equity": equity, "provenance": provenance}
             elif kind == "dryrun":
                 summary, equity, provenance = _run_dryrun(params)
+                fields = {"summary": summary, "equity": equity, "provenance": provenance}
+            elif kind == "whatif":
+                fields = _run_whatif(params)
             else:
                 raise ValueError(f"Unknown job kind: {kind!r}")
-            self._update(job_id, state="done", summary=summary, equity=equity,
-                         provenance=provenance)
+            self._update(job_id, state="done", **fields)
         except Exception as exc:  # noqa: BLE001 - surface failures to the client
             self._update(job_id, state="error", error=f"{type(exc).__name__}: {exc}")

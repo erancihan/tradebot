@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}What-if · tradebot{% endblock %}
+{% block content %}
+<section class="mx-auto max-w-xl space-y-5" x-data="whatIf()">
+  <h1 class="text-xl font-semibold text-slate-100">What if…</h1>
+  <p class="text-sm text-slate-400">
+    Replay a past plan and see what it would have made, next to just buying and holding.
+  </p>
+
+  <button type="button" @click="submit()" :disabled="state === 'running'"
+          class="min-h-[48px] w-full rounded-lg bg-emerald-600 text-base font-semibold text-white hover:bg-emerald-500 disabled:opacity-50">
+    <span x-show="state !== 'running'">Run what-if</span>
+    <span x-show="state === 'running'" x-cloak>Running…</span>
+  </button>
+
+  <div x-show="state === 'error'" x-cloak
+       class="rounded-lg border border-rose-800 bg-rose-950/40 p-4 text-sm text-rose-300" x-text="error"></div>
+
+  <div x-show="state === 'done'" x-cloak data-result-card
+       class="space-y-2 rounded-lg border border-slate-800 bg-slate-900/50 p-4">
+    <div class="text-xs uppercase tracking-wide text-slate-500">Result</div>
+    <template x-for="[key, value] in Object.entries(summary || {})" :key="key">
+      <div class="flex justify-between text-sm">
+        <span class="text-slate-400" x-text="key"></span>
+        <span class="font-semibold text-slate-100" x-text="value"></span>
+      </div>
+    </template>
+    <p class="text-xs text-slate-500" x-text="provenance?.note"></p>
+  </div>
+</section>
+{% endblock %}

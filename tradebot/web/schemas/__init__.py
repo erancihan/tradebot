@@ -22,6 +22,7 @@ from .jobs import (  # noqa: F401
     JobRequest,
     JobView,
 )
+from .whatif import WhatIfRequest  # noqa: F401
 from .season import (  # noqa: F401
     SeasonSummary,
     SeasonStanding,

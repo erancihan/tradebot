@@ -148,3 +148,12 @@ export interface JobView {
   provenance?: Provenance | null;
   error?: string | null;
 }
+
+export interface WhatIfRequest {
+  symbols: string[];
+  source: string; // "real" | "synthetic"
+  start?: string;
+  end?: string;
+  initial_cash: number;
+  monthly_contribution: number;
+}

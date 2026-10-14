@@ -41,6 +41,11 @@ def run_page(request: Request):
     return templates.TemplateResponse(request, "pages/run.html", {"active": "run"})
 
 
+@router.get("/whatif", response_class=HTMLResponse)
+def whatif_page(request: Request):
+    return templates.TemplateResponse(request, "pages/whatif.html", {"active": "whatif"})
+
+
 @router.get("/seasons", response_class=HTMLResponse)
 def seasons_page(request: Request, repo: SeasonRepository = Depends(get_season_repo)):
     seasons = repo.list_seasons()

@@ -11,6 +11,7 @@ import type {
   OrderRow,
   SeasonDetail,
   StrategySpec,
+  WhatIfRequest,
 } from "../types";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -81,4 +82,8 @@ export function submitJob(body: JobRequest): Promise<{ job_id: string }> {
 
 export function getJob(id: string): Promise<JobView> {
   return getJson<JobView>(`/api/jobs/${id}`);
+}
+
+export function submitWhatIf(body: WhatIfRequest): Promise<{ job_id: string }> {
+  return postJson<{ job_id: string }>("/api/whatif", body);
 }
