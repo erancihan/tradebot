@@ -163,3 +163,23 @@ export interface WhatIfRequest {
   selector?: string;
   selector_params?: Record<string, number>;
 }
+
+export interface WhatIfPresetRequest {
+  symbols: string[];
+  source: string;
+  start: string | null;
+  end: string | null;
+  initial_cash: number;
+  monthly_contribution: number;
+  strategy: string;
+  params: Record<string, number | boolean | string>;
+  allocation: string;
+  selector: string | null;
+  selector_params: Record<string, number>;
+}
+
+export interface WhatIfPreset {
+  name: string;
+  description: string;
+  request: WhatIfPresetRequest;
+}

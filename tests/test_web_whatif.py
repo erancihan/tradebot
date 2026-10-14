@@ -144,3 +144,46 @@ def test_whatif_result_card_leads_with_money_then_the_comparison(tmp_path):
     assert card.index("money('gain')") < card.index("vs_benchmark_pct")
     for key in ("benchmark_final", "benchmark_cagr", "benchmark_max_drawdown"):
         assert key in card
+
+
+# --- presets and cache-aware bounds ------------------------------------------
+
+def test_presets_fall_back_to_synthetic_when_the_cache_is_empty(tmp_path):
+    presets = _client(tmp_path).get("/api/whatif/presets").json()
+    assert 3 <= len(presets) <= 5
+    for p in presets:
+        assert p["request"]["source"] == "synthetic"
+        assert "(synthetic)" in p["name"]
+
+
+def test_presets_are_built_from_cached_symbols(tmp_path):
+    _seed_cache(tmp_path, symbols=("XLK", "SPY", "QQQ"))
+    presets = _client(tmp_path).get("/api/whatif/presets").json()
+    assert 3 <= len(presets) <= 5
+    first = presets[0]["request"]
+    assert first["source"] == "real"
+    assert first["symbols"] == ["SPY", "QQQ", "XLK"]      # familiar index funds first
+    assert first["start"] == "2022-01-03"
+
+
+@pytest.mark.parametrize("cached", [(), ("SPY", "QQQ", "XLK")])
+def test_every_preset_runs_as_is(tmp_path, cached):
+    if cached:
+        _seed_cache(tmp_path, symbols=cached)
+    client = _client(tmp_path)
+    for preset in client.get("/api/whatif/presets").json():
+        r = client.post("/api/whatif", json=preset["request"])
+        assert r.status_code == 200, preset["name"]
+        job = _wait(client, r.json()["job_id"])
+        assert job["state"] == "done", (preset["name"], job.get("error"))
+        assert job["provenance"]["source"] == preset["request"]["source"]
+
+
+def test_whatif_page_renders_presets(tmp_path):
+    _seed_cache(tmp_path, symbols=("SPY", "QQQ", "XLK"))
+    text = _client(tmp_path).get("/whatif").text
+    assert "data-presets-list" in text
+    assert "SPY QQQ XLK, 200 a month" in text
+    assert "applyPreset(0)" in text
+    assert "data-presets='" in text                     # the same list, for the TS side
+    assert ":min=\"minDate()\"" in text and "data-pull-hint" in text

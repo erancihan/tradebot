@@ -2,11 +2,24 @@
 {% block title %}What-if · tradebot{% endblock %}
 {% block content %}
 {% set input = "min-h-[48px] w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-base text-slate-100" %}
-<section class="mx-auto max-w-xl space-y-5" x-data="whatIf()">
+<section class="mx-auto max-w-xl space-y-5" x-data="whatIf()" data-presets='{{ presets|tojson }}'>
   <h1 class="text-xl font-semibold text-slate-100">What if…</h1>
   <p class="text-sm text-slate-400">
     Replay a past plan and see what it would have made, next to just buying and holding.
   </p>
+
+  {% if presets %}
+  <div class="space-y-2" data-presets-list>
+    <div class="text-sm text-slate-400">Start from</div>
+    {% for p in presets %}
+    <button type="button" @click="applyPreset({{ loop.index0 }})"
+            class="block min-h-[48px] w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-left hover:border-emerald-700">
+      <span class="block text-sm font-medium text-slate-100">{{ p.name }}</span>
+      <span class="block text-xs text-slate-400">{{ p.description }}</span>
+    </button>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   <form @submit.prevent="submit()" class="space-y-4">
     <label class="block">
@@ -26,23 +39,34 @@
     <div class="grid grid-cols-2 gap-3">
       <label class="block">
         <span class="mb-1 block text-sm text-slate-400">Start</span>
-        <input type="date" x-model="form.start" class="{{ input }}" />
+        <input type="date" x-model="form.start" :min="minDate()" :max="maxDate()" class="{{ input }}" />
       </label>
       <label class="block">
         <span class="mb-1 block text-sm text-slate-400">End</span>
-        <input type="date" x-model="form.end" class="{{ input }}" />
+        <input type="date" x-model="form.end" :min="minDate()" :max="maxDate()" class="{{ input }}" />
       </label>
+    </div>
+
+    <p x-show="form.source === 'real' && minDate()" x-cloak class="text-xs text-slate-500">
+      Cached for these symbols: <span x-text="minDate()"></span> → <span x-text="maxDate()"></span>.
+      A date-only end leaves that day itself out.
+    </p>
+    <div x-show="pullHint()" x-cloak data-pull-hint
+         class="rounded-lg border border-amber-800 bg-amber-950/40 p-3 text-sm text-amber-200">
+      That range is not in the local cache. The server only uses cached bars here; pull them once from a terminal:
+      <code class="mt-2 block break-all rounded bg-slate-900 px-2 py-1 font-mono text-xs text-amber-100"
+            x-text="pullHint()"></code>
     </div>
 
     <div class="grid grid-cols-2 gap-3">
       <label class="block">
         <span class="mb-1 block text-sm text-slate-400">Starting cash</span>
-        <input type="number" inputmode="decimal" min="1" step="100"
+        <input type="number" inputmode="decimal" min="1" step="any"
                x-model.number="form.initial_cash" class="{{ input }}" />
       </label>
       <label class="block">
         <span class="mb-1 block text-sm text-slate-400">Each month</span>
-        <input type="number" inputmode="decimal" min="0" step="50"
+        <input type="number" inputmode="decimal" min="0" step="any"
                x-model.number="form.monthly_contribution" class="{{ input }}" />
       </label>
     </div>
@@ -78,7 +102,7 @@
 
         <label class="block">
           <span class="mb-1 block text-sm text-slate-400">Pick symbols by</span>
-          <select x-model="form.selector" class="{{ input }}">
+          <select x-model="form.selector" @change="clearSelectorExtras()" class="{{ input }}">
             <option value="">Hold every symbol</option>
             {% for name in stack.selectors %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
           </select>
@@ -107,7 +131,7 @@
        class="break-words rounded-lg border border-rose-800 bg-rose-950/40 p-4 text-sm text-rose-300" x-text="error"></div>
 
   <div x-show="state === 'done'" x-cloak data-result-card class="space-y-4">
-    <div class="inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium"
+    <div class="break-words rounded-lg border px-3 py-1.5 text-xs font-medium"
          :class="provenance && provenance.source === 'real'
                  ? 'border-emerald-700 bg-emerald-950/50 text-emerald-300'
                  : 'border-amber-700 bg-amber-950/50 text-amber-300'">

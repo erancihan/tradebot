@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 
 from ...schemas import WhatIfRequest
+from ...services import whatif_presets
 
 router = APIRouter()
 
@@ -27,3 +28,9 @@ def create_whatif(req: WhatIfRequest, request: Request):
     params.update(symbols=list(dict.fromkeys(symbols)),
                   cache_dir=request.app.state.cache_dir)
     return {"job_id": request.app.state.jobs.submit("whatif", params)}
+
+
+@router.get("/whatif/presets")
+def presets(request: Request):
+    """Named plans that run on this machine as-is (synthetic when nothing is cached)."""
+    return whatif_presets.presets(request.app.state.cache_dir)

@@ -37,7 +37,10 @@ tradebot/
   selection/     base, ranked (momentum, low_vol), regime (regime_switch), registry in __init__
   universe/      screen (LiquidityScreen), alpaca (AlpacaLiquidityUniverse)
   backtest/      result (BacktestResult), runner (Backtester), steps (shared per-bar
-                 helpers used by BOTH the backtester and arena/simulation.py)
+                 helpers used by BOTH the backtester and arena/simulation.py), flows
+                 (cash flows + the flow-free growth index)
+  whatif/        plan (WhatIfPlan, WhatIfResult, monthly_cash_flows), run (run_whatif,
+                 plan_backtester, whatif_risk), compare (benchmark_plan, comparison)
   walkforward.py portfolio.py  models.py  notify.py  config.py
   consortium/    voice, consensus, panel
   broker/        base (Broker ABC), alpaca (lazy SDK), dryrun + brackets (BracketsMixin)
@@ -52,9 +55,10 @@ tradebot/
                  evaluate), result, tournament, league, season/ (schema, config, store,
                  model, feeds, daemon), panel, market, contestant, store + journal
   web/           app, server, dependencies, repository/ (trading, arena, season),
-                 services/ (account, cache, consortium, jobs/ {registry, frames,
-                 backtest, dryrun, catalog}), schemas/, routes/ (pages, partials, sse,
-                 api/ {trading, arena, jobs}), templates/ (components/tabbar.html),
+                 services/ (account, cache, consortium, whatif_presets, jobs/ {registry,
+                 frames, frames_many, backtest, dryrun, whatif, catalog}), schemas/
+                 (incl. whatif), routes/ (pages, partials, sse, api/ {trading, arena,
+                 jobs, whatif}), templates/ (pages/whatif.html, components/tabbar.html),
                  static-src/ (PWA manifest + icons, committed), static/ (built, gitignored)
 algos/           12 contestants + canaries/ and consortium/ (both opt-in)
 scenarios/       regime library, factor library (xs_*), real_xs_* (+ sealed holdout), legacy real_*
@@ -63,7 +67,7 @@ tests/  docs/ (research-record.md, adr/, plans/)  data/cache/ (gitignored)
 config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])  Makefile
 ```
 
-Later epics add `advisor.py`, `autopilot.py`, `whatif.py` and `market/`.
+Later epics add `advisor.py`, `autopilot.py` and `market/`.
 
 ## Invariants
 
@@ -182,6 +186,16 @@ build on every push and PR, with no credentials.
   signal-to-fill decay. Label this beside any quoted backtest.
 - **Window selection is a bias.** The real windows were chosen knowing their
   history. The sealed holdout is the only mitigation. Run it once, last.
+- **Contributions are not returns.** `Backtester.run(..., cash_flows=...)` adds
+  cash before a bar is sized. `BacktestResult` then reports `total_contributed`
+  and `money_gain`, and computes return, CAGR, Sharpe and drawdown on the
+  flow-free growth index (`backtest/flows.py`). With `cash_flows=None` every
+  metric takes the old code path; the arena never passes flows. What-if
+  contributions land on the first bar of each month after the first.
+- **What-if books are fully investable:** `whatif_risk()` allows 100% in one
+  name, fractional shares and a 0.5% no-trade band. The benchmark is
+  equal-weight buy and hold with the same cash on the same bars, so a buy and
+  hold plan ties it exactly.
 - **Positions are live-only.** Without Alpaca credentials the dashboard
   positions card is empty. Positions are not stored locally.
 
@@ -274,6 +288,8 @@ build on every push and PR, with no credentials.
   and breaks `rolling`. `JobRequest.params` stays `dict | None`.
 - **Starlette:** `templates.TemplateResponse(request, name, context)`. Equity
   curves serialise as `{index: [...], equity: [...]}`.
+- **Keep ECharts instances out of Alpine state.** A proxied instance throws on
+  multi-series updates; hold it in a closure variable (see `whatif.ts`).
 - **Dashboard refresh** uses one SSE stream (`/sse/dashboard`) into an Alpine
   `live` store. SSE fits a read-only, server-to-client feed.
 - **A green local suite is not a green CI.** Check the actual CI run before

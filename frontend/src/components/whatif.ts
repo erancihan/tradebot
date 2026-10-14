@@ -6,15 +6,17 @@
 
 import * as echarts from "echarts";
 
-import { getJob, getStrategies, submitWhatIf } from "../api/client";
-import { nextTick, refs } from "../alpine";
+import { getCache, getJob, getStrategies, submitWhatIf } from "../api/client";
+import { el, nextTick, refs } from "../alpine";
 import { comparisonOption } from "../charts/equityChart";
 import type {
+  CacheEntry,
   EquityCurve,
   JobView,
   Provenance,
   StrategyParam,
   StrategySpec,
+  WhatIfPreset,
   WhatIfRequest,
 } from "../types";
 
@@ -36,6 +38,9 @@ interface WhatIfForm {
 }
 
 export function whatIf() {
+  // Kept out of Alpine's reactive state: a proxied ECharts instance breaks on
+  // multi-series updates (its internals compare objects by identity).
+  let chart: Chart | null = null;
   return {
     form: {
       symbols: "SPY",
@@ -50,20 +55,90 @@ export function whatIf() {
       top_k: 2,
     } as WhatIfForm,
     strategies: [] as StrategySpec[],
+    cache: [] as CacheEntry[],
+    presets: [] as WhatIfPreset[],
     params: {} as Record<string, number | boolean | string>,
+    // Selector settings a preset carries beyond `top_k` (lookback, skip).
+    selectorExtras: {} as Record<string, number>,
     state: "idle",
     error: "",
     summary: null as Record<string, number | string> | null,
     provenance: null as Provenance | null,
-    chart: null as Chart | null,
 
     async init() {
+      this.presets = readPresets(el(this));
       try {
-        this.strategies = await getStrategies();
+        [this.strategies, this.cache] = await Promise.all([getStrategies(), getCache()]);
       } catch {
-        // Catalog unreachable: buy and hold still runs with no params.
+        // Catalog or cache list unreachable: the form still submits.
       }
+      if (this.presets.length > 0) this.applyPreset(0);
+      else this.syncParams();
+    },
+
+    applyPreset(index: number) {
+      const preset = this.presets[index];
+      if (!preset) return;
+      const r = preset.request;
+      this.form.symbols = r.symbols.join(" ");
+      this.form.source = r.source;
+      this.form.start = r.start ?? "";
+      this.form.end = r.end ?? "";
+      this.form.initial_cash = r.initial_cash;
+      this.form.monthly_contribution = r.monthly_contribution;
+      this.form.strategy = r.strategy;
+      this.form.allocation = r.allocation;
+      this.form.selector = r.selector ?? "";
+      this.form.top_k = r.selector_params.top_k ?? 2;
       this.syncParams();
+      this.params = { ...this.params, ...r.params };
+      this.selectorExtras = { ...r.selector_params };
+    },
+
+    // A preset's extra selector settings belong to that selector only.
+    clearSelectorExtras() {
+      this.selectorExtras = {};
+    },
+
+    // Cached daily entries for the typed symbols (real data only).
+    cachedEntries(): CacheEntry[] {
+      return this.cache.filter(
+        (e) => e.timeframe === "1day" && this.symbolList().includes(e.symbol),
+      );
+    },
+
+    missingSymbols(): string[] {
+      const have = new Set(this.cachedEntries().map((e) => e.symbol));
+      return this.symbolList().filter((s) => !have.has(s));
+    },
+
+    // The window every typed symbol has on disk: the date inputs' min and max.
+    minDate(): string {
+      const firsts = this.cachedEntries().map((e) => e.first.slice(0, 10));
+      return this.form.source === "real" && firsts.length ? firsts.sort()[firsts.length - 1] : "";
+    },
+
+    maxDate(): string {
+      const lasts = this.cachedEntries().map((e) => e.last.slice(0, 10));
+      return this.form.source === "real" && lasts.length ? lasts.sort()[0] : "";
+    },
+
+    // The exact pull command when the cache cannot serve the plan as typed —
+    // shown before running, so nobody waits for a job that must fail.
+    pullHint(): string {
+      if (this.form.source !== "real" || this.symbolList().length === 0) return "";
+      const lo = this.minDate();
+      const hi = this.maxDate();
+      const outside =
+        (this.form.start !== "" && lo !== "" && this.form.start < lo) ||
+        (this.form.end !== "" && hi !== "" && this.form.end > hi);
+      const missing = this.missingSymbols();
+      if (missing.length === 0 && !outside) return "";
+      const symbols = missing.length ? missing : this.symbolList();
+      const parts = [`tradebot data pull --symbols ${symbols.join(" ")}`, "--timeframe 1day"];
+      if (this.form.start) parts.push(`--start ${this.form.start}`);
+      if (this.form.end) parts.push(`--end ${this.form.end}`);
+      return parts.join(" ");
     },
 
     // Buy and hold is the first, fixed option; the registry fills the rest.
@@ -101,7 +176,7 @@ export function whatIf() {
       };
       if (f.selector) {
         req.selector = f.selector;
-        req.selector_params = { top_k: f.top_k };
+        req.selector_params = { ...this.selectorExtras, top_k: f.top_k };
       }
       if (f.start) req.start = f.start;
       if (f.end) req.end = f.end;
@@ -169,9 +244,19 @@ export function whatIf() {
 
     async render(curve: EquityCurve, benchmark: EquityCurve | null) {
       await nextTick(this);
-      if (!this.chart) this.chart = echarts.init(refs(this).chart);
-      this.chart.setOption(comparisonOption(curve, benchmark), true);
-      this.chart.resize();
+      if (!chart) chart = echarts.init(refs(this).chart);
+      chart.setOption(comparisonOption(curve, benchmark), true);
+      chart.resize();
     },
   };
+}
+
+// Presets are rendered by the server into a data attribute (no inline JS), so
+// the buttons and this list come from one call and cannot disagree.
+function readPresets(root: HTMLElement): WhatIfPreset[] {
+  try {
+    return JSON.parse(root.dataset.presets ?? "[]") as WhatIfPreset[];
+  } catch {
+    return [];
+  }
 }
