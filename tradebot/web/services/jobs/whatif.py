@@ -30,10 +30,10 @@ def _run_whatif(params: dict) -> dict:
 
     frames, provenance = resolve_many(params)
     result = run_whatif(_plan(params, frames), frames)
-    curve = result.plan.equity_curve
+    curve, bench = result.plan.equity_curve, result.benchmark.equity_curve
     return {
         "summary": dict(result.comparison),
         "equity": _equity_payload(curve.index, curve.to_numpy()),
-        "benchmark": None,
+        "benchmark": _equity_payload(bench.index, bench.to_numpy()),
         "provenance": provenance,
     }

@@ -131,3 +131,36 @@ def test_run_whatif_with_a_strategy_plan_matches_backtester_directly():
     expected = direct.run(frames, cash_flows=flows)
     pd.testing.assert_series_equal(result.plan.equity_curve, expected.equity_curve)
     assert result.plan.num_trades == expected.num_trades > 0
+
+
+def test_benchmark_is_equal_weight_buy_and_hold_with_the_same_cash_flows():
+    from tradebot.allocation import EqualWeight
+    from tradebot.strategies.buy_and_hold import BuyAndHold
+    from tradebot.whatif import whatif_risk
+
+    frames = {s: synthetic_ohlcv(periods=260, seed=40 + i, freq="B")
+              for i, s in enumerate(["A", "B", "C"])}
+    plan = WhatIfPlan(symbols=list(frames), start="2023-01-02", end=None,
+                      initial_cash=8_000, monthly_contribution=150,
+                      strategy="sma_crossover", strategy_params={"fast": 5, "slow": 20})
+    result = run_whatif(plan, frames)
+
+    direct = Backtester(BuyAndHold(), whatif_risk(), initial_cash=8_000,
+                        allocator=EqualWeight())
+    expected = direct.run(frames, cash_flows=monthly_cash_flows(frames["A"].index, 150))
+    pd.testing.assert_series_equal(result.benchmark.equity_curve, expected.equity_curve)
+    assert result.benchmark.total_contributed == result.plan.total_contributed
+    c = result.comparison
+    assert c["benchmark_final"] == round(expected.final_equity, 2)
+    assert c["vs_benchmark_pct"] == pytest.approx(
+        result.plan.final_equity / expected.final_equity - 1, abs=1e-4)
+    for key in ("final_value", "benchmark_final", "contributions", "gain",
+                "benchmark_gain", "cagr", "max_drawdown", "vs_benchmark_pct"):
+        assert key in c
+
+
+def test_a_buy_and_hold_plan_ties_its_benchmark():
+    frames = {s: synthetic_ohlcv(periods=200, seed=60 + i, freq="B") for i, s in enumerate("XY")}
+    plan = WhatIfPlan(symbols=["X", "Y"], start="2023-01-02", end=None, initial_cash=1_000,
+                      monthly_contribution=50)
+    assert run_whatif(plan, frames).comparison["vs_benchmark_pct"] == 0.0

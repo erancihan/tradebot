@@ -145,6 +145,7 @@ export interface JobView {
   state: string;
   summary?: Record<string, number | string> | null;
   equity?: EquityCurve | null;
+  benchmark?: EquityCurve | null; // what-if only
   provenance?: Provenance | null;
   error?: string | null;
 }

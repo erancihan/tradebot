@@ -19,7 +19,7 @@ merged to master from its `feat/<epic>` branch with a no-ff merge commit.
 - [x] S2.1 tracer: `/whatif` page posts a hardcoded request and shows a stub result card
 - [x] S2.2 `whatif.run()`: multi-symbol buy and hold with monthly contributions, compared with a lump sum
 - [x] S2.3 strategy and portfolio stack plans (selector, allocator) in the same form
-- [ ] S2.4 benchmark comparison, drawdown and "vs buy and hold" in the result card, chart with both curves
+- [x] S2.4 benchmark comparison, drawdown and "vs buy and hold" in the result card, chart with both curves
 - [ ] S2.5 presets, cache-aware date bounds, pull hint when the range is not cached
 
 ## E3: Suggestions

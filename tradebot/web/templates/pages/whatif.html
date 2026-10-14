@@ -125,14 +125,42 @@
           <span x-text="money('contributions')"></span> put in
         </div>
       </div>
-      <dl class="grid grid-cols-2 gap-2 text-sm">
-        <dt class="text-slate-400">Yearly growth (CAGR)</dt>
-        <dd class="text-right font-semibold text-slate-100" x-text="pct('cagr')"></dd>
-        <dt class="text-slate-400">Worst drop</dt>
-        <dd class="text-right font-semibold text-slate-100" x-text="pct('max_drawdown')"></dd>
-      </dl>
+      <div class="rounded-md bg-slate-800/60 px-3 py-2 text-sm">
+        <span :class="beatsBenchmark() ? 'text-emerald-400' : 'text-rose-400'"
+              class="font-semibold" x-text="signedPct('vs_benchmark_pct')"></span>
+        <span class="text-slate-400">vs buy and hold, which would have made</span>
+        <span class="font-semibold text-slate-100" x-text="money('benchmark_gain')"></span>
+      </div>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-xs text-slate-500">
+            <th class="py-1 text-left font-normal"></th>
+            <th class="py-1 text-right font-normal">Your plan</th>
+            <th class="py-1 text-right font-normal">Buy and hold</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="py-1 text-slate-400">Final value</td>
+            <td class="py-1 text-right font-semibold text-slate-100" x-text="money('final_value')"></td>
+            <td class="py-1 text-right text-slate-300" x-text="money('benchmark_final')"></td>
+          </tr>
+          <tr>
+            <td class="py-1 text-slate-400">Yearly growth</td>
+            <td class="py-1 text-right font-semibold text-slate-100" x-text="pct('cagr')"></td>
+            <td class="py-1 text-right text-slate-300" x-text="pct('benchmark_cagr')"></td>
+          </tr>
+          <tr>
+            <td class="py-1 text-slate-400">Worst drop</td>
+            <td class="py-1 text-right font-semibold text-slate-100" x-text="pct('max_drawdown')"></td>
+            <td class="py-1 text-right text-slate-300" x-text="pct('benchmark_max_drawdown')"></td>
+          </tr>
+        </tbody>
+      </table>
       <p class="text-xs text-slate-500">
-        Growth and worst drop are plan performance: they leave your monthly cash out.
+        Buy and hold means the same symbols in equal parts, with the same cash on the
+        same days. Growth and worst drop are plan performance: they leave your monthly
+        cash out.
       </p>
     </div>
 

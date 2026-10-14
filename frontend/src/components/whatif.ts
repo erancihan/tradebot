@@ -8,7 +8,7 @@ import * as echarts from "echarts";
 
 import { getJob, getStrategies, submitWhatIf } from "../api/client";
 import { nextTick, refs } from "../alpine";
-import { curveOption } from "../charts/equityChart";
+import { comparisonOption } from "../charts/equityChart";
 import type {
   EquityCurve,
   JobView,
@@ -128,7 +128,7 @@ export function whatIf() {
         this.state = "done";
         this.summary = job.summary ?? {};
         this.provenance = job.provenance ?? null;
-        if (job.equity) await this.render(job.equity);
+        if (job.equity) await this.render(job.equity, job.benchmark ?? null);
       } else if (job.state === "error") {
         this.state = "error";
         this.error = job.error ?? "job failed";
@@ -157,10 +157,20 @@ export function whatIf() {
       return `${kind} · ${p.symbol} · ${window} · ${p.bars} bars`;
     },
 
-    async render(curve: EquityCurve) {
+    // Signed percentage for the "vs buy and hold" line: +3.2% / -1.5%.
+    signedPct(key: string): string {
+      const v = Number(this.summary?.[key] ?? 0) * 100;
+      return `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
+    },
+
+    beatsBenchmark(): boolean {
+      return Number(this.summary?.vs_benchmark_pct ?? 0) >= 0;
+    },
+
+    async render(curve: EquityCurve, benchmark: EquityCurve | null) {
       await nextTick(this);
       if (!this.chart) this.chart = echarts.init(refs(this).chart);
-      this.chart.setOption(curveOption("plan", curve), true);
+      this.chart.setOption(comparisonOption(curve, benchmark), true);
       this.chart.resize();
     },
   };

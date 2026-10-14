@@ -7,6 +7,7 @@ import pandas as pd
 from ..backtest import Backtester, BacktestResult
 from ..backtest.steps import align_frames
 from ..risk import RiskConfig, RiskManager
+from .compare import benchmark_plan, comparison
 from .plan import WhatIfPlan, WhatIfResult, monthly_cash_flows
 
 #: Drift trades smaller than this share of equity are skipped, so an
@@ -62,18 +63,13 @@ def plan_backtester(plan: WhatIfPlan, *, commission: float = 0.0,
 
 def run_whatif(plan: WhatIfPlan, frames: dict[str, pd.DataFrame], *,
                commission: float = 0.0, slippage_bps: float = 1.0) -> WhatIfResult:
-    """Replay ``plan`` over ``frames`` with its monthly contributions."""
+    """Replay ``plan`` and its benchmark over ``frames`` with the same contributions."""
     window = _window(plan, frames)
     common, _ = align_frames(window, "run a what-if")
     flows = monthly_cash_flows(common, plan.monthly_contribution)
-    result = plan_backtester(plan, commission=commission,
-                             slippage_bps=slippage_bps).run(window, cash_flows=flows)
-    comparison = {
-        "final_value": round(result.final_equity, 2),
-        "contributions": round(result.total_contributed, 2),
-        "gain": round(result.money_gain, 2),
-        "cagr": round(result.cagr, 4),
-        "max_drawdown": round(result.max_drawdown, 4),
-    }
-    return WhatIfResult(plan=result, contributions=result.total_contributed,
-                        comparison=comparison)
+    costs = {"commission": commission, "slippage_bps": slippage_bps}
+    result = plan_backtester(plan, **costs).run(window, cash_flows=flows)
+    bench = plan_backtester(benchmark_plan(plan), **costs).run(window, cash_flows=flows)
+    return WhatIfResult(plan=result, benchmark=bench,
+                        contributions=result.total_contributed,
+                        comparison=comparison(result, bench))

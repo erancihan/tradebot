@@ -35,6 +35,7 @@ class WhatIfPlan:
 @dataclass(frozen=True)
 class WhatIfResult:
     plan: BacktestResult
+    benchmark: BacktestResult        # equal-weight buy and hold, same cash flows
     contributions: float             # total cash put in, starting cash included
     comparison: dict[str, float]
 

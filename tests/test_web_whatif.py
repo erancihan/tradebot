@@ -84,6 +84,9 @@ def test_whatif_job_runs_from_the_cache_and_carries_provenance(tmp_path):
     assert prov["start"].startswith("2022-02-01")
     s = job["summary"]
     assert s["gain"] == pytest.approx(s["final_value"] - s["contributions"], abs=0.02)
+    # Both curves travel in one payload, on the same bars.
+    assert job["benchmark"]["index"] == job["equity"]["index"]
+    assert s["benchmark_final"] == pytest.approx(job["benchmark"]["equity"][-1], abs=0.01)
 
 
 def test_whatif_uncached_range_returns_pull_hint(tmp_path):
@@ -133,3 +136,11 @@ def test_whatif_page_offers_the_portfolio_stack(tmp_path):
     for name in ("momentum", "low_vol", "inverse_vol"):
         assert f'value="{name}"' in text
     assert 'value="explicit"' not in text
+
+
+def test_whatif_result_card_leads_with_money_then_the_comparison(tmp_path):
+    text = _client(tmp_path).get("/whatif").text
+    card = text[text.index("data-result-card"):]
+    assert card.index("money('gain')") < card.index("vs_benchmark_pct")
+    for key in ("benchmark_final", "benchmark_cagr", "benchmark_max_drawdown"):
+        assert key in card
