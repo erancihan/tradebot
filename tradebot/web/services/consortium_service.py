@@ -59,7 +59,21 @@ def panel(
         log.warning("Panel build failed: %s", exc)
         return {**empty, "errors": [f"panel build failed: {exc}"]}
 
+    errors = [str(e) for e in load_errors]
+    errors += [f"{name}: {why}" for name, why in built.failures.items()]
     symbols = sorted(frames)
+    return {
+        "members": _member_rows(built, voice, symbols),
+        "consensus": _consensus_rows(targets, weights, symbols),
+        "symbols": symbols,
+        "voice": voice_name,
+        "bars": len(next(iter(frames.values()))),
+        "errors": errors,
+    }
+
+
+def _member_rows(built, voice, symbols: list[str]) -> list[dict]:
+    """One row per member: latest book, latest voice, total return; loudest first."""
     latest = built.latest()
     last_voice = voice.iloc[-1] if len(voice) else {}
     rows = []
@@ -74,24 +88,16 @@ def panel(
             "book": {s: round(float(book.get(s, 0.0)), 4) for s in symbols},
         })
     rows.sort(key=lambda r: r["voice"], reverse=True)
+    return rows
 
-    consensus_rows = [
+
+def _consensus_rows(targets, weights, symbols: list[str]) -> list[dict]:
+    return [
         {"symbol": s,
          "target": int(targets[s].iloc[-1]) if s in targets else 0,
          "weight": round(float(weights[s].iloc[-1]), 4) if s in weights else 0.0}
         for s in symbols
     ]
-
-    errors = [str(e) for e in load_errors]
-    errors += [f"{name}: {why}" for name, why in built.failures.items()]
-    return {
-        "members": rows,
-        "consensus": consensus_rows,
-        "symbols": symbols,
-        "voice": voice_name,
-        "bars": len(next(iter(frames.values()))),
-        "errors": errors,
-    }
 
 
 def _frames(repo: TradingRepository, limit: int, mode: str | None) -> dict:

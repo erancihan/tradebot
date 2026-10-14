@@ -15,14 +15,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import numpy as np
 import pandas as pd
 
-from ..backtest import (
-    BacktestResult,
-    _infer_periods_per_year,
+from ..backtest import BacktestResult
+from ..backtest.steps import (
     _prepare_components,
     _sizing_marks,
+    align_frames,
+    book_weights,
+    build_result,
+    close_prices_at,
+    fill_book,
+    fillable_targets,
+    shifted_membership,
 )
 from ..portfolio import Portfolio
 from ..risk import RiskManager
@@ -52,88 +57,37 @@ def simulate(
         raise ValueError("overlays require an allocator (they transform its weights)")
     overlays = list(overlays or [])
 
-    # Align every symbol on a shared timeline (intersection of indices).
-    common = None
-    for df in frames.values():
-        common = df.index if common is None else common.intersection(df.index)
-    common = common.sort_values()
-    if len(common) < 2:
-        raise ValueError("Not enough overlapping bars to simulate")
-
+    common, aligned = align_frames(frames, "simulate")
     symbols = list(frames)
-    aligned = {s: frames[s].reindex(common) for s in symbols}
     _prepare_components(aligned, policy, allocator, selector, *overlays)
     opens = {s: aligned[s]["open"] for s in symbols}
     closes = {s: aligned[s]["close"] for s in symbols}
-
-    # Membership gate, precomputed exactly like the Backtester (selectors are
-    # prefix-stable, so this equals recomputing on each growing window).
-    member = None
-    if selector is not None:
-        member = selector.membership(aligned).shift(1).fillna(False)
+    member = shifted_membership(selector, aligned)
 
     pf = Portfolio(cash=config.initial_cash)
     policy.reset()
     pending: dict[str, int] = {s: 0 for s in symbols}
     slip = config.slippage_bps / 10_000.0
-    fractional = risk.config.allow_fractional
     equity_points: list[float] = []
-
     prev_closes: dict[str, float] = {}
 
     for i, ts in enumerate(common):
-        close_prices = {s: float(closes[s].iloc[i]) for s in symbols}
-
+        close_prices = close_prices_at(closes, i)
         # 1) Execute the targets decided on the previous bar, at this bar's
-        #    open — sized jointly, exactly like the Backtester.
-        bar_targets: dict[str, int] = {}
-        bar_prices: dict[str, float] = {}
-        for s in symbols:
-            price = float(opens[s].iloc[i])
-            if not np.isfinite(price) or price <= 0:
-                continue
-            target = pending[s]
-            if member is not None and not bool(member[s].iloc[i]):
-                target = 0
-            bar_targets[s] = target
-            bar_prices[s] = price
-
-        # Same sizing mark as the Backtester, from the same helper: never the
-        # fill bar's own close.
+        #    open — sized jointly, through the Backtester's own steps.
+        bar_targets, bar_prices = fillable_targets(symbols, i, opens, pending.__getitem__, member)
         equity = pf.equity(_sizing_marks(symbols, bar_prices, prev_closes, close_prices))
-
-        weights = None
-        if allocator is not None:
-            # Same one-bar discipline as targets: weights come from bars
-            # strictly before the fill bar.
-            history = {s: aligned[s].iloc[:i] for s in bar_targets}
-            weights = allocator.weights(bar_targets, history)
-            for overlay in overlays:
-                weights = overlay.transform(weights, bar_targets, history)
+        weights = book_weights(allocator, overlays, aligned, bar_targets, i)
         desired = risk.allocate(bar_targets, equity, bar_prices, weights)
 
         # Observer only — it must never influence the loop. This is the one
         # point where all three contestant kinds converge on a single shape
         # (signed quantities for the whole book), which is what makes a
-        # consortium able to read every kind of member the same way. Default
-        # None keeps this call byte-identical for every existing caller, so the
-        # backtest/arena lockstep test is unaffected.
+        # consortium able to read every kind of member the same way.
         if on_decision is not None:
             on_decision(i, ts, dict(bar_targets), dict(desired), equity, dict(bar_prices))
 
-        for s, want in desired.items():
-            price = bar_prices[s]
-            delta = risk.material_delta(want, pf.position(s).qty, price, equity)
-            if fractional:
-                if abs(delta) < 1e-9:
-                    continue
-            else:
-                delta = float(round(delta))
-                if delta == 0:
-                    continue
-            fill_price = price * (1 + slip) if delta > 0 else price * (1 - slip)
-            pf.execute(s, delta, fill_price, commission=config.commission)
-
+        fill_book(pf, risk, desired, bar_prices, equity, slip, config.commission)
         equity_after = pf.equity(close_prices)
         prev_closes = close_prices
 
@@ -141,13 +95,6 @@ def simulate(
         for s in symbols:
             window = aligned[s].iloc[: i + 1]
             pending[s] = policy.decide(s, window, pf.position(s), equity_after)
-
         equity_points.append(equity_after)
 
-    curve = pd.Series(equity_points, index=common, name="equity")
-    return BacktestResult(
-        equity_curve=curve,
-        trades=pf.trades,
-        initial_cash=config.initial_cash,
-        periods_per_year=_infer_periods_per_year(common),
-    )
+    return build_result(equity_points, common, pf, config.initial_cash)

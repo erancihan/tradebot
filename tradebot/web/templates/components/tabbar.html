@@ -1,0 +1,42 @@
+{#- Phone navigation. The top header carries the same links on md+ screens;
+    this bar replaces it below md, where a thumb reaches the bottom edge and a
+    row of six text links does not fit. Every target is at least 44px tall. -#}
+{% set more_active = active in ("arena", "seasons", "consortium") %}
+{% macro tab(href, key, label) -%}
+  <a href="{{ href }}"
+     class="flex min-h-[44px] flex-1 flex-col items-center justify-center gap-0.5 text-xs {{ 'text-emerald-400' if active == key else 'text-slate-400' }}"
+     {% if active == key %}aria-current="page"{% endif %}>
+    {{ caller() }}
+    <span>{{ label }}</span>
+  </a>
+{%- endmacro %}
+<div x-data="moreSheet" @keydown.escape.window="close()" class="md:hidden">
+<div x-show="open" x-cloak @click="close()" class="fixed inset-0 z-30 bg-slate-950/60"></div>
+<nav data-tabbar aria-label="Primary"
+     class="fixed inset-x-0 bottom-0 z-40 border-t border-slate-800 bg-slate-900 pb-[env(safe-area-inset-bottom)]">
+  <div x-show="open" x-cloak
+       class="absolute inset-x-0 bottom-full border-t border-slate-800 bg-slate-900 px-2 py-2">
+    {% for href, key, label in [("/arena", "arena", "Arena"), ("/seasons", "seasons", "Seasons"), ("/consortium", "consortium", "Consortium")] %}
+      <a href="{{ href }}"
+         class="flex min-h-[44px] items-center rounded-md px-4 text-sm {{ 'bg-slate-800 text-emerald-400' if active == key else 'text-slate-300 hover:bg-slate-800' }}"
+         {% if active == key %}aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+  </div>
+  <div class="flex items-stretch">
+    {% call tab("/", "dashboard", "Dashboard") %}
+      <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 12l9-8 9 8M5 10v10h5v-6h4v6h5V10"/></svg>
+    {% endcall %}
+    {% call tab("/run", "run", "Run") %}
+      <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M7 4l12 8-12 8z"/></svg>
+    {% endcall %}
+    {% call tab("/chart", "chart", "Chart") %}
+      <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 19h16M7 16V9M12 16V5M17 16v-4"/></svg>
+    {% endcall %}
+    <button type="button" @click="toggle()" :aria-expanded="open.toString()"
+            class="flex min-h-[44px] flex-1 flex-col items-center justify-center gap-0.5 text-xs {{ 'text-emerald-400' if more_active else 'text-slate-400' }}">
+      <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+      <span>More</span>
+    </button>
+  </div>
+</nav>
+</div>
