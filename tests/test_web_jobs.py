@@ -5,14 +5,14 @@ import pytest
 pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
 
-from fastapi.testclient import TestClient  # noqa: E402
+from .web_client import local_client  # noqa: E402
 
 from tradebot.web.app import create_app  # noqa: E402
 from tradebot.web.guard import POST_HEADERS  # noqa: E402
 
 
 def _client(tmp_path):
-    return TestClient(create_app(trading_db=str(tmp_path / "t.db"),
+    return local_client(create_app(trading_db=str(tmp_path / "t.db"),
                                  arena_db=str(tmp_path / "a.db"),
                                  cache_dir=str(tmp_path / "cache")))
 

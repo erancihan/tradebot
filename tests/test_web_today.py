@@ -12,6 +12,8 @@ pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from .web_client import local_client  # noqa: E402
+
 from tradebot.config import AlpacaCredentials  # noqa: E402
 from tradebot.data.cache import BarCache  # noqa: E402
 from tradebot.data.synthetic import synthetic_ohlcv  # noqa: E402
@@ -35,7 +37,7 @@ def _config(tmp_path, symbols=("SPY", "QQQ"), extra: str = "") -> str:
 
 
 def _client(tmp_path, settings_path: str | None = None) -> TestClient:
-    return TestClient(create_app(trading_db=str(tmp_path / "t.db"),
+    return local_client(create_app(trading_db=str(tmp_path / "t.db"),
                                  arena_db=str(tmp_path / "a.db"),
                                  cache_dir=str(tmp_path / "cache"),
                                  settings_path=settings_path))

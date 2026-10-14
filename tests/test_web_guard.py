@@ -9,6 +9,8 @@ pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from .web_client import local_client  # noqa: E402
+
 from tradebot.web.app import create_app  # noqa: E402
 from tradebot.web.guard import POST_HEADERS  # noqa: E402
 
@@ -21,7 +23,7 @@ def _app(tmp_path, **kwargs):
 
 
 def _client(tmp_path, **kwargs) -> TestClient:
-    return TestClient(_app(tmp_path, **kwargs))
+    return local_client(_app(tmp_path, **kwargs))
 
 
 # --- S3b.1 same-origin guard ------------------------------------------------
@@ -69,7 +71,7 @@ def test_loopback_hosts_are_served_by_default(tmp_path, host):
 
 
 def test_an_allowed_host_is_served(tmp_path):
-    client = _client(tmp_path, allowed_hosts=["testserver", "pi.lan"])
+    client = _client(tmp_path, allowed_hosts=["localhost", "pi.lan"])
     assert client.get("/", headers={"Host": "pi.lan:8000"}).status_code == 200
     assert client.get("/", headers={"Host": "evil.example"}).status_code == 400
 
@@ -84,8 +86,12 @@ def test_cli_and_env_extend_the_defaults():
     from tradebot.web.server import allowed_hosts
 
     hosts = allowed_hosts(["pi.lan", "localhost"], env=" 192.168.1.5 ,,")
-    assert hosts[:4] == ["localhost", "127.0.0.1", "[::1]", "testserver"]
-    assert hosts[4:] == ["192.168.1.5", "pi.lan"]
+    assert hosts == ["localhost", "127.0.0.1", "[::1]", "192.168.1.5", "pi.lan"]
+
+
+def test_the_test_client_host_is_not_on_the_production_allowlist(tmp_path):
+    r = TestClient(_app(tmp_path)).get("/")  # Host: testserver
+    assert r.status_code == 400
 
 
 # --- S3b.3 optional access token --------------------------------------------
@@ -94,7 +100,7 @@ TOKEN = "s3cret-phone-token"
 
 
 def _locked(tmp_path, **kwargs) -> TestClient:
-    return TestClient(_app(tmp_path, access_token=TOKEN), **kwargs)
+    return local_client(_app(tmp_path, access_token=TOKEN), **kwargs)
 
 
 def _logged_in(tmp_path) -> TestClient:
@@ -133,7 +139,7 @@ def test_login_sets_an_httponly_cookie_that_is_not_the_token(tmp_path):
 
 
 def test_login_over_https_marks_the_cookie_secure(tmp_path):
-    client = _locked(tmp_path, base_url="https://testserver")
+    client = _locked(tmp_path, base_url="https://localhost")
     r = client.get(f"/login?token={TOKEN}", follow_redirects=False)
     assert "Secure" in r.headers["set-cookie"]
 

@@ -25,9 +25,9 @@ log = logging.getLogger(__name__)
 
 #: Host headers served by default. Anything else is refused, which is what
 #: defeats DNS rebinding: a hostile page that re-points its own name at
-#: 127.0.0.1 still sends its own name as the Host. ``testserver`` is the host
-#: Starlette's TestClient sends.
-DEFAULT_ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]", "testserver"]
+#: 127.0.0.1 still sends its own name as the Host. Tests talk to localhost
+#: rather than adding Starlette's ``testserver`` here.
+DEFAULT_ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]"]
 
 #: What the Today page advises on when no config file exists: a broad market
 #: pair, so a fresh install has something meaningful to show.
