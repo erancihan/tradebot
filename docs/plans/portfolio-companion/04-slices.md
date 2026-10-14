@@ -4,9 +4,9 @@ Each slice ends green (`make test` and `npm run typecheck`). Each epic is
 merged to master from its `feat/<epic>` branch with a no-ff merge commit.
 
 ## E0: merge work branches
-- [ ] S0.1 merge `claude/stock-agent-overview-mzmfsr` (done locally, 2fd3ded)
-- [ ] S0.2 merge `claude/repo-metadata-config-6is0sh` with conflicts resolved
-- [ ] S0.3 push master, CI green on GitHub
+- [x] S0.1 merge `claude/stock-agent-overview-mzmfsr` (done locally, 2fd3ded)
+- [x] S0.2 merge `claude/repo-metadata-config-6is0sh` with conflicts resolved
+- [x] S0.3 push master, CI green on GitHub (run 38643874486, 2026-10-15)
 
 ## E1: housekeeping
 - [ ] S1.1 `tests/test_code_shape.py`: fail on any function over 60 lines, report modules over 200 lines
