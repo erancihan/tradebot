@@ -14,7 +14,7 @@ must change.
 - [x] E0 — merge the two work branches into master (no-ff merge commits)
 - [x] E1 — housekeeping: docs to final state, CLI split, function-length gate, mobile-first shell + PWA
 - [ ] E2 — What-if simulator (historical theoretical cases, multi-symbol, DCA, benchmark)
-- [ ] E3 — Suggestions (what to buy / sell today, with reasons)
+- [x] E3 — Suggestions (what to buy / sell today, with reasons)
 - [ ] E4 — Autopilot (managed paper/live engine with approve or auto mode)
 - [ ] E5 — Expansion (phone alerts via ntfy, watchlists, market/broker abstraction for BIST)
 
