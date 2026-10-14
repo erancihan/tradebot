@@ -16,6 +16,12 @@ def _plan(params: dict, frames: dict):
         end=params.get("end") or None,
         initial_cash=float(params.get("initial_cash", 10_000)),
         monthly_contribution=float(params.get("monthly_contribution") or 0.0),
+        strategy=str(params.get("strategy") or "buy_and_hold"),
+        strategy_params=dict(params.get("params") or {}),
+        allocation=str(params.get("allocation") or "equal"),
+        allocation_params=dict(params.get("allocation_params") or {}),
+        selector=params.get("selector") or None,
+        selector_params=dict(params.get("selector_params") or {}),
     )
 
 

@@ -34,3 +34,16 @@ def strategy_catalog() -> list[dict]:
             params.append({"name": pname, "type": kind, "default": p.default})
         specs.append({"name": name, "params": params})
     return specs
+
+
+def stack_catalog() -> dict[str, list[str]]:
+    """Allocators and selectors a form can pick by name alone.
+
+    ``explicit`` is left out: it needs a weight per symbol, which is a
+    config-file affair, like a meta strategy's roster.
+    """
+    from ....allocation import ALLOCATORS
+    from ....selection import SELECTORS
+
+    return {"allocators": [n for n in ALLOCATORS if n != "explicit"],
+            "selectors": sorted(SELECTORS)}

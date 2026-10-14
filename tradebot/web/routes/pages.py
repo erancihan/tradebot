@@ -13,6 +13,7 @@ from ..dependencies import (
 )
 from ..repository import ArenaRepository, SeasonRepository, TradingRepository
 from ..services import account_service, consortium_service, metrics_service
+from ..services.jobs import stack_catalog
 
 router = APIRouter()
 
@@ -43,7 +44,8 @@ def run_page(request: Request):
 
 @router.get("/whatif", response_class=HTMLResponse)
 def whatif_page(request: Request):
-    return templates.TemplateResponse(request, "pages/whatif.html", {"active": "whatif"})
+    return templates.TemplateResponse(
+        request, "pages/whatif.html", {"active": "whatif", "stack": stack_catalog()})
 
 
 @router.get("/seasons", response_class=HTMLResponse)

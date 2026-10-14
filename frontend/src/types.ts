@@ -156,4 +156,9 @@ export interface WhatIfRequest {
   end?: string;
   initial_cash: number;
   monthly_contribution: number;
+  strategy?: string;
+  params?: Record<string, number | boolean | string>;
+  allocation?: string;
+  selector?: string;
+  selector_params?: Record<string, number>;
 }

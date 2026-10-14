@@ -106,3 +106,28 @@ def test_plan_rejects_nonsense():
     with pytest.raises(ValueError):
         WhatIfPlan(symbols=["X"], start="2023-01-02", end=None, initial_cash=1,
                    monthly_contribution=-1)
+
+
+def test_run_whatif_with_a_strategy_plan_matches_backtester_directly():
+    """Lockstep: the what-if wrapper adds contributions, nothing else."""
+    from tradebot.allocation import InverseVolatility
+    from tradebot.selection import MomentumSelector
+    from tradebot.whatif import whatif_risk
+
+    frames = {s: synthetic_ohlcv(periods=320, seed=20 + i, freq="B")
+              for i, s in enumerate(["A", "B", "C", "D"])}
+    plan = WhatIfPlan(symbols=list(frames), start="2023-01-02", end=None,
+                      initial_cash=10_000, monthly_contribution=300,
+                      strategy="sma_crossover", strategy_params={"fast": 5, "slow": 20},
+                      allocation="inverse_vol", selector="momentum",
+                      selector_params={"lookback": 60, "skip": 5, "top_k": 2})
+    result = run_whatif(plan, frames)
+
+    direct = Backtester(build_strategy("sma_crossover", {"fast": 5, "slow": 20}),
+                        whatif_risk(), initial_cash=10_000,
+                        allocator=InverseVolatility(),
+                        selector=MomentumSelector(lookback=60, skip=5, top_k=2))
+    flows = monthly_cash_flows(frames["A"].index, 300)
+    expected = direct.run(frames, cash_flows=flows)
+    pd.testing.assert_series_equal(result.plan.equity_curve, expected.equity_curve)
+    assert result.plan.num_trades == expected.num_trades > 0

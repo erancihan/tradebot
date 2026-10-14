@@ -40,16 +40,24 @@ def _window(plan: WhatIfPlan, frames: dict[str, pd.DataFrame]) -> dict[str, pd.D
     return out
 
 
-def _backtest(plan: WhatIfPlan, frames, flows, commission: float,
-              slippage_bps: float) -> BacktestResult:
+def plan_backtester(plan: WhatIfPlan, *, commission: float = 0.0,
+                    slippage_bps: float = 1.0) -> Backtester:
+    """The plan's whole stack (strategy, selector, allocator) on one Backtester.
+
+    Built from the same registries the config file uses, so a what-if plan is
+    a portfolio the bot itself could run, not a separate model of one.
+    """
     from ..allocation import build_allocator
+    from ..selection import build_selector
     from ..strategies import build_strategy
 
-    bt = Backtester(build_strategy(plan.strategy, plan.strategy_params), whatif_risk(),
-                    initial_cash=plan.initial_cash, commission=commission,
-                    slippage_bps=slippage_bps,
-                    allocator=build_allocator(plan.allocation, plan.allocation_params))
-    return bt.run(frames, cash_flows=flows)
+    selector = (build_selector(plan.selector, plan.selector_params)
+                if plan.selector else None)
+    return Backtester(build_strategy(plan.strategy, plan.strategy_params), whatif_risk(),
+                      initial_cash=plan.initial_cash, commission=commission,
+                      slippage_bps=slippage_bps,
+                      allocator=build_allocator(plan.allocation, plan.allocation_params),
+                      selector=selector)
 
 
 def run_whatif(plan: WhatIfPlan, frames: dict[str, pd.DataFrame], *,
@@ -58,7 +66,8 @@ def run_whatif(plan: WhatIfPlan, frames: dict[str, pd.DataFrame], *,
     window = _window(plan, frames)
     common, _ = align_frames(window, "run a what-if")
     flows = monthly_cash_flows(common, plan.monthly_contribution)
-    result = _backtest(plan, window, flows, commission, slippage_bps)
+    result = plan_backtester(plan, commission=commission,
+                             slippage_bps=slippage_bps).run(window, cash_flows=flows)
     comparison = {
         "final_value": round(result.final_equity, 2),
         "contributions": round(result.total_contributed, 2),

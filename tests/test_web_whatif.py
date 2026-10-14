@@ -105,3 +105,31 @@ def test_whatif_uncached_range_returns_pull_hint(tmp_path):
 ])
 def test_whatif_rejects_an_impossible_plan(tmp_path, body):
     assert _client(tmp_path).post("/api/whatif", json=body).status_code == 400
+
+
+def test_whatif_job_runs_a_strategy_with_a_selector(tmp_path):
+    _seed_cache(tmp_path, symbols=("AAA", "BBB", "CCC"))
+    client = _client(tmp_path)
+    r = client.post("/api/whatif", json={
+        "symbols": ["AAA", "BBB", "CCC"], "initial_cash": 10000,
+        "strategy": "sma_crossover", "params": {"fast": 5, "slow": 20},
+        "allocation": "inverse_vol", "selector": "momentum",
+        "selector_params": {"lookback": 40, "skip": 5, "top_k": 2}})
+    job = _wait(client, r.json()["job_id"])
+    assert job["state"] == "done", job.get("error")
+    assert job["summary"]["final_value"] > 0
+
+
+def test_whatif_unknown_strategy_is_a_job_error(tmp_path):
+    client = _client(tmp_path)
+    r = client.post("/api/whatif", json={"symbols": ["X"], "source": "synthetic",
+                                         "strategy": "no_such_thing"})
+    job = _wait(client, r.json()["job_id"])
+    assert job["state"] == "error" and "no_such_thing" in job["error"]
+
+
+def test_whatif_page_offers_the_portfolio_stack(tmp_path):
+    text = _client(tmp_path).get("/whatif").text
+    for name in ("momentum", "low_vol", "inverse_vol"):
+        assert f'value="{name}"' in text
+    assert 'value="explicit"' not in text
