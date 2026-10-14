@@ -174,3 +174,86 @@ def run_whatif(plan: WhatIfPlan, frames: dict[str, pd.DataFrame], *, commission:
 3. Time-weighted metrics (CAGR, Sharpe, drawdown) stay as they are and are
    labelled "plan performance". Money gain is the headline number on the
    phone because it answers the owner's question directly.
+
+## E3: Suggestions
+
+### Files
+- `tradebot/advisor.py` (new, core). `ProposalLine`, `Proposal`, `propose`.
+  Pure: no broker call, no storage write. It reuses the engine step helpers
+  in `engine/signals.py` so the engine and the advisor share one code path.
+- `tradebot/engine/core.py`. `rebalance` builds the `Proposal` through
+  `advisor.propose` and then submits its lines. The lockstep test asserts
+  the submitted deltas equal the proposal lines for the same inputs.
+- `tradebot/storage/proposals.py` (new mixin). Table `proposals`, methods
+  `record_proposal(proposal, mode)`, `latest_proposal(mode)`,
+  `pending_lines(mode)`, `set_line_status(ids, status)`.
+- `tradebot/web/services/advisor_service.py` (new). Builds the inputs for a
+  proposal from the server configuration: frames from `BarCache` (fetcher
+  attached only when `AlpacaCredentials.from_env()` is present), account
+  state from the paper broker when credentials exist, else from the SQLite
+  log (latest equity snapshot plus positions derived from the order log).
+- `tradebot/web/services/jobs/proposal.py` (new). Job kind `proposal`.
+- `tradebot/web/routes/api/proposal.py` (new). `GET /api/proposal`, `POST
+  /api/proposal/refresh`.
+- `tradebot/web/routes/pages.py`. `GET /today`.
+- `tradebot/web/templates/pages/today.html` (new) and
+  `components/proposal_list.html` (new partial).
+- `frontend/src/components/today.ts` (new). Refresh button, poll, render.
+- `tradebot/web/app.py`. The factory takes `settings_path`; the server loads
+  `config.yaml` when present, else defaults. `tradebot-web --config`.
+- `tests/test_advisor.py`, `tests/test_web_today.py` (new).
+
+### Types and signatures
+```python
+@dataclass(frozen=True)
+class ProposalLine:
+    symbol: str
+    action: str            # "buy" | "sell" | "hold"
+    target: int            # -1, 0, +1 after selector gating
+    current_qty: float
+    desired_qty: float
+    order_qty: float       # signed delta, 0 for hold
+    price: float
+    notional: float        # abs(order_qty) * price
+    weight: float | None   # post-overlay target weight when an allocator exists
+    reason: str            # one sentence
+
+@dataclass(frozen=True)
+class Proposal:
+    created_at: datetime
+    equity: float
+    cash: float
+    lines: list[ProposalLine]
+    provenance: dict       # source, bars per symbol, window, age
+
+def propose(*, symbols, frames, equity, positions, strategy, risk,
+            selector=None, allocator=None, overlays=(), provenance=None) -> Proposal: ...
+def explain(symbol, target, rank, weight, capped, strategy_name) -> str: ...
+```
+
+### Call stack
+Today refresh: `POST /api/proposal/refresh` -> `JobRegistry.submit("proposal")`
+-> `advisor_service.build_inputs()` -> `advisor.propose()` ->
+`Storage.record_proposal()` -> page polls `GET /api/proposal`.
+Engine: `Engine.rebalance` -> `advisor.propose()` -> `_submit_all(lines)`.
+
+### Test plan
+- `test_propose_matches_engine_rebalance_deltas` (lockstep, DryRunBroker).
+- `test_propose_marks_non_members_as_sell_with_a_selector_reason`.
+- `test_propose_reason_names_the_strategy_signal_and_the_cap`.
+- `test_propose_never_calls_a_broker_or_storage` (fakes raise on use).
+- `test_latest_proposal_round_trips_through_storage`.
+- Web: `test_today_page_renders_empty_state_with_refresh_hint`,
+  `test_refresh_job_uses_cached_bars_without_credentials`,
+  `test_refresh_job_attaches_a_fetcher_only_with_credentials` (fake fetcher),
+  `test_positions_derived_from_the_order_log`.
+
+### Least confident decisions
+1. Positions without a broker come from summing signed fills in the order
+   log per mode. Partial fills are not modelled by the log, which matches
+   the dry-run broker.
+2. The reason sentence is assembled from structured parts in `explain`, not
+   from per-strategy prose. Strategies gain an optional `describe(bars)`
+   hook later if the generic sentence proves too thin.
+3. The tab bar after this epic: Today, Run, What-if, More (Dashboard,
+   Chart, Arena, Seasons, Consortium).
