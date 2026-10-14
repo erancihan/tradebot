@@ -8,14 +8,15 @@ One ``rebalance()`` pass:
 
 Step 2 is the very function the Today page calls, so a suggestion and an
 execution cannot disagree. The same Strategy + RiskManager objects power the
-backtester, so behaviour is consistent between simulation and live. A daily-loss circuit breaker flattens
-and stops trading for the session once breached.
+backtester, so behaviour is consistent between simulation and live. A
+daily-loss circuit breaker stops trading for the session once breached.
 """
 
 from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime
 
 from .. import advisor
 from ..advisor import Proposal
@@ -25,8 +26,9 @@ from ..notify import LogNotifier
 from ..risk import RiskManager
 from ..storage import Storage
 from ..strategies.base import Strategy
-from . import orders, signals
+from . import orders, pending, signals
 from .orders import RebalanceAction
+from .pending import PassOutcome
 
 log = logging.getLogger("tradebot.engine")
 
@@ -92,12 +94,18 @@ class Engine:
                 needed = max(needed, component.required_history)
         return max(needed * 2, 60)
 
-    def rebalance(self) -> list[RebalanceAction]:
+    def rebalance(self, submit: bool = True) -> list[RebalanceAction]:
+        """One full pass; returns the submitted actions (none when ``submit``
+        is False: the proposal is parked as pending instead, see ``step``)."""
+        return self.step(submit=submit).actions
+
+    def step(self, submit: bool = True, now: datetime | None = None) -> PassOutcome:
         """One full pass: book bracket exits, read the account, build the
-        proposal (``advisor.propose``), then submit its lines."""
+        proposal (``advisor.propose``), then submit its lines, or with
+        ``submit=False`` store them as pending for approval."""
         if not self.broker.is_market_open():
             log.info("Market closed; skipping rebalance.")
-            return []
+            return PassOutcome(market_closed=True)
 
         # Before anything reads the account: a stop that fired on this bar has
         # to be booked first, or sizing would be done against stale equity.
@@ -109,15 +117,27 @@ class Engine:
         if self.storage:
             self.storage.record_equity(acct.equity, acct.cash, self.mode)
         if self._halt_on_daily_loss(acct.equity):
-            return []
+            return PassOutcome(halted=True)
 
-        proposal = self.propose(acct.equity, acct.cash)
+        proposal = self.propose(acct.equity, acct.cash, now=now)
         if self.storage and self.allocator is not None:
             # Post-overlay: what the book actually targets.
             self.storage.record_weights(proposal.weights or {}, self.mode)
-        return self._submit_all(proposal)
+        if not submit:
+            return PassOutcome(proposal=proposal,
+                               batch_id=pending.record_pending(self, proposal))
+        return PassOutcome(actions=self._submit_all(proposal), proposal=proposal)
 
-    def propose(self, equity: float, cash: float = 0.0) -> Proposal:
+    def submit_lines(self, line_ids: list[int]) -> list[RebalanceAction]:
+        """Submit stored pending lines (an approval); see ``engine.pending``."""
+        return pending.submit_stored(self, line_ids)
+
+    def reset_session(self) -> None:
+        """Start a new daily-loss session: the next pass re-anchors its equity."""
+        self._session_start_equity = None
+
+    def propose(self, equity: float, cash: float = 0.0,
+                now: datetime | None = None) -> Proposal:
         """What this pass would trade: fetch bars and positions, then ask the
         advisor. Submits nothing."""
         frames = signals.fetch_frames(self)
@@ -128,6 +148,7 @@ class Engine:
             selector=self.selector, allocator=self.allocator, overlays=self.overlays,
             # Full stored history for a ranked selector (see `_selector_frames`).
             selector_frames=self._selector_frames(frames) if self.selector else None,
+            now=now,
         )
 
     def _halt_on_daily_loss(self, equity: float) -> bool:

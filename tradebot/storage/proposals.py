@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import json
 
-LINE_STATUSES = ("suggested", "pending", "approved", "rejected", "submitted")
+#: ``expired``: a pending line the next autopilot pass replaced before anyone
+#: approved it. It is never executed: the prices it was sized at have moved.
+LINE_STATUSES = ("suggested", "pending", "approved", "rejected", "submitted", "expired")
 
 _LINE_COLUMNS = ("symbol", "action", "target", "current_qty", "desired_qty",
                  "order_qty", "price", "notional", "weight", "reason")
@@ -18,10 +20,22 @@ _LINE_COLUMNS = ("symbol", "action", "target", "current_qty", "desired_qty",
 class ProposalsMixin:
     """Proposal writes and reads over ``self._conn``."""
 
-    def record_proposal(self, proposal, mode: str, status: str = "suggested") -> int:
-        """Persist one proposal and its lines; returns the batch id."""
-        if status not in LINE_STATUSES:
-            raise ValueError(f"status must be one of {LINE_STATUSES}, got {status!r}")
+    def record_proposal(self, proposal, mode: str, status: str = "suggested", *,
+                        hold_status: str | None = None) -> int:
+        """Persist one proposal and its lines; returns the batch id.
+
+        ``hold_status`` overrides ``status`` for lines with nothing to trade
+        (a hold or a skipped symbol), so a pending batch keeps its holds for
+        the record without asking anyone to approve doing nothing.
+        """
+        for given in (status, hold_status or status):
+            if given not in LINE_STATUSES:
+                raise ValueError(f"status must be one of {LINE_STATUSES}, got {given!r}")
+
+        def line_status(line) -> str:
+            idle = getattr(line, "skipped", False) or not line.order_qty
+            return (hold_status or status) if idle else status
+
         created = proposal.created_at.isoformat()
         cur = self._conn.execute(
             "INSERT INTO proposal_batches (created_at, mode, equity, cash, provenance)"
@@ -34,7 +48,7 @@ class ProposalsMixin:
             "INSERT INTO proposals (batch_id, created_at, mode, status, "
             + ", ".join(_LINE_COLUMNS) + ") VALUES (?, ?, ?, ?, "
             + ", ".join("?" for _ in _LINE_COLUMNS) + ")",
-            [(batch_id, created, mode, status,
+            [(batch_id, created, mode, line_status(line),
               *(getattr(line, c) for c in _LINE_COLUMNS)) for line in proposal.lines],
         )
         self._conn.commit()
@@ -61,6 +75,17 @@ class ProposalsMixin:
         rows = self._conn.execute(
             "SELECT * FROM proposals WHERE mode = ? AND status = 'pending' ORDER BY id",
             (mode,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def proposal_lines(self, ids: list[int], mode: str, status: str) -> list[dict]:
+        """The given lines that still belong to ``mode`` and carry ``status``."""
+        if not ids:
+            return []
+        marks = ", ".join("?" for _ in ids)
+        rows = self._conn.execute(
+            f"SELECT * FROM proposals WHERE id IN ({marks}) AND mode = ? AND status = ?"
+            " ORDER BY id", (*(int(i) for i in ids), mode, status),
         ).fetchall()
         return [dict(r) for r in rows]
 
