@@ -1,0 +1,65 @@
+{#- Today: account strip + suggested trades. Served for first paint and swapped
+    in after a refresh, so the markup lives in one place. Expects `today`. -#}
+{% set p = today.proposal %}
+{% if p %}
+  <div class="grid grid-cols-3 gap-2 rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+    <div>
+      <div class="text-xs uppercase tracking-wide text-slate-500">Equity</div>
+      <div class="text-base font-semibold text-slate-100" data-equity>{{ p.equity | money }}</div>
+    </div>
+    <div>
+      <div class="text-xs uppercase tracking-wide text-slate-500">Cash</div>
+      <div class="text-base font-semibold text-slate-100" data-cash>{{ p.cash | money }}</div>
+    </div>
+    <div>
+      <div class="text-xs uppercase tracking-wide text-slate-500">Account</div>
+      <div class="text-sm font-medium text-slate-300" data-account-source>{{ p.account_label }}</div>
+    </div>
+  </div>
+
+  {% set prov = p.provenance %}
+  <p class="text-xs text-slate-500" data-provenance>
+    Bars: {{ 'Alpaca (fetched, then cached)' if prov.source == 'alpaca' else (prov.source or 'unknown') }}
+    {%- if prov.end %} · through {{ prov.end[:10] }}{% endif %}
+    {%- if prov.bars %} · {{ prov.bars | length }} symbols{% endif %}
+    · computed {{ p.created_at[:16] | replace('T', ' ') }} UTC
+  </p>
+
+  {% if p.lines %}
+    <ul class="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900/40">
+      {% for line in p.lines %}
+        {% set badge = {'buy': 'bg-emerald-900/60 text-emerald-300 border-emerald-700',
+                        'sell': 'bg-rose-900/60 text-rose-300 border-rose-700'}.get(line.action,
+                        'bg-slate-800 text-slate-300 border-slate-700') %}
+        <li class="flex flex-col gap-1 px-3 py-3" data-line="{{ line.symbol }}">
+          <div class="flex items-center gap-3">
+            <span class="w-16 font-mono text-base font-semibold text-slate-100">{{ line.symbol }}</span>
+            <span class="rounded border px-2 py-0.5 text-xs font-semibold uppercase {{ badge }}">{{ line.action }}</span>
+            <span class="ml-auto text-right text-sm text-slate-300">
+              {% if line.action == 'hold' %}
+                {{ '%g' | format(line.current_qty) }} sh held
+              {% else %}
+                {{ '%g' | format(line.order_qty | abs) }} sh · {{ line.notional | money }}
+              {% endif %}
+            </span>
+          </div>
+          <p class="text-xs text-slate-400">{{ line.reason }}</p>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="rounded-lg border border-dashed border-slate-800 p-4 text-sm text-slate-500">
+      No symbols to advise on in this proposal.
+    </p>
+  {% endif %}
+{% else %}
+  <div class="space-y-2 rounded-lg border border-dashed border-slate-800 p-4 text-sm text-slate-400" data-empty>
+    <p>No suggestions yet. Tap Refresh to compute today's trades for
+      {{ today.symbols | join(', ') }}.</p>
+    {% if today.config_hint %}
+      <p class="text-slate-500">No config file found, so the defaults are used. Create one
+        to choose symbols and a strategy:</p>
+      <code class="block overflow-x-auto rounded bg-slate-900 px-2 py-1 font-mono text-xs text-slate-300">{{ today.config_hint }}</code>
+    {% endif %}
+  </div>
+{% endif %}

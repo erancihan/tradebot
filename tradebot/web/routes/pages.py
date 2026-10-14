@@ -12,7 +12,12 @@ from ..dependencies import (
     templates,
 )
 from ..repository import ArenaRepository, SeasonRepository, TradingRepository
-from ..services import account_service, consortium_service, metrics_service
+from ..services import (
+    account_service,
+    advisor_service,
+    consortium_service,
+    metrics_service,
+)
 
 router = APIRouter()
 
@@ -34,6 +39,15 @@ def dashboard(request: Request, repo: TradingRepository = Depends(get_trading_re
         "active": "dashboard",
     }
     return templates.TemplateResponse(request, "pages/dashboard.html", context)
+
+
+@router.get("/today", response_class=HTMLResponse)
+def today_page(request: Request, repo: TradingRepository = Depends(get_trading_repo)):
+    """Phone-first: the trades the advisor suggests right now, with reasons."""
+    state = request.app.state
+    context = {"today": advisor_service.view(repo, state.settings, state.settings_path),
+               "active": "today"}
+    return templates.TemplateResponse(request, "pages/today.html", context)
 
 
 @router.get("/run", response_class=HTMLResponse)

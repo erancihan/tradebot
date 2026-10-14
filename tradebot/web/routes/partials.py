@@ -11,7 +11,12 @@ from fastapi.responses import HTMLResponse
 
 from ..dependencies import get_arena_repo, get_trading_repo, templates
 from ..repository import ArenaRepository, TradingRepository
-from ..services import account_service, consortium_service, metrics_service
+from ..services import (
+    account_service,
+    advisor_service,
+    consortium_service,
+    metrics_service,
+)
 
 router = APIRouter(prefix="/partials")
 
@@ -52,6 +57,15 @@ def allocations(request: Request, repo: TradingRepository = Depends(get_trading_
     return templates.TemplateResponse(
         request, "components/allocations_table.html",
         {"allocations": {**weights, "universe": universe["symbols"]}},
+    )
+
+
+@router.get("/proposal", response_class=HTMLResponse)
+def proposal(request: Request, repo: TradingRepository = Depends(get_trading_repo)):
+    state = request.app.state
+    return templates.TemplateResponse(
+        request, "components/proposal_list.html",
+        {"today": advisor_service.view(repo, state.settings, state.settings_path)},
     )
 
 

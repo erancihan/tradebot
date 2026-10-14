@@ -11,13 +11,14 @@ from pathlib import Path
 
 from .bars import BarsMixin, _ts_iso
 from .orders import OrdersMixin
+from .proposals import ProposalsMixin
 from .schema import _SCHEMA
 from .weights import WeightsMixin
 
 __all__ = ["Storage"]
 
 
-class Storage(OrdersMixin, BarsMixin, WeightsMixin):
+class Storage(OrdersMixin, BarsMixin, WeightsMixin, ProposalsMixin):
     def __init__(self, path: str | Path = "tradebot.db") -> None:
         self.path = str(path)
         self._conn = sqlite3.connect(self.path)

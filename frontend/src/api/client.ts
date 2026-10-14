@@ -9,6 +9,7 @@ import type {
   JobRequest,
   JobView,
   OrderRow,
+  ProposalEnvelope,
   SeasonDetail,
   StrategySpec,
 } from "../types";
@@ -81,4 +82,12 @@ export function submitJob(body: JobRequest): Promise<{ job_id: string }> {
 
 export function getJob(id: string): Promise<JobView> {
   return getJson<JobView>(`/api/jobs/${id}`);
+}
+
+export function getProposal(): Promise<ProposalEnvelope> {
+  return getJson<ProposalEnvelope>("/api/proposal");
+}
+
+export function refreshProposal(): Promise<{ job_id: string }> {
+  return postJson<{ job_id: string }>("/api/proposal/refresh", {});
 }
