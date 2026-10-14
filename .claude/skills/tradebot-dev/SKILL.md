@@ -1,50 +1,65 @@
 ---
 name: tradebot-dev
-description: Use when starting work on the tradebot project (the trading bot under trading-bot/) — orientation, how to set up the env, run tests, build the frontend, and the non-negotiable invariants. Start here before changing trading-bot code.
+description: Use when starting work on the tradebot project (a paper-trading-first equities bot; the repo root is the project root). Covers orientation, env setup, tests, the frontend build, code-shape rules, git rules and the non-negotiable invariants. Start here before changing tradebot code.
 ---
 
 # tradebot dev workflow
 
-Project lives under `trading-bot/`. **Read `trading-bot/CLAUDE.md` first** — it is
-the source of truth for architecture, invariants, gotchas, and roadmap. This
-skill is the quick operational loop.
+The repo root is the project root. Read `CLAUDE.md` first. It holds the
+layout, invariants, code rules, gotchas and docs policy. The roadmap lives in
+`docs/plans/portfolio-companion/00-status.md`. This skill is the quick
+operational loop.
 
-## Set up & verify (all offline, no credentials)
+## Set up and verify (offline, no credentials)
 ```bash
-cd trading-bot
 make install        # .venv + pip install -e ".[dev]"
-make test           # pytest — must be green before and after your change
+make test           # pytest, green before and after your change
 ```
-For dashboard work also: `make install-web` (adds `[web]` extra + `npm install`).
+For dashboard work also run `make install-web` (adds the `[web]` extra and
+runs `npm install`).
 
 ## Common loops
 ```bash
 make demo           # offline backtest on synthetic data
 make dryrun         # offline real-time forward-test (replay)
 make arena          # example competition leaderboard
-make web            # build frontend + serve dashboard (needs [web])
+make web            # build frontend + serve the dashboard (needs [web])
 ```
-CLI surface: `tradebot {backtest,run,status,demo,arena,data}`, `tradebot-web`.
+CLI: `tradebot {backtest,run,status,demo,arena,data,universe}`, `tradebot-web`.
 
-Frontend (`trading-bot/frontend/`): `npm run typecheck` (strict, CI gate),
-`npm run build` (→ gitignored `tradebot/web/static/`), `npm run watch:js`.
+Frontend (`frontend/`): `npm run typecheck` (strict, CI gate), `npm run build`
+(output to the gitignored `tradebot/web/static/`), `npm run watch:js`.
 
-## Before you commit — checklist
-- `make test` green; `npm run typecheck` green if you touched the frontend.
-- Kept an **offline, credential-free** path + offline tests.
-- Respected invariants (see CLAUDE.md): **paper-first gate**, **no look-ahead**,
-  **risk centralised in RiskManager**, **import isolation** (lazy Alpaca; web not
-  imported by core), **no inline JS** in templates.
-- Did **not** commit secrets, `*.db`, `data/cache/`, `node_modules/`, or
-  `tradebot/web/static/` (all gitignored).
-- **Updated `CLAUDE.md`** (status/roadmap/gotchas) and `README.md` if user-facing.
+## Code rules
+- Functions and methods: at most 60 lines.
+- Modules under `tradebot/`: at most 200 lines, aim for 150. Split along
+  section comments and keep package re-exports so imports stay unchanged.
+- `tests/test_code_shape.py` enforces both limits. Run it after every split.
+- Type hints, `from __future__ import annotations`, comments explain why.
+
+## Git rules
+- Work on `feat/<epic>`. Merge into master with `git merge --no-ff --no-gpg-sign`.
+- Every commit carries `--no-gpg-sign`. Never edit git config.
+
+## Before you commit
+- `make test` green, `tests/test_code_shape.py` included. `npm run typecheck`
+  green for frontend changes.
+- An offline, credential-free path and offline tests remain.
+- Invariants hold (see CLAUDE.md): paper-first gate, no look-ahead, risk
+  centralised in `RiskManager`, import isolation (lazy Alpaca, the core never
+  imports `web`), no inline JS in templates.
+- No secrets, `*.db`, `data/cache/`, `node_modules/` or `tradebot/web/static/`
+  in the commit.
+- `CLAUDE.md`, `README.md` and these skills state the new final state. Answered
+  questions and finished plans are deleted, not kept.
 
 ## Specialised tasks
-- New strategy → use the `add-strategy` skill.
-- Arena contestant or arena internals → use the `add-arena-algo` skill.
+- New strategy: use the `add-strategy` skill.
+- Arena contestant or arena internals: use the `add-arena-algo` skill.
 
 ## Gotchas (full list in CLAUDE.md)
-- Don't type web request dict fields as `dict[str, float]` (coerces ints → floats,
-  breaks window/iloc). Use `dict | None`.
+- Do not type web request dict fields as `dict[str, float]`. Pydantic turns
+  integers into floats and breaks `rolling`/`iloc`. Use `dict | None`.
 - Starlette needs `templates.TemplateResponse(request, name, context)`.
-- Advance the arena/replay cursor once per loop step; keep warmup integers.
+- Advance the arena or replay cursor once per loop step. Keep warmups as
+  integers.

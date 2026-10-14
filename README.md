@@ -78,7 +78,7 @@ accident. The design reflects that:
 | Module | Responsibility |
 |---|---|
 | `tradebot/indicators.py` | SMA, EMA, RSI, MACD, Bollinger, crossover helpers (pure pandas) |
-| `tradebot/strategies/` | `Strategy` interface + crossover, RSI, Donchian, MACD, Bollinger, buy-and-hold |
+| `tradebot/strategies/` | `Strategy` interface + crossover, RSI, Donchian, MACD, Bollinger, momentum, Supertrend, buy-and-hold, meta |
 | `tradebot/risk.py` | Position sizing, joint book allocation, exposure cap, no-trade band, daily-loss breaker |
 | `tradebot/allocation.py` | Portfolio weighting: equal / inverse-vol / explicit |
 | `tradebot/selection.py` | Cross-sectional selection: momentum/reversal + low-vol top-K with hysteresis |
@@ -340,6 +340,12 @@ The full portfolio pipeline is then: **universe** (which symbols qualify) →
   signal line; optional short side.
 - **`bollinger_reversion`** — buy a close below the lower Bollinger band, exit
   when price reverts to the middle band; optional short side above the upper.
+- **`momentum`** — time-series momentum. Long when the `lookback`-bar rate of
+  change beats `threshold`, with an optional trend filter (price above a
+  `trend_ma` SMA); optional short side.
+- **`supertrend`** — ATR-based trend follower. Bands sit `multiplier` × ATR
+  around the bar midpoint and only tighten toward price. Long in an up trend,
+  flat (or short) in a down trend.
 - **`buy_and_hold`** — always long; the benchmark every idea has to beat, and
   the signal to use when a portfolio selector should be the only decision-maker.
 - **`follow_leader`** — meta: each bar, trade whatever sub-strategy earned the
@@ -520,8 +526,8 @@ and paper credentials; replaying afterwards needs neither.
 > limits, and are **sandboxed by default** — **no disk writes, no network**
 > (`--no-harden` to opt out). For fully adversarial code, add `--seccomp` to also
 > install a syscall filter denying `execve`/`execveat`/`ptrace` (blocks
-> `subprocess`/`os.system`). The next tier up is OS-level container/gVisor
-> containment; see `CLAUDE.md`.
+> `subprocess`/`os.system`). OS-level container/gVisor containment is deferred
+> on purpose. See [`docs/research-record.md`](docs/research-record.md).
 
 ## Consortium (many algorithms, one book)
 
@@ -703,31 +709,22 @@ tier.
 ## Testing
 
 ```bash
-make test     # 401 tests, fully offline
+make test     # fully offline, no credentials needed
 ```
 
-## Roadmap / ideas
+## Research record
 
-**The backlog is empty as of 2026-08-05.** Everything once listed here has
-shipped: the FastAPI dashboard (see "Web dashboard"), and the three
-live-execution items below.
+The arena's research results, the gate verdicts and the standing decisions are
+in [`docs/research-record.md`](docs/research-record.md). No contestant passes
+the promotion gate yet.
 
-- ✅ Bracket / stop-loss / take-profit order types — `risk.stop_loss_pct` /
-  `take_profit_pct`; see "Bracket exits" above.
-- ✅ Notifications on fills and circuit-breaker trips — the `notify:` block.
-- ✅ Streaming data via Alpaca websockets — `tradebot/data/stream.py`, consumed
-  by the arena season.
+## Where this is going
 
-One item is deferred on purpose: **container/gVisor isolation** for arena
-contestants. Contestant code is human-reviewed before it runs, so the existing
-`--harden` (no disk writes + network namespace) and `--seccomp` tiers match the
-threat model. Rationale and the implementation seam are in `CLAUDE.md`.
-
-> **Note (2026-07-25, resolved):** a full audit found a look-ahead in the sizing
-> path of both backtest loops, plus 15 other defects. The engine is fixed and
-> the research record re-derived — the corrected record is in `CLAUDE.md`, and
-> it still shows **no contestant passing the promotion gate**. Scope and staged
-> plan: `docs/PLAN.md`.
+tradebot is turning into a phone-first portfolio companion. A Today page
+suggests trades with a reason for each. Autopilot runs the paper account, with
+an approve-first mode. A What-if page replays a past plan against buy and
+hold. The plan is in
+[`docs/plans/portfolio-companion/01-product.md`](docs/plans/portfolio-companion/01-product.md).
 
 ## Disclaimer
 
