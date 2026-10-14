@@ -23,11 +23,11 @@ merged to master from its `feat/<epic>` branch with a no-ff merge commit.
 - [ ] S2.5 presets, cache-aware date bounds, pull hint when the range is not cached
 
 ## E3: Suggestions
-- [ ] S3.1 tracer: `/today` shows a stored dummy proposal
-- [ ] S3.2 `advisor.propose()` extracted from `Engine.rebalance`, with a lockstep test engine == advisor
-- [ ] S3.3 reasons: strategy signal, selector rank, allocator weight and risk cap in one sentence per row
-- [ ] S3.4 refresh job (server-side, cache first, network only with credentials), provenance and age
-- [ ] S3.5 account state from SQLite when no broker credentials exist
+- [x] S3.1 tracer: `/today` shows a stored dummy proposal
+- [x] S3.2 `advisor.propose()` extracted from `Engine.rebalance`, with a lockstep test engine == advisor
+- [x] S3.3 reasons: strategy signal, selector rank, allocator weight and risk cap in one sentence per row
+- [x] S3.4 refresh job (server-side, cache first, network only with credentials), provenance and age
+- [x] S3.5 account state from SQLite when no broker credentials exist
 
 ## E3b: Web hardening (before autopilot exposes trade actions)
 - [ ] S3b.1 same-origin guard: every `POST /api/*` requires the `X-Requested-With: tradebot` header, sent by the TypeScript client, refused with 403 otherwise (cross-origin forms cannot set it)

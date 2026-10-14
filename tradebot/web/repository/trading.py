@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+from . import proposals as _proposals
 from ._db import _read
 
 
@@ -130,3 +131,13 @@ class TradingRepository:
         except (json.JSONDecodeError, TypeError):
             symbols = []
         return {"ts": rows[0]["ts"], "mode": rows[0]["mode"], "symbols": symbols}
+
+    def latest_proposal(self, mode: str | None = None) -> dict | None:
+        """The advisor's newest stored proposal (see ``storage/proposals.py``)."""
+        return _proposals.latest_proposal(self.db_path, mode)
+
+    def positions_from_orders(self, mode: str) -> dict[str, float]:
+        return _proposals.positions_from_orders(self.db_path, mode)
+
+    def latest_equity_for(self, mode: str) -> dict | None:
+        return _proposals.latest_equity(self.db_path, mode)

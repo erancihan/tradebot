@@ -22,6 +22,11 @@ from .jobs import (  # noqa: F401
     JobRequest,
     JobView,
 )
+from .proposal import (  # noqa: F401
+    ProposalLineView,
+    ProposalView,
+    ProposalEnvelope,
+)
 from .season import (  # noqa: F401
     SeasonSummary,
     SeasonStanding,

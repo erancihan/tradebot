@@ -148,3 +148,38 @@ export interface JobView {
   provenance?: Provenance | null;
   error?: string | null;
 }
+
+// Today page: the latest stored proposal (see /api/proposal).
+export interface ProposalLine {
+  id: number;
+  symbol: string;
+  action: string; // "buy" | "sell" | "hold"
+  target: number;
+  current_qty: number;
+  desired_qty: number;
+  order_qty: number;
+  price: number;
+  notional: number;
+  weight?: number | null;
+  reason: string;
+  status: string;
+}
+
+export interface ProposalView {
+  id: number;
+  created_at: string;
+  age_seconds: number;
+  mode: string;
+  equity: number;
+  cash: number;
+  account_label: string;
+  provenance: Record<string, unknown>;
+  lines: ProposalLine[];
+}
+
+export interface ProposalEnvelope {
+  configured: boolean;
+  config_hint?: string | null;
+  symbols: string[];
+  proposal?: ProposalView | null;
+}

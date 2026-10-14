@@ -41,4 +41,30 @@ CREATE TABLE IF NOT EXISTS universe_snapshots (
     symbols TEXT NOT NULL,      -- JSON array, point-in-time candidate list
     mode    TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS proposal_batches (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at  TEXT NOT NULL,
+    mode        TEXT NOT NULL,
+    equity      REAL NOT NULL,
+    cash        REAL NOT NULL,
+    provenance  TEXT NOT NULL       -- JSON: data source, bars, window, account
+);
+CREATE TABLE IF NOT EXISTS proposals (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id     INTEGER NOT NULL REFERENCES proposal_batches(id),
+    created_at   TEXT NOT NULL,
+    mode         TEXT NOT NULL,
+    symbol       TEXT NOT NULL,
+    action       TEXT NOT NULL,     -- buy | sell | hold
+    target       INTEGER NOT NULL,
+    current_qty  REAL NOT NULL,
+    desired_qty  REAL NOT NULL,
+    order_qty    REAL NOT NULL,
+    price        REAL NOT NULL,
+    notional     REAL NOT NULL,
+    weight       REAL,
+    reason       TEXT NOT NULL,
+    status       TEXT NOT NULL      -- suggested | pending | approved | rejected | submitted
+);
+CREATE INDEX IF NOT EXISTS proposals_batch ON proposals (batch_id);
 """

@@ -42,8 +42,12 @@ tradebot/
   consortium/    voice, consensus, panel
   broker/        base (Broker ABC), alpaca (lazy SDK), dryrun + brackets (BracketsMixin)
   data/          synthetic + factor_panel, cache + coverage, replay, csv, alpaca_data, stream
-  engine/        core (Engine.rebalance: halt, gather, gate, size, submit), signals, orders
-  storage/       SQLite tradebot.db: schema, orders, bars, weights (Storage = mixins)
+  advisor/       propose (pure: bars + account -> Proposal of signed deltas), explain
+                 (one-sentence reasons), types (Proposal, ProposalLine)
+  engine/        core (Engine.rebalance: halt, advisor.propose, submit lines), signals
+                 (fetch_frames, selector_frames), orders (current_positions, submit_line)
+  storage/       SQLite tradebot.db: schema, orders, bars, weights, proposals (batch header
+                 + lines with a status) (Storage = mixins)
   cli/           __init__ (build_parser, main), common, demo, backtest, run, dryrun, status,
                  universe, data, arena, arena_history, arena_gate, arena_journal,
                  arena_league, season, season_run
@@ -51,10 +55,13 @@ tradebot/
                  (SubprocessRunner), sandbox, scoring, gate/ (measure, criteria, report,
                  evaluate), result, tournament, league, season/ (schema, config, store,
                  model, feeds, daemon), panel, market, contestant, store + journal
-  web/           app, server, dependencies, repository/ (trading, arena, season),
-                 services/ (account, cache, consortium, jobs/ {registry, frames,
-                 backtest, dryrun, catalog}), schemas/, routes/ (pages, partials, sse,
-                 api/ {trading, arena, jobs}), templates/ (components/tabbar.html),
+  web/           app (create_app + load_settings), server (--config), dependencies,
+                 repository/ (trading, proposals, arena, season), services/ (account,
+                 advisor (Today view + build_inputs), cache, consortium, jobs/ {registry,
+                 frames, backtest, dryrun, proposal, catalog}), schemas/ (+ proposal),
+                 routes/ (pages incl. /today, partials incl. /partials/proposal, sse,
+                 api/ {trading, arena, jobs, proposal}), templates/ (pages/today.html,
+                 components/proposal_list.html, components/tabbar.html),
                  static-src/ (PWA manifest + icons, committed), static/ (built, gitignored)
 algos/           12 contestants + canaries/ and consortium/ (both opt-in)
 scenarios/       regime library, factor library (xs_*), real_xs_* (+ sealed holdout), legacy real_*
@@ -63,7 +70,7 @@ tests/  docs/ (research-record.md, adr/, plans/)  data/cache/ (gitignored)
 config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])  Makefile
 ```
 
-Later epics add `advisor.py`, `autopilot.py`, `whatif.py` and `market/`.
+Later epics add `autopilot.py`, `whatif.py` and `market/`.
 
 ## Invariants
 
@@ -129,7 +136,8 @@ Later epics add `advisor.py`, `autopilot.py`, `whatif.py` and `market/`.
 make install | install-web | test | demo | dryrun | arena | web   # web serves :8000
 cd frontend && npm run typecheck | build | watch:js                  # after install-web
 ```
-CLI: `tradebot {backtest,run,status,demo,arena,data,universe}`, `tradebot-web`.
+CLI: `tradebot {backtest,run,status,demo,arena,data,universe}`, `tradebot-web
+[--config PATH]` (default `./config.yaml` when present, else SPY/QQQ defaults).
 `run --dry-run` and `run --replay` forward-test.
 Arena: `arena {list,run,validate,history,show,league,season,gate,journal}`.
 Season: `arena season {create,seed,list,standings,run}`.
@@ -153,6 +161,12 @@ build on every push and PR, with no credentials.
 - **The forked contestant never sees broker secrets.** `sandbox.scrub_secrets` deletes `ALPACA_*` and `TRADEBOT_LIVE_CONFIRM` from the child's environment before contestant code runs. Hardening blocks writes and network, not reads of `os.environ`.
 
 **Execution and data**
+- **Engine and advisor share one code path; change `propose`, not
+  `rebalance`.** `Engine.rebalance` fetches bars and positions, calls
+  `advisor.propose` and submits the lines. Targets, the selector gate,
+  weights, sizing, the band and rounding all live in `propose`, so a
+  suggestion on the Today page is exactly what a pass would trade.
+  `test_propose_matches_engine_rebalance_deltas` guards it.
 - **Bad prices are flat.** NaN, inf or non-positive prices never reach sizing.
   `RiskManager` returns 0 for them and all three loops skip the symbol.
   `math.floor(NaN)` raises.
@@ -184,8 +198,16 @@ build on every push and PR, with no credentials.
   signal-to-fill decay. Label this beside any quoted backtest.
 - **Window selection is a bias.** The real windows were chosen knowing their
   history. The sealed holdout is the only mitigation. Run it once, last.
-- **Positions are live-only.** Without Alpaca credentials the dashboard
-  positions card is empty. Positions are not stored locally.
+- **Offline positions come from the order log.** Without Alpaca credentials
+  the dashboard positions card is empty, and the Today refresh derives
+  positions by summing signed orders per symbol for the server's mode (every
+  order is assumed filled in full, as in the dry-run broker). Equity and cash
+  come from the newest equity snapshot for that mode, else `initial_cash`.
+- **The Today refresh gives the selector the whole cached history** and the
+  strategy only the last `required_history + 30` bars. A ranked selector's
+  verdict depends on where its frame starts, so the engine (which reads its
+  own stored bars) and the web refresh (which reads the bar cache) can pick
+  differently when those histories start on different days.
 
 **Arena**
 - **Isolation modes.** `process` (default on POSIX) forks each contestant with

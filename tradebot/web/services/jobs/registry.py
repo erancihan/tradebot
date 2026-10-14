@@ -14,8 +14,14 @@ from dataclasses import dataclass
 
 from .backtest import _run_backtest
 from .dryrun import _run_dryrun
+from .proposal import _run_proposal
 
+#: Kinds a browser may submit through POST /api/jobs. A proposal refresh has
+#: its own route because its parameters come from the server, not the form.
 VALID_KINDS = ("backtest", "dryrun")
+
+_RUNNERS = {"backtest": _run_backtest, "dryrun": _run_dryrun,
+            "proposal": _run_proposal}
 
 
 @dataclass
@@ -55,12 +61,10 @@ class JobRegistry:
     def _run(self, job_id: str, kind: str, params: dict) -> None:
         self._update(job_id, state="running")
         try:
-            if kind == "backtest":
-                summary, equity, provenance = _run_backtest(params)
-            elif kind == "dryrun":
-                summary, equity, provenance = _run_dryrun(params)
-            else:
+            runner = _RUNNERS.get(kind)
+            if runner is None:
                 raise ValueError(f"Unknown job kind: {kind!r}")
+            summary, equity, provenance = runner(params)
             self._update(job_id, state="done", summary=summary, equity=equity,
                          provenance=provenance)
         except Exception as exc:  # noqa: BLE001 - surface failures to the client

@@ -1,21 +1,19 @@
-"""Signal-side steps of a rebalance pass: bars, targets and selector history."""
+"""Data-side steps of a rebalance pass: bars and selector history."""
 
 from __future__ import annotations
 
 import logging
-import math
 
 log = logging.getLogger("tradebot.engine")
 
 
-def gather_signals(engine) -> tuple[dict[str, object], dict[str, int], dict[str, float]]:
-    """Bars, latest target and price per symbol.
+def fetch_frames(engine) -> dict[str, object]:
+    """Recent bars per symbol, persisted for the dashboard and the selector.
 
-    A failing symbol drops out of this pass instead of killing it.
+    A symbol whose fetch fails drops out of this pass instead of killing it.
+    Prices and signals are judged by ``advisor.propose``, not here.
     """
     frames: dict[str, object] = {}
-    targets: dict[str, int] = {}
-    prices: dict[str, float] = {}
     settings = engine.settings
     for sym in settings.symbols:
         try:
@@ -25,15 +23,10 @@ def gather_signals(engine) -> tuple[dict[str, object], dict[str, int], dict[str,
             if engine.storage is not None:
                 # Persist the price history (idempotent) for the dashboard.
                 engine.storage.record_bars(sym, settings.timeframe, bars, engine.mode)
-            price = float(bars["close"].iloc[-1])
-            if not math.isfinite(price) or price <= 0:
-                raise ValueError(f"no valid price for {sym} (got {price})")
-            targets[sym] = engine.strategy.latest_target(bars)
-            prices[sym] = price
             frames[sym] = bars
         except Exception:
-            log.exception("Data/signal failed for %s; skipping it this pass", sym)
-    return frames, targets, prices
+            log.exception("Data fetch failed for %s; skipping it this pass", sym)
+    return frames
 
 
 def selector_frames(engine, fetched: dict[str, object]) -> dict[str, object]:
@@ -45,7 +38,7 @@ def selector_frames(engine, fetched: dict[str, object]) -> dict[str, object]:
     *starts*. Feeding it the rolling fetch window made live selection depend
     on process start time and diverge from the backtest that validated it.
 
-    Every fetched bar is already persisted by `gather_signals`, so the store
+    Every fetched bar is already persisted by `fetch_frames`, so the store
     holds a superset of the window. Without a store (or before any history has
     accumulated) we fall back to the fetched frames — same behaviour as
     before, and the only honest option when there is nothing else to read.

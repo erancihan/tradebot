@@ -8,9 +8,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from . import arena, jobs, trading
+from . import arena, jobs, proposal, trading
 
 router = APIRouter(prefix="/api")
 router.include_router(trading.router)
 router.include_router(arena.router)
 router.include_router(jobs.router)
+router.include_router(proposal.router)

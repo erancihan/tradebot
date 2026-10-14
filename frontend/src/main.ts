@@ -12,6 +12,7 @@ import { jobRunner } from "./components/jobRunner";
 import { moreSheet } from "./components/moreSheet";
 import { partialLoader } from "./components/partialLoader";
 import { seasonChart } from "./components/seasonChart";
+import { today } from "./components/today";
 import { startSse } from "./sse";
 
 declare global {
@@ -26,6 +27,7 @@ Alpine.data("equityChart", equityChart);
 Alpine.data("arenaChart", arenaChart);
 Alpine.data("candleChart", candleChart);
 Alpine.data("seasonChart", seasonChart);
+Alpine.data("today", today);
 Alpine.data("jobRunner", jobRunner);
 Alpine.data("moreSheet", moreSheet);
 Alpine.data("partialLoader", partialLoader);
