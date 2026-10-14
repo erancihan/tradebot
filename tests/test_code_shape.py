@@ -39,11 +39,6 @@ KNOWN_OFFENDERS: set[str] = {
     "tradebot/storage.py",  # split in progress
     "tradebot/universe.py",  # split in progress
     "tradebot/walkforward.py::walk_forward",  # split in progress
-    "tradebot/web/repository.py",  # split in progress
-    "tradebot/web/routes/api.py",  # split in progress
-    "tradebot/web/schemas.py",  # split in progress
-    "tradebot/web/services/consortium_service.py::panel",  # split in progress
-    "tradebot/web/services/jobs_service.py",  # split in progress
 }
 
 
