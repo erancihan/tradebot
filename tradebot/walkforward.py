@@ -116,28 +116,32 @@ def walk_forward(
     # Contiguous fold spans over the post-warmup range.
     edges = [warmup + round(k * usable / folds) for k in range(folds + 1)]
 
-    results: list[FoldMetrics] = []
-    for k in range(folds):
-        lo, hi = edges[k], edges[k + 1]              # fold spans bars [lo, hi)
-        window = common[lo - warmup: hi]             # + warmup prefix
-        sliced = {s: df.reindex(window) for s, df in data.items()}
-        res = backtester.run(sliced)
-
-        span = hi - lo
-        curve = res.equity_curve.iloc[-span:]
-        fold_result = BacktestResult(
-            equity_curve=curve,
-            trades=[],
-            initial_cash=float(curve.iloc[0]),
-            periods_per_year=_infer_periods_per_year(curve.index),
-        )
-        results.append(FoldMetrics(
-            fold=k + 1,
-            start=str(curve.index[0]),
-            end=str(curve.index[-1]),
-            bars=span,
-            total_return=fold_result.total_return,
-            sharpe=fold_result.sharpe,
-            max_drawdown=fold_result.max_drawdown,
-        ))
+    results = [_run_fold(backtester, data, common, k + 1, edges[k], edges[k + 1], warmup)
+               for k in range(folds)]
     return WalkForwardResult(folds=results)
+
+
+def _run_fold(backtester: Backtester, data: dict[str, pd.DataFrame], common,
+              fold: int, lo: int, hi: int, warmup: int) -> FoldMetrics:
+    """Backtest bars ``[lo - warmup, hi)``; score only the fold's own ``[lo, hi)``."""
+    window = common[lo - warmup: hi]
+    sliced = {s: df.reindex(window) for s, df in data.items()}
+    res = backtester.run(sliced)
+
+    span = hi - lo
+    curve = res.equity_curve.iloc[-span:]
+    fold_result = BacktestResult(
+        equity_curve=curve,
+        trades=[],
+        initial_cash=float(curve.iloc[0]),
+        periods_per_year=_infer_periods_per_year(curve.index),
+    )
+    return FoldMetrics(
+        fold=fold,
+        start=str(curve.index[0]),
+        end=str(curve.index[-1]),
+        bars=span,
+        total_return=fold_result.total_return,
+        sharpe=fold_result.sharpe,
+        max_drawdown=fold_result.max_drawdown,
+    )
