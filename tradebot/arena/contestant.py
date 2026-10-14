@@ -13,6 +13,8 @@ class Contestant:
     ``factory`` is called with no arguments to build a fresh strategy/algo
     instance per round (so stateful event algos never leak state between runs).
     ``kind`` is "vectorized" (a Strategy) or "event" (an Algo).
+    ``family`` groups variants of the same idea for the experiment journal
+    (multiple-testing accounting); it defaults to the contestant's name.
     """
 
     name: str
@@ -20,6 +22,7 @@ class Contestant:
     kind: str
     author: str = ""
     tags: tuple[str, ...] = ()
+    family: str = ""  # journal grouping; empty means "same as name"
     source: str = ""  # set by the loader to the file the contestant came from
 
     def make(self) -> object:

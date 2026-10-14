@@ -11,14 +11,17 @@ from fastapi.responses import HTMLResponse
 
 from ..dependencies import get_arena_repo, get_trading_repo, templates
 from ..repository import ArenaRepository, TradingRepository
-from ..services import account_service, metrics_service
+from ..services import account_service, consortium_service, metrics_service
 
 router = APIRouter(prefix="/partials")
 
 
 @router.get("/stats", response_class=HTMLResponse)
-def stats(request: Request, repo: TradingRepository = Depends(get_trading_repo)):
-    equity = repo.equity_series(limit=2000)
+def stats(request: Request, mode: str | None = None,
+          repo: TradingRepository = Depends(get_trading_repo)):
+    # Scoped to one mode: an unscoped series splices separate accounts into one
+    # curve, so "total return" and "max drawdown" describe a book nobody ran.
+    equity = repo.equity_series(mode=mode or repo.default_mode(), limit=2000)
     return templates.TemplateResponse(
         request, "components/stats.html",
         {"metrics": metrics_service.summarize(equity),
@@ -42,6 +45,16 @@ def positions(request: Request, repo: TradingRepository = Depends(get_trading_re
     )
 
 
+@router.get("/allocations", response_class=HTMLResponse)
+def allocations(request: Request, repo: TradingRepository = Depends(get_trading_repo)):
+    weights = repo.latest_weights()
+    universe = repo.latest_universe()
+    return templates.TemplateResponse(
+        request, "components/allocations_table.html",
+        {"allocations": {**weights, "universe": universe["symbols"]}},
+    )
+
+
 @router.get("/leaderboard", response_class=HTMLResponse)
 def leaderboard(
     request: Request,
@@ -54,4 +67,14 @@ def leaderboard(
         request, "components/leaderboard_table.html",
         {"entries": detail["results"] if detail else [],
          "run": detail["run"] if detail else None},
+    )
+
+
+@router.get("/consortium", response_class=HTMLResponse)
+def consortium(request: Request, voice: str = "equal",
+               repo: TradingRepository = Depends(get_trading_repo)):
+    # Not on the auto-refresh poll — see the note in pages/consortium.html.
+    return templates.TemplateResponse(
+        request, "components/consortium_panel.html",
+        {"panel": consortium_service.panel(repo, voice_name=voice)},
     )

@@ -42,6 +42,20 @@ class MyVec(Strategy):
         ...   # pandas Series in {-1, 0, +1}
 ```
 
+**Cross-sectional** (`PortfolioAlgo`) — a whole book as one entry: compose
+strategy + selector + allocator (+ reduce-only overlays), the same stack the
+Backtester/live engine run (kept in lockstep by `tests/test_arena_portfolio.py`).
+Use `BuyAndHold` as the strategy for selector-only books; run on a multi-symbol
+scenario (`scenarios/cross_sectional.yaml` has a built-in spread):
+```python
+from tradebot.arena import PortfolioAlgo, register
+
+@register(name="my_book", tags=("portfolio",))
+class MyBook(PortfolioAlgo):
+    def __init__(self):
+        super().__init__(strategy=..., selector=..., allocator=..., overlays=[...])
+```
+
 Rules: contestant **names must be unique**; the factory is called with no args
 (set defaults in `__init__`); crashes are isolated (an exception DQs only that
 contestant). Position **sizing** is applied by the arena's shared `RiskManager`.
@@ -55,11 +69,39 @@ tradebot arena season create --name s1 --symbols SPY --algos ./algos  # durable 
 tradebot arena history && tradebot arena show
 ```
 
+Then run the **regime gauntlet** — one scenario proves nothing. `scenarios/`
+ships `bull_trend`, `sideways_chop`, `crash_recovery`, `vol_spike`,
+`cross_sectional`; rank with a robustness metric (`worst_fold` = worst quarter
+of the run, `consistency` = mean fold return − dispersion):
+```bash
+tradebot arena run --algos ./algos --scenario scenarios/crash_recovery.yaml --score worst_fold
+```
+
+To judge a candidate for promotion, use the **pass gate** (exit code =
+verdict; checks completes-everywhere, beats-baseline mean return, worst-fold
+majority, drawdown bound; prints the family's journal attempt count):
+```bash
+tradebot arena gate --algos ./algos --candidate my_algo --scenarios scenarios/*.yaml
+```
+Do not tune the gate or grid-search params to force a pass — iterations must
+be theory-driven, and the journal counts every one (see the README runbook).
+House rules: every new algo ships with offline tests **and** a walk-forward
+pass (`tradebot.walkforward.walk_forward` smoke in tests), and every variant
+counts — `arena run` journals one attempt per contestant automatically
+(`--no-journal` to opt out; `tradebot arena journal` shows the ledger). Give
+variants of one idea a shared `@register(..., family="idea")` so attempts
+accumulate against the family. Adding an example contestant to `algos/`
+changes the field size some tests assert on — see the CLAUDE.md gotcha.
+
 ## Extending the arena itself
 
-- **New score metric:** add to `SCORERS` in `tradebot/arena/scoring.py`.
+- **New score metric:** add to `SCORERS` in `tradebot/arena/scoring.py`
+  (whole-run metrics + fold-based `worst_fold`/`consistency`; the fold scorers
+  are only valid while contestants carry fixed params — nothing fit mid-run).
 - **New data source / scenario field:** `tradebot/arena/scenario.py`
   (`build_frames`); real data flows Alpaca → `data/cache.py BarCache` → frames.
+  Synthetic scenarios support piecewise `regimes:` segments
+  (`data/synthetic.py synthetic_regime_ohlcv`, continuous price path).
 - **Isolation:** `runner.py` has two runners behind the `Runner` protocol,
   chosen by `default_runner` via `--isolation`: `process` (default, hard
   kill-on-timeout + CPU/memory `rlimit`s — **raises** if fork is unavailable,

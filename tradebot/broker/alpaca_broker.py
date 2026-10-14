@@ -48,6 +48,27 @@ class AlpacaBroker(Broker):
         return bool(self._client.get_clock().is_open)
 
     # --- orders --------------------------------------------------------------
+    @staticmethod
+    def _bracket_kwargs(order: Order) -> dict:
+        """Map our absolute bracket prices onto Alpaca's order classes.
+
+        Both legs -> ``bracket``; one leg -> ``oto`` (Alpaca rejects a bracket
+        that is missing a side). Nothing is inferred here: the engine already
+        resolved the offsets to prices, so this stays a pure translation.
+        """
+        if not order.has_bracket:
+            return {}
+        from alpaca.trading.enums import OrderClass
+        from alpaca.trading.requests import StopLossRequest, TakeProfitRequest
+
+        legs: dict = {}
+        if order.stop_loss is not None:
+            legs["stop_loss"] = StopLossRequest(stop_price=round(order.stop_loss, 2))
+        if order.take_profit is not None:
+            legs["take_profit"] = TakeProfitRequest(limit_price=round(order.take_profit, 2))
+        order_class = OrderClass.BRACKET if len(legs) == 2 else OrderClass.OTO
+        return {"order_class": order_class, **legs}
+
     def submit(self, order: Order) -> str:
         from alpaca.trading.enums import OrderSide as AOrderSide
         from alpaca.trading.enums import TimeInForce as ATif
@@ -55,6 +76,7 @@ class AlpacaBroker(Broker):
 
         side = AOrderSide.BUY if order.side is Side.BUY else AOrderSide.SELL
         tif = ATif.DAY if order.time_in_force is TimeInForce.DAY else ATif.GTC
+        bracket = self._bracket_kwargs(order)
 
         if order.type is OrderType.LIMIT:
             req = LimitOrderRequest(
@@ -64,6 +86,7 @@ class AlpacaBroker(Broker):
                 time_in_force=tif,
                 limit_price=order.limit_price,
                 client_order_id=order.client_order_id,
+                **bracket,
             )
         else:
             req = MarketOrderRequest(
@@ -72,6 +95,7 @@ class AlpacaBroker(Broker):
                 side=side,
                 time_in_force=tif,
                 client_order_id=order.client_order_id,
+                **bracket,
             )
         submitted = self._client.submit_order(req)
         return str(submitted.id)

@@ -26,6 +26,8 @@ def _seed_trading(path):
     st.record_equity(10_050, 4_950, "paper")
     st.record_order(Order(symbol="SPY", qty=10, side=Side.BUY), "ord-1", "paper")
     st.record_bars("SPY", "1day", synthetic_ohlcv(periods=20, seed=1), "paper")
+    st.record_weights({"SPY": 0.6, "QQQ": 0.4}, "paper")
+    st.record_universe(["SPY", "QQQ", "IWM"], "paper")
     st.close()
 
 
@@ -125,6 +127,32 @@ def test_partials_reuse_components(client):
     assert client.get("/partials/positions").status_code == 200
 
 
+def test_allocations_api(client):
+    a = client.get("/api/allocations").json()
+    assert [w["symbol"] for w in a["weights"]] == ["SPY", "QQQ"]   # weight desc
+    assert a["weights"][0]["weight"] == 0.6
+    assert a["universe"] == ["SPY", "QQQ", "IWM"]
+    assert a["ts"] is not None
+
+
+def test_allocations_partial_and_dashboard_section(client):
+    partial = client.get("/partials/allocations").text
+    assert "QQQ" in partial and "60.00%" in partial
+    assert "Candidate universe" in partial and "IWM" in partial
+
+    page = client.get("/").text
+    assert "Target allocations" in page and "60.00%" in page
+
+
+def test_allocations_empty_state(tmp_path):
+    app = create_app(trading_db=str(tmp_path / "missing.db"),
+                     arena_db=str(tmp_path / "missing2.db"))
+    c = TestClient(app)
+    a = c.get("/api/allocations").json()
+    assert a["weights"] == [] and a["universe"] == []
+    assert "No target weights recorded yet" in c.get("/partials/allocations").text
+
+
 def test_arena_page_and_api(client):
     page = client.get("/arena")
     assert page.status_code == 200
@@ -133,7 +161,7 @@ def test_arena_page_and_api(client):
     runs = client.get("/api/arena/runs").json()
     assert len(runs) >= 1
     detail = client.get(f"/api/arena/runs/{runs[0]['id']}").json()
-    assert len(detail["entries"]) == 3
+    assert len(detail["entries"]) == 12           # every algos/ contestant
     assert detail["curves"] and detail["curves"][0]["equity"]
 
 
@@ -141,7 +169,7 @@ def test_seasons_api(client):
     seasons = client.get("/api/seasons").json()
     assert len(seasons) >= 1
     detail = client.get(f"/api/seasons/{seasons[0]['id']}").json()
-    assert len(detail["latest"]) == 3
+    assert len(detail["latest"]) == 12            # every algos/ contestant
     assert detail["curves"] and len(detail["curves"][0]["total_return"]) >= 1
 
 
@@ -159,3 +187,136 @@ def test_empty_databases_render_gracefully(tmp_path):
     assert c.get("/arena").status_code == 200
     assert c.get("/api/equity").json()["points"] == []
     assert c.get("/api/arena/runs").json() == []
+
+
+def test_empty_pages_explain_how_to_fill_themselves(tmp_path):
+    """An empty page must say why it is empty and which command fills it."""
+    app = create_app(trading_db=str(tmp_path / "missing.db"),
+                     arena_db=str(tmp_path / "missing2.db"),
+                     season_db=str(tmp_path / "missing3.db"))
+    c = TestClient(app)
+    assert "tradebot run --dry-run --replay" in c.get("/").text
+    assert "tradebot arena run --algos ./algos" in c.get("/arena").text
+    assert "tradebot run --dry-run --replay" in c.get("/consortium").text
+
+
+# --- the consortium panel ------------------------------------------------------
+
+def _panel_client(tmp_path, symbols=("SPY", "QQQ"), periods=40):
+    """A store with enough bars for a panel, and a client over it."""
+    from tradebot.data.synthetic import synthetic_ohlcv
+
+    db = tmp_path / "panel.db"
+    st = Storage(str(db))
+    for i, sym in enumerate(symbols):
+        st.record_bars(sym, "1day", synthetic_ohlcv(periods=periods, seed=i + 1), "paper")
+    st.record_equity(10_000, 5_000, "paper")
+    st.close()
+    return TestClient(create_app(trading_db=str(db)))
+
+
+def test_the_panel_page_shows_every_member_and_the_blend(tmp_path):
+    client = _panel_client(tmp_path)
+    body = client.get("/consortium").text
+
+    assert "Consortium" in body
+    assert "Consensus book" in body
+    for member in ("sma_trend", "rsi_dip", "xs_momentum"):
+        assert member in body                     # all three contestant kinds
+    # The diversity caveat travels with the view, not just the docs.
+    assert "strategy wearing many hats" in body
+
+
+def test_the_panel_api_reports_voice_and_consensus(tmp_path):
+    client = _panel_client(tmp_path)
+    data = client.get("/api/consortium").json()
+
+    assert data["voice"] == "equal"
+    assert data["bars"] > 0
+    assert set(data["symbols"]) == {"SPY", "QQQ"}
+    assert len(data["members"]) == 12
+    assert data["errors"] == []
+
+    voices = [m["voice"] for m in data["members"]]
+    assert sum(voices) == pytest.approx(1.0)
+    assert all(v == pytest.approx(1 / 12) for v in voices)
+
+    for row in data["consensus"]:
+        assert row["target"] in (-1, 0, 1)
+        assert row["weight"] >= 0
+
+
+def test_the_hedge_voice_is_selectable_and_differs_from_equal(tmp_path):
+    client = _panel_client(tmp_path)
+    equal = client.get("/api/consortium?voice=equal").json()
+    hedge = client.get("/api/consortium?voice=hedge").json()
+
+    assert hedge["voice"] == "hedge"
+    equal_voices = {m["name"]: m["voice"] for m in equal["members"]}
+    hedge_voices = {m["name"]: m["voice"] for m in hedge["members"]}
+    assert equal_voices != hedge_voices
+    assert sum(hedge_voices.values()) == pytest.approx(1.0)
+
+
+def test_an_empty_store_renders_a_panel_instead_of_failing(tmp_path):
+    """No bars is a normal state, not a 500."""
+    db = tmp_path / "empty.db"
+    Storage(str(db)).close()
+    client = TestClient(create_app(trading_db=str(db)))
+
+    page = client.get("/consortium")
+    assert page.status_code == 200
+    assert "No panel yet" in page.text
+    assert client.get("/api/consortium").json()["members"] == []
+
+
+def test_the_panel_partial_is_reusable_on_its_own(tmp_path):
+    client = _panel_client(tmp_path)
+    partial = client.get("/partials/consortium")
+
+    assert partial.status_code == 200
+    assert "Consensus book" in partial.text
+    assert "<html" not in partial.text          # a fragment, not a page
+
+
+def test_a_seeded_season_says_so_on_the_dashboard(tmp_path):
+    """Provenance has to travel with the numbers, not just live in a doc.
+
+    A standings table built on backfilled bars looks exactly like one earned
+    live. The seasons page marks the boundary so a reader cannot confuse them.
+    """
+    import pandas as pd
+
+    from tradebot.arena.season import Season, SeasonConfig, SeasonStore, seed_season
+    from tradebot.data.synthetic import synthetic_ohlcv
+
+    db = tmp_path / "season.db"
+    with SeasonStore(db) as store:
+        season = Season.create(store, SeasonConfig(
+            name="seeded", symbols=["A", "B"], metric="total_return",
+            algo_paths=[str(ALGOS)]))
+        idx = pd.date_range("2026-01-02", periods=30, freq="1D", tz="UTC")
+        frames = {}
+        for i, sym in enumerate(["A", "B"]):
+            df = synthetic_ohlcv(periods=30, seed=i + 1)
+            df.index = idx
+            frames[sym] = df
+        seed_season(season, frames)
+        sid = season.id
+
+    client = TestClient(create_app(season_db=str(db)))
+    body = client.get(f"/seasons/{sid}").text
+
+    assert "Backfilled through" in body
+    assert "2026-01-31" in body
+    assert "not a live-forward result" in body
+
+
+def test_an_unseeded_season_shows_no_backfill_banner(tmp_path):
+    """The banner is a signal, not decoration."""
+    db = tmp_path / "season.db"
+    _seed_season(db)
+    client = TestClient(create_app(season_db=str(db)))
+
+    body = client.get("/seasons/1").text
+    assert "Backfilled through" not in body

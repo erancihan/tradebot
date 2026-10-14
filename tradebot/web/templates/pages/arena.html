@@ -20,8 +20,12 @@
           {% endfor %}
         </ul>
       {% else %}
-        <div class="rounded-lg border border-dashed border-slate-800 p-6 text-center text-slate-500">
-          No saved tournaments.
+        <div class="rounded-lg border border-dashed border-slate-800 p-6 text-sm text-slate-500">
+          <p class="mb-2">No saved tournaments. This page shows results from the arena
+          database (<code class="text-slate-400">arena.db</code>), and nothing has run
+          on this machine yet.</p>
+          <p class="mb-1 text-slate-400">Run one from a terminal, then refresh:</p>
+          <code class="block overflow-x-auto rounded bg-slate-900 px-2 py-1 font-mono text-xs text-slate-300">tradebot arena run --algos ./algos --scenario scenarios/real_xs_2023.yaml --time-budget 90</code>
         </div>
       {% endif %}
     </aside>

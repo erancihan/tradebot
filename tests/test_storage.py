@@ -29,6 +29,57 @@ def test_record_bars_is_idempotent(tmp_path):
     assert _count_bars(db) == 10                            # de-duplicated
 
 
+def test_rewriting_a_bar_updates_it(tmp_path):
+    """The engine persists today's still-forming bar; the settled one must win.
+
+    Under the old INSERT OR IGNORE the first (partial) write was frozen forever,
+    and since the stored history feeds the selector that contamination sat on
+    the decision path.
+    """
+    import sqlite3
+
+    db = str(tmp_path / "t.db")
+    df = synthetic_ohlcv(periods=10, seed=1)
+    settled = df.copy()
+    settled.iloc[-1, settled.columns.get_loc("close")] = 999.0
+
+    with Storage(db) as st:
+        st.record_bars("SPY", "1day", df, "paper")
+        st.record_bars("SPY", "1day", settled, "paper")
+
+    assert _count_bars(db) == 10                            # still no duplicates
+    conn = sqlite3.connect(db)
+    last = conn.execute(
+        "SELECT close FROM bars WHERE symbol='SPY' ORDER BY ts DESC LIMIT 1"
+    ).fetchone()[0]
+    conn.close()
+    assert last == 999.0                                    # latest write wins
+
+
+def test_target_weights_round_trip(tmp_path):
+    db = str(tmp_path / "t.db")
+    with Storage(db) as st:
+        st.record_weights({"SPY": 0.6, "QQQ": 0.4}, "paper")
+        st.record_weights({"SPY": 0.5, "QQQ": 0.5}, "paper")   # newer pass wins
+        st.record_weights({"IWM": 1.0}, "dry_run")
+        assert st.latest_weights("paper") == {"SPY": 0.5, "QQQ": 0.5}
+        assert st.latest_weights("dry_run") == {"IWM": 1.0}
+        assert st.latest_weights() != {}
+        st.record_weights({}, "paper")                          # no-op, keeps latest
+        assert st.latest_weights("paper") == {"SPY": 0.5, "QQQ": 0.5}
+
+
+def test_universe_snapshot_round_trip(tmp_path):
+    db = str(tmp_path / "t.db")
+    with Storage(db) as st:
+        st.record_universe(["AAPL", "MSFT"], "paper")
+        st.record_universe(["AAPL", "NVDA", "TSLA"], "paper")   # newest wins
+        assert st.latest_universe("paper") == ["AAPL", "NVDA", "TSLA"]
+        assert st.latest_universe("dry_run") == []
+        st.record_universe([], "paper")                          # no-op
+        assert st.latest_universe("paper") == ["AAPL", "NVDA", "TSLA"]
+
+
 def test_engine_records_bars_when_storage_present(tmp_path):
     db = str(tmp_path / "t.db")
     df = synthetic_ohlcv(periods=60, seed=1)

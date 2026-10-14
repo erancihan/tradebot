@@ -31,6 +31,7 @@ def run_tournament(
     frames=None,
     harden: bool = True,
     seccomp: bool = False,
+    require_sandbox: bool = False,
 ) -> TournamentOutcome:
     """Load contestants from ``paths`` and rank them over ``scenario``.
 
@@ -47,7 +48,7 @@ def run_tournament(
     scenario = scenario or Scenario.default()
     scorer = get_scorer(metric)  # validate metric early (raises on typo)
     runner = runner or default_runner(time_budget_s, isolation, cpu_seconds, memory_mb,
-                                       harden, seccomp)
+                                       harden, seccomp, require_sandbox)
 
     contestants, load_errors = discover(paths)
     if frames is None:

@@ -11,9 +11,32 @@
 mode: paper
 
 # Symbols to trade. Liquid ETFs are a sane place to start.
+# (If a `universe:` block is set below, this list is replaced at startup by
+# the screened candidates — replay/offline runs keep using this list.)
 symbols:
   - SPY
   - QQQ
+
+# --- Universe (optional) --------------------------------------------------------
+# Discover the candidate pool from Alpaca instead of hand-typing `symbols`:
+# shortlist today's most-active names, keep active+tradable ones, then screen
+# by minimum price and rolling average dollar volume (ADV). Resolved once at
+# startup, printed, and snapshotted to SQLite (point-in-time paper trail).
+# Preview with: tradebot universe --config config.yaml   (needs free creds)
+#
+# NOTE: free IEX data reports ~2% of consolidated volume, so ADV floors are
+# conservative by construction. A universe screened today is survivorship-
+# biased for historical backtests — use it live-forward.
+#
+# universe:
+#   source: alpaca_liquidity
+#   params:
+#     candidates: 100           # most-actives shortlist size
+#     min_price: 5.0            # skip penny-stock pathologies
+#     min_dollar_volume: 1000000  # rolling ADV floor (IEX volume!)
+#     window: 20                # ADV window in trading days
+#     max_symbols: 20           # keep the top-N most liquid survivors
+#     # fractionable_only: true # require fractional-order support
 
 # Bar size: 1min | 5min | 15min | 1hour | 1day
 timeframe: 1day
@@ -32,7 +55,10 @@ slippage_bps: 1.0     # 1 bp = 0.01% slippage per fill
 db_path: tradebot.db
 
 # --- Strategy -----------------------------------------------------------------
-# Available: sma_crossover, rsi_reversion
+# Available: sma_crossover, rsi_reversion, buy_and_hold, donchian_breakout,
+#            macd_trend, bollinger_reversion, follow_leader, ensemble_vote
+# (the meta strategies take `strategies: [{name, params}, ...]` to pick their
+#  roster; defaults to a mixed trend/mean-reversion four)
 strategy:
   name: sma_crossover
   params:
@@ -51,9 +77,64 @@ strategy:
 #     exit_level: 50
 #     allow_short: false
 
+# --- Portfolio: selection + allocation ------------------------------------------
+# Optional: turn the symbol list into a managed portfolio. Omit this block
+# entirely to keep the legacy sizing (every symbol gets the fixed
+# `max_position_pct` slug below).
+#
+#   selector    decides WHICH symbols may be held (cross-sectional gate);
+#               `momentum` ranks by trailing (lookback-skip) return, holds the
+#               top_k, and only drops a holding once it slips below exit_rank
+#               (hysteresis, default 1.5*top_k) to cut churn. Set reverse: true
+#               for short-term reversal (hold the losers; use a short lookback).
+#               `low_vol` holds the top_k *calmest* names (rolling stdev window).
+#   allocation  decides HOW MUCH each held symbol gets. Weights always pass
+#               through the risk caps and the whole book is sized jointly
+#               (order-independent).
+#
+# Tip: `strategy: {name: buy_and_hold}` makes the selector the sole signal —
+# the classic momentum top-K portfolio. Any other strategy acts as an
+# additional per-symbol gate on top of membership.
+#
+# portfolio:
+#   selector:
+#     name: momentum
+#     params: {lookback: 252, skip: 21, top_k: 5}    # 12-1 momentum, hold 5
+#   allocation: inverse_vol   # equal | inverse_vol | explicit
+#   params:
+#     window: 63              # inverse_vol: rolling stdev window (daily bars)
+#     # gross_target: 1.0     # equal/inverse_vol: total fraction to deploy
+#     # weights: {SPY: 0.6, QQQ: 0.4}   # explicit only
+#   overlays:                 # optional risk transforms on the weights, in order
+#     # cap any one sector's total weight (unmapped symbols share one
+#     # conservative "other" bucket); sectors_file: CSV of symbol,sector rows
+#     - name: sector_cap
+#       params: {max_sector_pct: 0.5, sectors: {AAPL: tech, MSFT: tech}}
+#     # scale the whole book down when its realized vol runs above target
+#     # (never levers up); keep this one last so it measures the final book
+#     - name: vol_target
+#       params: {target_vol: 0.15, window: 20}
+
 # --- Risk management ----------------------------------------------------------
 risk:
   max_position_pct: 0.10      # at most 10% of equity per symbol
   max_gross_exposure: 1.0     # at most 100% of equity deployed across all symbols
   max_daily_loss_pct: 0.03    # flatten + halt after a 3% daily drawdown
   allow_fractional: false     # whole shares only
+  rebalance_band_pct: 0.0     # no-trade band: skip drift trades smaller than
+                              # this fraction of equity (exits always execute);
+                              # try 0.01-0.02 with an allocator to cut churn
+  # Bracket exits attached to entries, as fractions of the entry price. Both are
+  # optional; either can be set alone. LIVE-EXECUTION ONLY — the backtester does
+  # not model them, so a backtest will not show their effect. A bracket protects
+  # BETWEEN rebalance passes: if the signal is still long after a stop fires,
+  # the next pass re-enters.
+  # stop_loss_pct: 0.05       # exit 5% below the entry price
+  # take_profit_pct: 0.15     # exit 15% above it
+
+# --- Notifications ------------------------------------------------------------
+# Order fills and circuit-breaker halts are always written to the log. Set a
+# webhook to also POST them as JSON (stdlib urllib; no new dependency). Delivery
+# failures are logged and swallowed — an unreachable endpoint never halts trading.
+# notify:
+#   webhook_url: https://hooks.example.com/tradebot

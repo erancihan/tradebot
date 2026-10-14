@@ -12,11 +12,12 @@ from .services.jobs_service import JobRegistry
 
 
 def create_app(trading_db: str = "tradebot.db", arena_db: str = "arena.db",
-               season_db: str = "season.db") -> FastAPI:
+               season_db: str = "season.db", cache_dir: str = "data/cache") -> FastAPI:
     app = FastAPI(title="tradebot dashboard", docs_url="/api/docs")
     app.state.trading_db = trading_db
     app.state.arena_db = arena_db
     app.state.season_db = season_db
+    app.state.cache_dir = cache_dir
     app.state.jobs = JobRegistry()
 
     static_dir = Path(__file__).parent / "static"

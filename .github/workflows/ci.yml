@@ -1,0 +1,59 @@
+name: CI
+
+# The two mechanical gates from CLAUDE.md's definition of done. This file was
+# asserted to exist in the docs for a long time before it did; the audit that
+# found the sizing look-ahead also found that neither gate had ever run
+# automatically.
+#
+# Everything here is offline by design. The suite installs a session-scoped
+# backstop that fails any test touching a non-loopback address, so a CI run
+# that starts reaching the network breaks loudly instead of becoming flaky.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: pytest (offline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,web]"
+      - name: Test
+        # No credentials are provided on purpose: the offline-first invariant
+        # says the whole suite must pass without them.
+        run: pytest tests/ -q --no-header
+
+  frontend:
+    name: tsc --noEmit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install
+        working-directory: frontend
+        run: npm ci
+      - name: Typecheck
+        working-directory: frontend
+        run: npm run typecheck
+      - name: Build
+        working-directory: frontend
+        run: npm run build

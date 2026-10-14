@@ -30,6 +30,13 @@
       {% if season %}
         <div class="rounded-lg border border-slate-800 bg-slate-900/40 p-4" x-data="seasonChart({{ season_id }})">
           <h2 class="mb-3 text-sm font-semibold text-slate-300">Return over the season · #{{ season.id }} ({{ season.name }})</h2>
+          {% if season.seeded_through %}
+            <p class="mb-3 rounded border border-amber-900/60 bg-amber-500/5 px-3 py-2 text-xs text-amber-300/90">
+              Backfilled through <strong>{{ season.seeded_through[:10] }}</strong>. Standings over
+              seeded bars are not a live-forward result — the window was chosen after the fact.
+              Read the portion after that date as the live one.
+            </p>
+          {% endif %}
           <div x-ref="chart" class="h-72 w-full"></div>
         </div>
         {% include "components/season_standings.html" %}

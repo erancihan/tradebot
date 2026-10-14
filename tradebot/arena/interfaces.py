@@ -1,6 +1,6 @@
 """Contestant-facing interfaces for the arena.
 
-Two ways to write an algorithm:
+Three ways to write an algorithm:
 
 1. **Vectorized** — subclass the existing :class:`tradebot.strategies.Strategy`
    and implement ``target_positions(bars)``. Convenient for indicator math.
@@ -10,7 +10,12 @@ Two ways to write an algorithm:
    read-only window of past bars via ``ctx``, so it physically cannot look into
    the future — the right default for a fair competition.
 
-Both are discovered with the :func:`tradebot.arena.register` decorator and run
+3. **Cross-sectional** — subclass :class:`PortfolioAlgo` and compose a whole
+   book (per-symbol strategy + selector + allocator + optional overlays) as
+   one contestant. The stack is the same one the Backtester and live engine
+   run, so a winning portfolio entry is directly promotable.
+
+All are discovered with the :func:`tradebot.arena.register` decorator and run
 through the same simulation core, so they are directly comparable.
 """
 
@@ -136,3 +141,32 @@ class Algo:
 
     def on_finish(self) -> None:  # noqa: D401 - optional hook
         """Called once after the last bar."""
+
+
+class PortfolioAlgo:
+    """Base class for cross-sectional contestants: a whole book as one entry.
+
+    Compose the exact stack the trading core runs — a per-symbol ``strategy``
+    emitting {-1, 0, +1} targets (use ``BuyAndHold`` to make the selector the
+    sole signal), a ``selector`` gating membership across the pool, an
+    ``allocator`` proposing weights, and optional reduce-only ``overlays``.
+    Sizing stays with the tournament's shared RiskManager, identical for every
+    contestant, so portfolio entries and per-symbol entries are comparable.
+
+    A fresh instance is built per round, so construct the components in your
+    ``__init__`` and pass them to ``super().__init__``.
+    """
+
+    #: Optional display name; the @register decorator can override it.
+    name: str | None = None
+
+    def __init__(self, strategy, allocator, selector=None, overlays=None) -> None:
+        if strategy is None:
+            raise ValueError("PortfolioAlgo needs a per-symbol strategy "
+                             "(use tradebot.strategies.BuyAndHold for selector-only books)")
+        if allocator is None:
+            raise ValueError("PortfolioAlgo needs an allocator to weight the book")
+        self.strategy = strategy
+        self.allocator = allocator
+        self.selector = selector
+        self.overlays = list(overlays or [])

@@ -1,6 +1,8 @@
 import json
 import os
 
+import logging
+
 import pytest
 
 from tradebot.arena.contestant import Contestant
@@ -148,3 +150,73 @@ def test_seccomp_runner_still_runs_a_normal_contestant():
 def test_default_runner_seccomp_is_opt_in():
     assert default_runner(isolation="process").seccomp is False        # off by default
     assert default_runner(isolation="process", seccomp=True).seccomp is True
+
+
+# --- unavailable containment: reported, not fatal ------------------------------
+
+def _run_with(runner):
+    df = synthetic_ohlcv(periods=40, seed=1)
+    contestant = Contestant(name="x", factory=_FlatAlgo, kind="event")
+    return runner.run(contestant, {"DEMO": df}, RiskManager(RiskConfig()),
+                      SimConfig(), get_scorer("total_return"))
+
+
+def _unenforceable(monkeypatch, mechanism="network"):
+    """Pretend the kernel refuses one containment mechanism."""
+    import tradebot.arena.sandbox as sandbox_mod
+
+    real = sandbox_mod.apply_hardening
+
+    def fake(*args, **kwargs):
+        report = real(*args, **kwargs)
+        report[mechanism] = False
+        return report
+
+    monkeypatch.setattr(sandbox_mod, "apply_hardening", fake)
+
+
+@needs_fork
+def test_containment_the_kernel_refuses_is_reported_but_still_runs(monkeypatch, caplog):
+    """A kernel that will not grant a network namespace is a portability fact,
+    not a threat. CI runners, unprivileged containers and macOS all refuse it.
+
+    Refusing to run there made the arena unusable and turned CI red on every
+    commit while every contestant reported 'SandboxError'. "Never silently
+    downgrade" is satisfied by saying so, loudly — not by refusing.
+    """
+    _unenforceable(monkeypatch)
+    runner = SubprocessRunner(time_budget_s=10.0, harden=True)
+
+    with caplog.at_level(logging.WARNING, logger="tradebot.arena.runner"):
+        result = _run_with(runner)
+
+    assert result.ok                              # it ran
+    assert "could NOT be enforced" in caplog.text  # and it said so
+    assert "network" in caplog.text
+
+
+@needs_fork
+def test_require_sandbox_turns_missing_containment_into_a_failure(monkeypatch):
+    """For anyone whose threat model actually needs the guarantee."""
+    _unenforceable(monkeypatch)
+    runner = SubprocessRunner(time_budget_s=10.0, harden=True, require_sandbox=True)
+
+    result = _run_with(runner)
+    assert not result.ok
+    assert "SandboxError" in (result.error or "")
+    assert "network" in (result.error or "")
+
+
+@needs_fork
+def test_the_degradation_warning_is_emitted_once_per_mechanism(monkeypatch, caplog):
+    """Twelve identical warnings per tournament would train everyone to ignore it."""
+    _unenforceable(monkeypatch)
+    runner = SubprocessRunner(time_budget_s=10.0, harden=True)
+
+    with caplog.at_level(logging.WARNING, logger="tradebot.arena.runner"):
+        _run_with(runner)
+        _run_with(runner)
+        _run_with(runner)
+
+    assert caplog.text.count("could NOT be enforced") == 1
+    assert runner.degraded == {"network"}

@@ -1,0 +1,19 @@
+# Regime library: no drift, elevated volatility — a whipsaw market.
+# Trend-followers get chopped to pieces on false breakouts; mean-reverters
+# and patient cash-holders should rank well. Rank with --score worst_fold
+# to punish anyone who only survives by luck.
+name: sideways_chop
+source: synthetic
+symbols: [DEMO]
+initial_cash: 10000
+commission: 0.0
+slippage_bps: 1.0
+seed: 23
+
+regimes:
+  - {periods: 500, drift: 0.0, volatility: 0.018}
+
+risk:
+  max_position_pct: 0.95
+  max_gross_exposure: 1.0
+  max_daily_loss_pct: 1.0

@@ -15,16 +15,18 @@ Design (reuse-heavy, drift-free):
   an Alpaca-backed feed (lazy) drives it live. ``Season.step`` only ever sees a
   dict of one-bar-per-symbol, so the engine is fully testable without a network.
 
-What is NOT covered here (the remaining real-time operational layer): a hardened
-long-running daemon, market-hours/holiday scheduling, and partial-bar handling.
-``run_season`` is a thin loop; for production you'd drive ``step`` from cron or a
-supervised service.
+``run_season`` is the thin loop (one tick per bar, no scheduling).
+``run_season_daemon`` is the operational one: it gates on US market hours and
+the holiday calendar, drops still-forming bars, supervises failing ticks, and
+takes an injected ``clock``/``sleep`` so the whole loop is runnable offline —
+which is what ``season run --simulate`` does.
 """
 
 from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 from contextlib import closing
 from dataclasses import dataclass, field
@@ -78,6 +80,19 @@ class SeasonConfig:
     max_position_pct: float = 0.95
     slippage_bps: float = 1.0
     isolation: str = "thread"   # season recompute runs every tick; thread is light
+    #: Per-contestant wall-clock budget for each tick's recompute. Under
+    #: `thread` isolation this is a SOFT limit — the runner marks TIMEOUT but
+    #: cannot kill the thread, so an over-budget contestant leaks a busy daemon
+    #: thread *every tick* and the season slowly grinds to a halt. That is the
+    #: documented hazard behind "keep meta strategies out of long seasons".
+    #: Use `isolation="process"` to make it a hard kill.
+    time_budget_s: float = 10.0
+
+    @property
+    def hardened(self) -> bool:
+        """Sandboxing only applies to the process runner (a thread shares the
+        interpreter, so it cannot be given its own filesystem or netns)."""
+        return self.isolation != "thread"
 
     def scenario(self) -> Scenario:
         return Scenario(
@@ -90,7 +105,7 @@ class SeasonConfig:
         return json.dumps({
             "algo_paths": self.algo_paths, "initial_cash": self.initial_cash,
             "max_position_pct": self.max_position_pct, "slippage_bps": self.slippage_bps,
-            "isolation": self.isolation,
+            "isolation": self.isolation, "time_budget_s": self.time_budget_s,
         })
 
 
@@ -101,7 +116,33 @@ class SeasonStore:
         self._conn.row_factory = sqlite3.Row
         with closing(self._conn.cursor()) as cur:
             cur.executescript(_SCHEMA)
+        self._migrate()
         self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Additive columns only, so an older season DB keeps working."""
+        cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(seasons)")}
+        if "seeded_through" not in cols:
+            self._conn.execute("ALTER TABLE seasons ADD COLUMN seeded_through TEXT")
+
+    def set_seeded_through(self, season_id: int, ts: str) -> None:
+        """Mark where backfilled history ends and live accumulation begins.
+
+        Seeding is legitimate — bars are bars, and every contestant is causal, so
+        replaying real history is exactly what running the season over that
+        period would have produced. But standings earned over backfilled bars are
+        NOT the same claim as standings earned live: the window was chosen after
+        the fact, and everything in it was knowable when the field was written.
+        Recording the boundary is what keeps those two claims separable.
+        """
+        self._conn.execute("UPDATE seasons SET seeded_through = ? WHERE id = ?",
+                           (ts, season_id))
+        self._conn.commit()
+
+    def seeded_through(self, season_id: int) -> str | None:
+        row = self._conn.execute(
+            "SELECT seeded_through FROM seasons WHERE id = ?", (season_id,)).fetchone()
+        return row["seeded_through"] if row else None
 
     def create_season(self, config: SeasonConfig) -> int:
         now = utcnow().isoformat()
@@ -127,6 +168,7 @@ class SeasonStore:
             max_position_pct=extra.get("max_position_pct", 0.95),
             slippage_bps=extra.get("slippage_bps", 1.0),
             isolation=extra.get("isolation", "thread"),
+            time_budget_s=extra.get("time_budget_s", 10.0),
         )
 
     def list_seasons(self) -> list[dict]:
@@ -263,7 +305,11 @@ class Season:
         outcome = run_tournament(
             self.config.algo_paths, self.config.scenario(),
             metric=self.config.metric, isolation=self.config.isolation, frames=frames,
-            harden=False,  # season uses fast thread isolation, which can't sandbox
+            time_budget_s=self.config.time_budget_s,
+            # Derived, never hardcoded: a season configured for process
+            # isolation must still get its sandbox. Hardcoding False here meant
+            # `isolation="process"` silently ran unsandboxed.
+            harden=self.config.hardened,
         )
         standings = _standings_from_leaderboard(outcome.leaderboard)
         self.store.record_standings(self.id, step, ts, standings)
@@ -294,26 +340,142 @@ class AlpacaSeasonFeed:
     """Live one-bar-per-poll feed (lazy Alpaca; not exercised by the test suite)."""
 
     def __init__(self, symbols, timeframe: str, api_key: str, api_secret: str,
-                 feed: str = "iex") -> None:
-        from ..data.alpaca_data import AlpacaData
-
+                 feed: str = "iex", data=None, clock=utcnow, catchup: int = 30) -> None:
         self._symbols = list(symbols)
         self._timeframe = timeframe
-        self._data = AlpacaData(api_key, api_secret, feed=feed)
+        #: How far back each poll looks. This is the outage the feed can heal
+        #: from on its own: a machine that slept through a long weekend, a
+        #: reboot, a crashed daemon. Beyond it, re-seed (`arena season seed`).
+        self._catchup = max(int(catchup), 2)
+        if data is None:
+            from ..data.alpaca_data import AlpacaData
+
+            data = AlpacaData(api_key, api_secret, feed=feed)
+        self._data = data
+        self._clock = clock
         self._last_ts: dict[str, pd.Timestamp] = {}
 
     def next(self) -> dict[str, pd.DataFrame] | None:
+        """Every *complete* bar per symbol that has not been delivered yet.
+
+        Two things this must get right, both learned the hard way:
+
+        1. **Completeness is filtered HERE, before the dedup** — not by the
+           caller. The daemon also drops still-forming bars, and when that was
+           the only filter a bar first polled while it was still forming got
+           marked as seen, then thrown away, and was never offered again once it
+           settled. A live daily season accumulated zero bars while reporting
+           healthy ticks.
+        2. **Every new bar, not just the newest one.** Returning only
+           ``df.iloc[[-1]]`` meant any gap between polls punched a permanent
+           hole in the season's history: a machine asleep over a weekend, a
+           reboot, a crashed daemon. Bars are the source of truth and standings
+           are recomputed from them, so a hole silently changes every later
+           ranking while the season still reports healthy — the same failure
+           shape as the bug in (1). Measured on a 9-bar gap: 7 bars lost.
+
+        Because ``_last_ts`` lives in memory, a fresh process re-offers its whole
+        catch-up window; the season's ``(season_id, symbol, ts)`` primary key
+        makes that idempotent, so a restart heals rather than skips. An outage
+        longer than ``catchup`` needs ``arena season seed``.
+        """
+        from .market import drop_incomplete_bars
+
+        now = self._clock()
         bar: dict[str, pd.DataFrame] = {}
         for symbol in self._symbols:
-            df = self._data.history(symbol, timeframe=self._timeframe, lookback=5)
-            if df.empty:
+            df = self._data.history(symbol, timeframe=self._timeframe,
+                                    lookback=self._catchup)
+            if df is None or df.empty:
                 continue
-            last = df.iloc[[-1]]
-            ts = pd.Timestamp(last.index[-1])
-            if self._last_ts.get(symbol) == ts:
-                continue  # no new bar yet
-            self._last_ts[symbol] = ts
-            bar[symbol] = last
+            df = drop_incomplete_bars(df, self._timeframe, now)
+            if df is None or len(df) == 0:
+                continue
+            seen = self._last_ts.get(symbol)
+            fresh = df if seen is None else df[df.index > seen]
+            if not len(fresh):
+                continue  # nothing settled since the last poll
+            self._last_ts[symbol] = pd.Timestamp(fresh.index[-1])
+            bar[symbol] = fresh
+        return bar or None
+
+
+def seed_season(season: "Season", frames: dict[str, pd.DataFrame],
+                recompute: bool = True) -> int:
+    """Backfill real history into a season so the field starts warmed up.
+
+    A daily season started from zero has no standings worth reading for months:
+    `MomentumSelector(lookback=60)` alone is flat for 61 bars, so the first
+    quarter of a fresh season measures nothing. Seeding is the fix, and it is
+    legitimate — bars are the source of truth, every contestant is causal, and
+    the season re-ranks from accumulated bars anyway, so replaying real history
+    produces exactly what running live over that period would have.
+
+    What it is *not* is the same claim as live results. The seed window was
+    chosen after the fact and everything in it was knowable when the field was
+    written, so `seeded_through` records the boundary and every reader is
+    expected to keep the two apart.
+
+    Returns the number of bars written. Idempotent: the bars table is keyed on
+    ``(season_id, symbol, ts)``, so re-seeding the same window changes nothing.
+    """
+    if not frames:
+        return 0
+    season.store.append_bars(season.id, frames)
+    written = sum(len(df) for df in frames.values())
+    last = max(pd.Timestamp(df.index[-1]) for df in frames.values() if len(df))
+    season.store.set_seeded_through(season.id, last.isoformat())
+
+    if recompute:
+        # One standings snapshot over the whole seeded history, so the season
+        # has a starting table instead of an empty one. Ranking is recomputed
+        # from bars on every later tick regardless, so this is a convenience,
+        # never a source of truth.
+        season.step({})
+    return written
+
+
+class StreamSeasonFeed:
+    """Adapts a push-based bar stream (``data/stream.py``) to the feed protocol.
+
+    A season pulls one bar per symbol per tick; a stream pushes whenever the
+    provider sends. This buffers the difference: pushed bars queue per symbol
+    and ``next()`` drains one from each. Nothing is dropped and nothing is
+    reordered, so a season fed by a stream accumulates exactly what a polling
+    feed would have — the season's PK dedup still backstops duplicates.
+
+    ``start(background=False)`` runs the stream inline, which is what makes a
+    ``FakeStream`` deterministic in tests: it pushes every bar and returns
+    before a single ``next()`` is called. Live callers want the daemon thread.
+    """
+
+    def __init__(self, stream, symbols) -> None:
+        self._stream = stream
+        self._symbols = list(symbols)
+        self._pending: dict[str, list[pd.DataFrame]] = {s: [] for s in self._symbols}
+        self._lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+
+    def _on_bar(self, symbol: str, frame: pd.DataFrame) -> None:
+        with self._lock:
+            self._pending.setdefault(symbol, []).append(frame)
+
+    def start(self, background: bool = True) -> None:
+        if background:
+            self._thread = threading.Thread(
+                target=self._stream.run, args=(self._symbols, self._on_bar),
+                name="season-stream", daemon=True,
+            )
+            self._thread.start()
+        else:
+            self._stream.run(self._symbols, self._on_bar)
+
+    def stop(self) -> None:
+        self._stream.stop()
+
+    def next(self) -> dict[str, pd.DataFrame] | None:
+        with self._lock:
+            bar = {s: q.pop(0) for s, q in self._pending.items() if q}
         return bar or None
 
 
@@ -376,7 +538,15 @@ def run_season_daemon(season: Season, feed, poll_seconds: float = 60.0,
         sleep = time.sleep
 
     ticks = 0
+    # `max_ticks` counts *applied* ticks, so on its own it cannot terminate a run
+    # whose feed never yields — a closed market or a dry feed spins without ever
+    # incrementing it. Bound the loop itself too, generously enough that the tick
+    # budget is what normally ends a healthy run.
+    spins, max_spins = 0, None if max_ticks is None else max_ticks * 100 + 1000
     while max_ticks is None or ticks < max_ticks:
+        if max_spins is not None and spins >= max_spins:
+            break
+        spins += 1
         now = clock()
         if not ignore_market_hours and not is_market_open(now):
             sleep(poll_seconds)

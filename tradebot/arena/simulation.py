@@ -18,7 +18,12 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from ..backtest import BacktestResult, _infer_periods_per_year
+from ..backtest import (
+    BacktestResult,
+    _infer_periods_per_year,
+    _prepare_components,
+    _sizing_marks,
+)
 from ..portfolio import Portfolio
 from ..risk import RiskManager
 from .adapters import Policy
@@ -36,9 +41,16 @@ def simulate(
     frames: dict[str, pd.DataFrame],
     risk: RiskManager,
     config: SimConfig,
+    allocator=None,           # optional tradebot.allocation.Allocator
+    selector=None,            # optional tradebot.selection.Selector
+    overlays=None,            # optional list of tradebot.overlays.Overlay
+    on_decision=None,         # optional observer; see the call site below
 ) -> BacktestResult:
     if not frames:
         raise ValueError("No data provided to simulate")
+    if overlays and allocator is None:
+        raise ValueError("overlays require an allocator (they transform its weights)")
+    overlays = list(overlays or [])
 
     # Align every symbol on a shared timeline (intersection of indices).
     common = None
@@ -50,8 +62,15 @@ def simulate(
 
     symbols = list(frames)
     aligned = {s: frames[s].reindex(common) for s in symbols}
+    _prepare_components(aligned, policy, allocator, selector, *overlays)
     opens = {s: aligned[s]["open"] for s in symbols}
     closes = {s: aligned[s]["close"] for s in symbols}
+
+    # Membership gate, precomputed exactly like the Backtester (selectors are
+    # prefix-stable, so this equals recomputing on each growing window).
+    member = None
+    if selector is not None:
+        member = selector.membership(aligned).shift(1).fillna(False)
 
     pf = Portfolio(cash=config.initial_cash)
     policy.reset()
@@ -60,19 +79,51 @@ def simulate(
     fractional = risk.config.allow_fractional
     equity_points: list[float] = []
 
+    prev_closes: dict[str, float] = {}
+
     for i, ts in enumerate(common):
         close_prices = {s: float(closes[s].iloc[i]) for s in symbols}
-        equity = pf.equity(close_prices)
 
-        # 1) Execute the targets decided on the previous bar, at this bar's open.
+        # 1) Execute the targets decided on the previous bar, at this bar's
+        #    open — sized jointly, exactly like the Backtester.
+        bar_targets: dict[str, int] = {}
+        bar_prices: dict[str, float] = {}
         for s in symbols:
             price = float(opens[s].iloc[i])
             if not np.isfinite(price) or price <= 0:
                 continue
-            desired = risk.target_qty(pending[s], equity, price)
-            current = pf.position(s).qty
-            delta = desired - current
+            target = pending[s]
+            if member is not None and not bool(member[s].iloc[i]):
+                target = 0
+            bar_targets[s] = target
+            bar_prices[s] = price
 
+        # Same sizing mark as the Backtester, from the same helper: never the
+        # fill bar's own close.
+        equity = pf.equity(_sizing_marks(symbols, bar_prices, prev_closes, close_prices))
+
+        weights = None
+        if allocator is not None:
+            # Same one-bar discipline as targets: weights come from bars
+            # strictly before the fill bar.
+            history = {s: aligned[s].iloc[:i] for s in bar_targets}
+            weights = allocator.weights(bar_targets, history)
+            for overlay in overlays:
+                weights = overlay.transform(weights, bar_targets, history)
+        desired = risk.allocate(bar_targets, equity, bar_prices, weights)
+
+        # Observer only — it must never influence the loop. This is the one
+        # point where all three contestant kinds converge on a single shape
+        # (signed quantities for the whole book), which is what makes a
+        # consortium able to read every kind of member the same way. Default
+        # None keeps this call byte-identical for every existing caller, so the
+        # backtest/arena lockstep test is unaffected.
+        if on_decision is not None:
+            on_decision(i, ts, dict(bar_targets), dict(desired), equity, dict(bar_prices))
+
+        for s, want in desired.items():
+            price = bar_prices[s]
+            delta = risk.material_delta(want, pf.position(s).qty, price, equity)
             if fractional:
                 if abs(delta) < 1e-9:
                     continue
@@ -80,23 +131,11 @@ def simulate(
                 delta = float(round(delta))
                 if delta == 0:
                     continue
-
-            increasing = (current == 0) or ((current > 0) == (delta > 0))
-            if increasing:
-                other_gross = pf.gross_exposure(close_prices, exclude=s)
-                delta = risk.clamp_to_exposure(delta, price, equity, other_gross)
-                if fractional:
-                    if abs(delta) < 1e-9:
-                        continue
-                else:
-                    delta = float(round(delta))
-                    if delta == 0:
-                        continue
-
             fill_price = price * (1 + slip) if delta > 0 else price * (1 - slip)
             pf.execute(s, delta, fill_price, commission=config.commission)
 
         equity_after = pf.equity(close_prices)
+        prev_closes = close_prices
 
         # 2) Ask the policy for the next targets using data up to and incl. now.
         for s in symbols:

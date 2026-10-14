@@ -1,0 +1,11 @@
+# Real-data gauntlet: the 2023 recovery rally (SPY/QQQ, daily, IEX).
+#   tradebot data pull --symbols SPY QQQ --start 2023-01-01 --end 2024-01-31
+name: real_recovery_2023
+source: alpaca
+symbols: [SPY, QQQ]
+timeframe: 1day
+start: "2023-01-01"
+end: "2024-01-31"
+initial_cash: 10000
+slippage_bps: 1.0
+risk: {max_position_pct: 0.6, max_gross_exposure: 1.0, max_daily_loss_pct: 1.0}

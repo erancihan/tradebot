@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from .api import register, registered
 from .contestant import Contestant
-from .interfaces import Action, Algo, Bar, Context
+from .interfaces import Action, Algo, Bar, Context, PortfolioAlgo
 from .league import LeagueResult, Standing, StandingsSnapshot, run_league
 from .result import ContestantResult, Leaderboard
 from .season import (
@@ -52,6 +52,7 @@ __all__ = [
     "Action",
     "Bar",
     "Context",
+    "PortfolioAlgo",
     "Contestant",
     "Scenario",
     "Leaderboard",

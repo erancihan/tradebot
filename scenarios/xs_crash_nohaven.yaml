@@ -1,0 +1,23 @@
+# Rotation COSTS: the same crash, but correlations converge and the haven fails
+# (2022-like). Differs from xs_crash_haven by exactly one parameter, so
+# weakening the mirror is a visible one-line diff.
+name: xs_crash_nohaven
+source: factor
+symbols: [HIB1, HIB2, MID1, MID2, LOB1, LOB2, LAGG, HAVEN]
+seed: 102
+regimes:
+  - {periods: 200, drift: 0.0006,  volatility: 0.010}
+  - {periods: 60,  drift: -0.0025, volatility: 0.028, beta_shift: 0.9}
+  - {periods: 240, drift: 0.0010,  volatility: 0.016}
+factor_symbols:
+  HIB1:  {beta: 1.4,  alpha: 0.00020,  idio_vol: 0.010}   # high-beta growth
+  HIB2:  {beta: 1.3,  alpha: 0.00015,  idio_vol: 0.010}
+  MID1:  {beta: 1.0,  alpha: 0.0,      idio_vol: 0.008}   # market-like
+  MID2:  {beta: 1.0,  alpha: 0.0,      idio_vol: 0.008}
+  LOB1:  {beta: 0.7,  alpha: 0.00005,  idio_vol: 0.006}   # defensive
+  LOB2:  {beta: 0.6,  alpha: 0.0,      idio_vol: 0.006}
+  LAGG:  {beta: 1.1,  alpha: -0.00060, idio_vol: 0.010}   # rejecting it must pay
+  HAVEN: {beta: -0.20, alpha: 0.00006, idio_vol: 0.005}   # costs to hold
+initial_cash: 10000
+slippage_bps: 1.0
+risk: {max_position_pct: 0.6, max_gross_exposure: 1.0, max_daily_loss_pct: 1.0}

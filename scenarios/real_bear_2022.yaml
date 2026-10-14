@@ -1,0 +1,13 @@
+# Real-data gauntlet: the 2022 bear market (SPY/QQQ, daily, IEX).
+# Needs Alpaca creds ONCE to pull; cached bars replay offline forever:
+#   tradebot data pull --symbols SPY QQQ --start 2021-12-01 --end 2023-01-31
+# Survivorship note: these are index ETFs, so membership bias does not apply.
+name: real_bear_2022
+source: alpaca
+symbols: [SPY, QQQ]
+timeframe: 1day
+start: "2021-12-01"
+end: "2023-01-31"
+initial_cash: 10000
+slippage_bps: 1.0
+risk: {max_position_pct: 0.6, max_gross_exposure: 1.0, max_daily_loss_pct: 1.0}

@@ -4,8 +4,9 @@ Drop a `.py` file in this folder (or anywhere — point `--algos` at it) and
 decorate one or more classes with `@register`. The tournament imports the file,
 discovers your contestants, runs each over the same data, and ranks them.
 
-> ⚠️ The default runner imports and runs algorithms **in-process** — only run
-> code you trust. (A sandboxed subprocess runner is a planned drop-in.)
+> The default runner executes each contestant in a **sandboxed subprocess**
+> (hard timeout, no disk writes, no network; `--no-harden` to opt out,
+> `--seccomp` for the adversarial tier). Still: review code before running it.
 
 ## Two interfaces
 
@@ -40,6 +41,28 @@ class MyStrategy(Strategy):
         ...  # pandas Series in {-1, 0, +1}, indexed like bars
 ```
 
+**Cross-sectional** (`PortfolioAlgo`) — a whole book competes as one entry.
+Compose the same stack the trading core runs (per-symbol strategy + selector
++ allocator + optional reduce-only overlays); sizing stays with the shared
+RiskManager, so portfolio and per-symbol entries are directly comparable:
+
+```python
+from tradebot.arena import PortfolioAlgo, register
+from tradebot.allocation import InverseVolatility
+from tradebot.selection import MomentumSelector
+from tradebot.strategies import BuyAndHold
+
+@register(name="momo_book", author="you", tags=("portfolio",))
+class MomoBook(PortfolioAlgo):
+    def __init__(self):
+        super().__init__(strategy=BuyAndHold(),      # selector-only book
+                         selector=MomentumSelector(lookback=60, skip=5, top_k=2),
+                         allocator=InverseVolatility(window=30))
+```
+
+Run these on a multi-symbol scenario — `scenarios/cross_sectional.yaml` gives
+the pool a persistent leader/laggard spread so selection has something to find.
+
 ## Rules of the game
 
 - A **fresh instance** is created per round — keep per-round state on `self`.
@@ -54,3 +77,34 @@ class MyStrategy(Strategy):
 tradebot arena list --algos ./algos
 tradebot arena run  --algos ./algos --score sharpe
 ```
+
+## Prove it's robust, not lucky
+
+One leaderboard on one dataset proves nothing. The `scenarios/` folder ships a
+regime library (`bull_trend`, `sideways_chop`, `crash_recovery`, `vol_spike`) —
+run your contestant across all of them, and rank with a robustness metric:
+
+```bash
+tradebot arena run --algos ./algos --scenario scenarios/crash_recovery.yaml --score worst_fold
+tradebot arena run --algos ./algos --scenario scenarios/sideways_chop.yaml  --score consistency
+```
+
+`worst_fold` scores the *worst* quarter of the run (a crash fold can't hide
+behind a recovery rally); `consistency` penalises lumpy, regime-dependent
+earnings.
+
+**Every attempt is counted.** Each `arena run` journals one attempt per
+contestant into the arena DB (opt out with `--no-journal`). Variants of one
+idea should share a `family` so they count against it together:
+
+```python
+@register(name="donchian_55_20", family="donchian")   # variant #2 of the idea
+```
+
+```bash
+tradebot arena journal                     # attempts per family
+tradebot arena journal --family donchian   # every attempt for one family
+```
+
+Twenty attempts make one "winner" meaningless — the journal is what keeps a
+best-of-20 from being sold as skill.

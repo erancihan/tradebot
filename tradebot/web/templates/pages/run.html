@@ -4,7 +4,9 @@
 <section class="space-y-6" x-data="jobRunner()">
   <h1 class="text-lg font-semibold text-slate-100">Run a simulation</h1>
   <p class="text-sm text-slate-500">
-    Launch a backtest or a dry-run forward-test on synthetic data — no credentials needed.
+    Backtest or dry-run a strategy on invented data (seeded, artificial calendar) or on
+    real bars already in the local cache. The dashboard never fetches from the network —
+    every result is labelled with the data it ran on.
   </p>
 
   <form @submit.prevent="submit()"
@@ -18,10 +20,21 @@
     </label>
 
     <label class="text-sm">
+      <span class="mb-1 block text-slate-400">Data source</span>
+      <select x-model="form.source" @change="syncSymbol()"
+              class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5">
+        <option value="synthetic">Synthetic (seeded)</option>
+        <option value="real">Cached real bars</option>
+      </select>
+    </label>
+
+    <label class="text-sm">
       <span class="mb-1 block text-slate-400">Strategy</span>
-      <select x-model="form.strategy" class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5">
-        <option value="sma_crossover">SMA crossover</option>
-        <option value="rsi_reversion">RSI reversion</option>
+      <select x-model="form.strategy" @change="syncParams()"
+              class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5">
+        <template x-for="s in strategies" :key="s.name">
+          <option :value="s.name" x-text="s.name" :selected="s.name === form.strategy"></option>
+        </template>
       </select>
     </label>
 
@@ -31,46 +44,61 @@
              class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
     </label>
 
-    <label class="text-sm">
+    <!-- Synthetic knobs: how much invented history, and which draw of it -->
+    <label class="text-sm" x-show="form.source === 'synthetic'">
       <span class="mb-1 block text-slate-400">Bars (periods)</span>
       <input type="number" min="30" max="5000" x-model.number="form.periods"
              class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
     </label>
 
-    <label class="text-sm">
+    <label class="text-sm" x-show="form.source === 'synthetic'">
       <span class="mb-1 block text-slate-400">Seed</span>
       <input type="number" x-model.number="form.seed"
              class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
     </label>
 
-    <!-- Strategy-specific params -->
-    <template x-if="form.strategy === 'sma_crossover'">
-      <div class="grid grid-cols-2 gap-2">
-        <label class="text-sm">
-          <span class="mb-1 block text-slate-400">Fast</span>
-          <input type="number" min="2" x-model.number="form.fast"
+    <!-- Real knobs: which cached symbol, over which cached window -->
+    <label class="text-sm" x-show="form.source === 'real'" x-cloak>
+      <span class="mb-1 block text-slate-400">Symbol (cached)</span>
+      <select x-model="form.symbol" @change="syncSymbol()"
+              class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5">
+        <template x-for="e in cache" :key="e.symbol + e.timeframe">
+          <option :value="e.symbol"
+                  x-text="`${e.symbol} · ${e.timeframe} · ${e.bars} bars`"></option>
+        </template>
+      </select>
+    </label>
+
+    <label class="text-sm" x-show="form.source === 'real'" x-cloak>
+      <span class="mb-1 block text-slate-400">Start</span>
+      <input type="date" x-model="form.start"
+             class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
+    </label>
+
+    <label class="text-sm" x-show="form.source === 'real'" x-cloak>
+      <span class="mb-1 block text-slate-400">End</span>
+      <input type="date" x-model="form.end"
+             class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
+    </label>
+
+    <!-- Strategy params, straight from the registry's constructor signature -->
+    <template x-for="p in currentParams()" :key="p.name">
+      <label class="text-sm">
+        <span class="mb-1 block text-slate-400" x-text="p.name"></span>
+        <template x-if="p.type === 'bool'">
+          <input type="checkbox" x-model="params[p.name]"
+                 class="h-5 w-5 rounded border-slate-700 bg-slate-800 accent-emerald-600" />
+        </template>
+        <template x-if="p.type === 'str'">
+          <input type="text" x-model="params[p.name]"
                  class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
-        </label>
-        <label class="text-sm">
-          <span class="mb-1 block text-slate-400">Slow</span>
-          <input type="number" min="3" x-model.number="form.slow"
+        </template>
+        <template x-if="p.type === 'int' || p.type === 'float'">
+          <input type="number" :step="p.type === 'float' ? '0.1' : '1'"
+                 x-model.number="params[p.name]"
                  class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
-        </label>
-      </div>
-    </template>
-    <template x-if="form.strategy === 'rsi_reversion'">
-      <div class="grid grid-cols-2 gap-2">
-        <label class="text-sm">
-          <span class="mb-1 block text-slate-400">Period</span>
-          <input type="number" min="2" x-model.number="form.period"
-                 class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
-        </label>
-        <label class="text-sm">
-          <span class="mb-1 block text-slate-400">Oversold</span>
-          <input type="number" min="1" max="50" x-model.number="form.oversold"
-                 class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
-        </label>
-      </div>
+        </template>
+      </label>
     </template>
 
     <div class="flex items-end">
@@ -82,10 +110,36 @@
     </div>
   </form>
 
+  <!-- Real mode with an empty cache: say how to fill it, never fetch for them -->
+  <div x-show="form.source === 'real' && cache.length === 0" x-cloak
+       class="rounded-lg border border-amber-800 bg-amber-950/40 p-4 text-sm text-amber-200">
+    Nothing is cached yet. The dashboard never downloads data — pull once from a
+    terminal, then reload this page:
+    <code class="mt-2 block rounded bg-slate-900 px-2 py-1 font-mono text-xs text-amber-100"
+          x-text="pullHint()"></code>
+  </div>
+
+  <div x-show="form.source === 'real' && entry()" x-cloak
+       class="text-xs text-slate-500">
+    Cached window for <span class="text-slate-300" x-text="form.symbol"></span>:
+    <span x-text="entry() ? `${entry().first.slice(0, 10)} → ${entry().last.slice(0, 10)} (${entry().bars} bars)` : ''"></span>
+    — a date-only end excludes that day's own session (daily bars are stamped at the UTC open).
+  </div>
+
   <div x-show="state === 'error'" x-cloak
        class="rounded-lg border border-rose-800 bg-rose-950/40 p-4 text-sm text-rose-300" x-text="error"></div>
 
   <div x-show="state === 'done'" x-cloak class="space-y-4">
+    <!-- Provenance: which data produced this result. Travels with the job payload. -->
+    <div x-show="provenance" x-cloak
+         class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium"
+         :class="provenance && provenance.source === 'real'
+                 ? 'border-emerald-700 bg-emerald-950/50 text-emerald-300'
+                 : 'border-amber-700 bg-amber-950/50 text-amber-300'">
+      <span x-text="provenanceLabel()"></span>
+    </div>
+    <p x-show="provenance" x-cloak class="text-xs text-slate-500" x-text="provenance?.note"></p>
+
     <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
       <template x-for="[key, value] in Object.entries(summary || {})" :key="key">
         <div class="rounded-lg border border-slate-800 bg-slate-900/50 p-4">

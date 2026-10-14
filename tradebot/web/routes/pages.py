@@ -12,19 +12,25 @@ from ..dependencies import (
     templates,
 )
 from ..repository import ArenaRepository, SeasonRepository, TradingRepository
-from ..services import account_service, metrics_service
+from ..services import account_service, consortium_service, metrics_service
 
 router = APIRouter()
 
 
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, repo: TradingRepository = Depends(get_trading_repo)):
-    equity = repo.equity_series(limit=2000)
+    equity = repo.equity_series(mode=repo.default_mode(), limit=2000)
+    weights = repo.latest_weights()
+    universe = repo.latest_universe()
+    orders = repo.recent_orders(limit=25)
     context = {
         "metrics": metrics_service.summarize(equity),
         "account": account_service.snapshot(repo),
-        "orders": repo.recent_orders(limit=25),
+        "orders": orders,
         "modes": repo.modes(),
+        "allocations": {**weights, "universe": universe["symbols"]},
+        # Nothing recorded at all -> tell the visitor why, not just empty tables.
+        "fresh": not equity and not orders,
         "active": "dashboard",
     }
     return templates.TemplateResponse(request, "pages/dashboard.html", context)
@@ -92,3 +98,14 @@ def _render_arena(request, repo, runs, run_id):
         "active": "arena",
     }
     return templates.TemplateResponse(request, "pages/arena.html", context)
+
+
+@router.get("/consortium", response_class=HTMLResponse)
+def consortium_page(request: Request, voice: str = "equal",
+                    repo: TradingRepository = Depends(get_trading_repo)):
+    """The advisory panel: what every algorithm would hold right now."""
+    panel = consortium_service.panel(repo, voice_name=voice)
+    return templates.TemplateResponse(
+        request, "pages/consortium.html",
+        {"panel": panel, "voice": panel["voice"], "active": "consortium"},
+    )

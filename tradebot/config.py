@@ -59,7 +59,25 @@ class Settings:
     poll_seconds: int = 300                 # live loop cadence
     strategy_name: str = "sma_crossover"
     strategy_params: dict[str, Any] = field(default_factory=dict)
+    #: Allocation scheme name (see tradebot.allocation); None keeps the legacy
+    #: fixed max_position_pct-per-symbol sizing.
+    allocation_name: str | None = None
+    allocation_params: dict[str, Any] = field(default_factory=dict)
+    #: Cross-sectional selector name (see tradebot.selection); None means every
+    #: configured symbol is always eligible (no membership gate).
+    selector_name: str | None = None
+    selector_params: dict[str, Any] = field(default_factory=dict)
+    #: Universe source name (see tradebot.universe); None keeps the static
+    #: `symbols` list as the candidate pool.
+    universe_name: str | None = None
+    universe_params: dict[str, Any] = field(default_factory=dict)
+    #: Overlay chain (see tradebot.overlays): list of {name, params} dicts,
+    #: applied to allocator weights in order. Requires an allocation scheme.
+    overlays: list[dict[str, Any]] = field(default_factory=list)
     risk: RiskConfig = field(default_factory=RiskConfig)
+    #: Optional webhook for order/halt events (see tradebot.notify). None keeps
+    #: notifications log-only.
+    notify_webhook_url: str | None = None
     db_path: str = "tradebot.db"
     commission: float = 0.0
     slippage_bps: float = 1.0
@@ -90,6 +108,52 @@ class Settings:
     def broker_is_paper(self) -> bool:
         return self.mode != "live"
 
+    def build_allocator(self):
+        """Instantiate the configured allocator, or None for legacy sizing.
+
+        Imported lazily so merely loading config never pulls in pandas.
+        """
+        if self.allocation_name is None:
+            return None
+        from .allocation import build_allocator
+
+        return build_allocator(self.allocation_name, self.allocation_params)
+
+    def build_selector(self):
+        """Instantiate the configured selector, or None for no membership gate."""
+        if self.selector_name is None:
+            return None
+        from .selection import build_selector
+
+        return build_selector(self.selector_name, self.selector_params)
+
+    def build_universe(self):
+        """Instantiate the configured universe source, or None for the static list."""
+        if self.universe_name is None:
+            return None
+        from .universe import build_universe
+
+        return build_universe(self.universe_name, self.universe_params)
+
+    def build_notifier(self):
+        """Instantiate the configured notifier (log-only unless a webhook is set)."""
+        from .notify import build_notifier
+
+        return build_notifier(self.notify_webhook_url)
+
+    def build_overlays(self) -> list:
+        """Instantiate the configured overlay chain (empty list when unset)."""
+        if not self.overlays:
+            return []
+        if self.allocation_name is None:
+            raise ValueError(
+                "portfolio.overlays requires an allocation scheme "
+                "(set portfolio.allocation, e.g. `equal`)"
+            )
+        from .overlays import build_overlay
+
+        return [build_overlay(o.get("name"), o.get("params")) for o in self.overlays]
+
     # --- loading -------------------------------------------------------------
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Settings":
@@ -100,6 +164,7 @@ class Settings:
     def from_dict(cls, raw: dict[str, Any]) -> "Settings":
         risk_raw = raw.get("risk", {}) or {}
         strat = raw.get("strategy", {}) or {}
+        portfolio = raw.get("portfolio", {}) or {}
         return cls(
             mode=raw.get("mode", "paper"),
             symbols=list(raw.get("symbols", ["SPY"])),
@@ -108,7 +173,15 @@ class Settings:
             poll_seconds=int(raw.get("poll_seconds", 300)),
             strategy_name=strat.get("name", raw.get("strategy_name", "sma_crossover")),
             strategy_params=strat.get("params", raw.get("strategy_params", {})) or {},
+            allocation_name=portfolio.get("allocation"),
+            allocation_params=portfolio.get("params", {}) or {},
+            selector_name=(portfolio.get("selector", {}) or {}).get("name"),
+            selector_params=(portfolio.get("selector", {}) or {}).get("params", {}) or {},
+            universe_name=(raw.get("universe", {}) or {}).get("source"),
+            universe_params=(raw.get("universe", {}) or {}).get("params", {}) or {},
+            overlays=list(portfolio.get("overlays", []) or []),
             risk=RiskConfig(**risk_raw),
+            notify_webhook_url=(raw.get("notify", {}) or {}).get("webhook_url"),
             db_path=raw.get("db_path", "tradebot.db"),
             commission=float(raw.get("commission", 0.0)),
             slippage_bps=float(raw.get("slippage_bps", 1.0)),

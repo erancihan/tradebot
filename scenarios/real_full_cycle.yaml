@@ -1,0 +1,12 @@
+# Real-data gauntlet: one full bear->recovery cycle (2022-2024).
+# The primary real-regime test for `arena gate` once bars are cached:
+#   tradebot data pull --symbols SPY QQQ IWM --start 2021-12-01 --end 2024-06-30
+name: real_full_cycle
+source: alpaca
+symbols: [SPY, QQQ, IWM]
+timeframe: 1day
+start: "2021-12-01"
+end: "2024-06-30"
+initial_cash: 10000
+slippage_bps: 1.0
+risk: {max_position_pct: 0.6, max_gross_exposure: 1.0, max_daily_loss_pct: 1.0}

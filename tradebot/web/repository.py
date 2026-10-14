@@ -62,17 +62,48 @@ class TradingRepository:
         rows = _read(self.db_path, "SELECT DISTINCT symbol FROM bars ORDER BY symbol")
         return [r["symbol"] for r in rows]
 
-    def bars(self, symbol: str, mode: str | None = None, limit: int = 500) -> list[dict]:
-        where = "WHERE symbol = ?" + (" AND mode = ?" if mode else "")
-        params = (symbol, mode, limit) if mode else (symbol, limit)
+    def bars(self, symbol: str, limit: int = 500,
+             timeframe: str | None = None, mode: str | None = None) -> list[dict]:
+        """Candles for one symbol, oldest first.
+
+        `timeframe` is part of the bars primary key and `mode` partitions the
+        table, so without both filters the same timestamp comes back once per
+        (timeframe, mode) partition and the chart draws overlapping duplicate
+        candles across half the requested window.
+        """
+        clauses, params = ["symbol = ?"], [symbol]
+        if timeframe:
+            clauses.append("timeframe = ?")
+            params.append(timeframe)
+        if mode:
+            clauses.append("mode = ?")
+            params.append(mode)
+        params.append(limit)
         rows = _read(
             self.db_path,
-            f"SELECT ts, open, high, low, close, volume FROM bars {where} "
-            "ORDER BY ts DESC LIMIT ?",
-            params,
+            "SELECT ts, open, high, low, close, volume FROM bars WHERE "
+            + " AND ".join(clauses)
+            + " ORDER BY ts DESC LIMIT ?",
+            tuple(params),
         )
-        rows.reverse()  # chronological for charting
+        rows.reverse()
         return rows
+
+    def timeframes(self) -> list[str]:
+        """Distinct timeframes present, newest activity first."""
+        rows = _read(self.db_path,
+                     "SELECT DISTINCT timeframe FROM bars ORDER BY timeframe")
+        return [r["timeframe"] for r in rows]
+
+    def default_mode(self) -> str | None:
+        """The mode of the newest snapshot — what the dashboard should show.
+
+        Stats must be scoped to ONE account. Concatenating a $100k paper run
+        with a $10k dry-run produced a continuous-looking curve and a
+        catastrophic drawdown that never happened.
+        """
+        row = self.latest_equity()
+        return row["mode"] if row else None
 
     def latest_equity(self) -> dict | None:
         rows = _read(
@@ -80,6 +111,44 @@ class TradingRepository:
             "SELECT ts, equity, cash, mode FROM equity_snapshots ORDER BY id DESC LIMIT 1",
         )
         return rows[0] if rows else None
+
+    def latest_weights(self, mode: str | None = None) -> dict:
+        """The most recent rebalance's target weights, largest first."""
+        where = "WHERE mode = ?" if mode else ""
+        params = (mode,) if mode else ()
+        head = _read(
+            self.db_path,
+            f"SELECT ts, mode FROM target_weights {where} ORDER BY ts DESC, id DESC LIMIT 1",
+            params,
+        )
+        if not head:
+            return {"ts": None, "mode": None, "weights": []}
+        ts = head[0]["ts"]
+        rows = _read(
+            self.db_path,
+            f"SELECT symbol, weight FROM target_weights {where}"
+            f"{' AND' if mode else ' WHERE'} ts = ? ORDER BY weight DESC, symbol",
+            params + (ts,),
+        )
+        return {"ts": ts, "mode": head[0]["mode"], "weights": rows}
+
+    def latest_universe(self, mode: str | None = None) -> dict:
+        """The most recently resolved candidate universe (if any)."""
+        where = "WHERE mode = ?" if mode else ""
+        params = (mode,) if mode else ()
+        rows = _read(
+            self.db_path,
+            f"SELECT ts, symbols, mode FROM universe_snapshots {where} "
+            "ORDER BY id DESC LIMIT 1",
+            params,
+        )
+        if not rows:
+            return {"ts": None, "mode": None, "symbols": []}
+        try:
+            symbols = json.loads(rows[0]["symbols"])
+        except (json.JSONDecodeError, TypeError):
+            symbols = []
+        return {"ts": rows[0]["ts"], "mode": rows[0]["mode"], "symbols": symbols}
 
 
 class ArenaRepository:
@@ -134,12 +203,24 @@ class SeasonRepository:
         )
 
     def get_season(self, season_id: int) -> dict | None:
+        # `seeded_through` is read defensively: this repository is read-only and
+        # must not migrate the writer's schema, so a season DB written before
+        # seeding existed simply reports None.
         rows = _read(
             self.db_path,
             "SELECT id, name, symbols, timeframe, metric, status, updated_at "
             "FROM seasons WHERE id = ?", (season_id,),
         )
-        return rows[0] if rows else None
+        if not rows:
+            return None
+        season = rows[0]
+        try:
+            extra = _read(self.db_path,
+                          "SELECT seeded_through FROM seasons WHERE id = ?", (season_id,))
+            season["seeded_through"] = extra[0]["seeded_through"] if extra else None
+        except Exception:
+            season["seeded_through"] = None
+        return season
 
     def latest_standings(self, season_id: int) -> list[dict]:
         rows = _read(

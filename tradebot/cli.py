@@ -38,6 +38,9 @@ def cmd_demo(args: argparse.Namespace) -> int:
     from .risk import RiskConfig, RiskManager
     from .strategies import build_strategy
 
+    if args.portfolio:
+        return _demo_portfolio(args)
+
     df = synthetic_ohlcv(periods=750, drift=0.0005, volatility=0.012, seed=args.seed)
     strategy = build_strategy(
         args.strategy,
@@ -49,6 +52,44 @@ def cmd_demo(args: argparse.Namespace) -> int:
     print(f"(synthetic data, strategy={args.strategy}) — buy & hold for reference:")
     bh = df["close"].iloc[-1] / df["open"].iloc[0] - 1
     print(f"  buy & hold return: {round(bh, 4)}\n")
+    return 0
+
+
+def _demo_portfolio(args: argparse.Namespace) -> int:
+    """Offline showcase of the portfolio stack: momentum top-K selection over a
+    synthetic candidate pool, inverse-vol weighting, joint risk sizing."""
+    from .allocation import build_allocator
+    from .backtest import Backtester
+    from .data.synthetic import synthetic_ohlcv
+    from .risk import RiskConfig, RiskManager
+    from .selection import build_selector
+    from .strategies import build_strategy
+
+    # A varied candidate pool: different drifts/vols so the ranking has teeth.
+    pool = {
+        f"SYN{i}": synthetic_ohlcv(
+            periods=750, drift=drift, volatility=vol, seed=args.seed + i
+        )
+        for i, (drift, vol) in enumerate([
+            (0.0012, 0.010), (0.0008, 0.020), (0.0004, 0.012),
+            (0.0000, 0.015), (-0.0004, 0.018), (0.0010, 0.025),
+        ])
+    }
+    selector = build_selector("momentum", {"lookback": 126, "skip": 10, "top_k": 3})
+    allocator = build_allocator("inverse_vol", {"window": 63})
+    risk = RiskManager(RiskConfig(max_position_pct=0.5, max_gross_exposure=1.0,
+                                  allow_fractional=True, rebalance_band_pct=0.02))
+    bt = Backtester(
+        build_strategy("buy_and_hold"), risk, initial_cash=10_000.0,
+        allocator=allocator, selector=selector,
+    )
+    result = bt.run(pool)
+    _print_summary(result.summary())
+    print("(synthetic 6-symbol pool — momentum top-3, inverse-vol weights, "
+          "2% no-trade band)")
+    print("equal-weight buy & hold of the whole pool for reference:")
+    bh = sum(df["close"].iloc[-1] / df["open"].iloc[0] - 1 for df in pool.values()) / len(pool)
+    print(f"  pool buy & hold return: {round(bh, 4)}\n")
     return 0
 
 
@@ -67,6 +108,9 @@ def cmd_backtest(args: argparse.Namespace) -> int:
         initial_cash=settings.initial_cash,
         commission=settings.commission,
         slippage_bps=settings.slippage_bps,
+        allocator=settings.build_allocator(),
+        selector=settings.build_selector(),
+        overlays=settings.build_overlays(),
     )
 
     if args.csv:
@@ -84,6 +128,24 @@ def cmd_backtest(args: argparse.Namespace) -> int:
         ds = get_alpaca_data(creds.api_key, creds.api_secret, feed=creds.feed)
         data = {s: ds.history(s, timeframe=settings.timeframe, lookback=args.lookback)
                 for s in settings.symbols}
+
+    if args.walk_forward:
+        from .walkforward import required_warmup, walk_forward
+
+        try:
+            wf = walk_forward(bt, data, folds=args.walk_forward)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        print(f"\n=== Walk-forward ({args.walk_forward} folds, "
+              f"{required_warmup(bt)} warmup bars each) ===")
+        print(wf.table())
+        print("\nEach fold is evaluated independently, out-of-sample for the "
+              "pipeline's decisions.\nDispersion across folds is the point: "
+              "one great fold carrying the rest is a red flag.\n"
+              "(If you tune settings until this table looks good, you are "
+              "data-snooping — count your attempts.)")
+        return 0
 
     result = bt.run(data)
     _print_summary(result.summary())
@@ -112,6 +174,31 @@ def _build_live_components(settings):
     return broker, data, strategy, risk, storage
 
 
+def _resolve_universe(settings) -> bool:
+    """Swap the static symbol list for the screened candidate universe.
+
+    Returns False (after printing why) when a configured universe can't be
+    resolved — never fall back silently to the static list.
+    """
+    uni = settings.build_universe()
+    if uni is None:
+        return True
+    try:
+        symbols = uni.resolve()
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return False
+    if not symbols:
+        print("Universe screen returned no symbols; loosen the thresholds "
+              "(min_price / min_dollar_volume) or raise `candidates`.",
+              file=sys.stderr)
+        return False
+    print(f"Universe ({settings.universe_name}): {len(symbols)} candidates: "
+          f"{', '.join(symbols)}")
+    settings.symbols = symbols
+    return True
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     from .config import Settings
     from .engine import Engine
@@ -124,8 +211,16 @@ def cmd_run(args: argparse.Namespace) -> int:
     if args.dry_run:
         return _run_dry(settings, args)
 
+    if not _resolve_universe(settings):
+        return 2
     broker, data, strategy, risk, storage = _build_live_components(settings)
-    engine = Engine(settings, broker, data, strategy, risk, storage)
+    if settings.universe_name:
+        storage.record_universe(settings.symbols, settings.mode)
+    engine = Engine(settings, broker, data, strategy, risk, storage,
+                    allocator=settings.build_allocator(),
+                    selector=settings.build_selector(),
+                    overlays=settings.build_overlays(),
+                    notifier=settings.build_notifier())
 
     mode = "LIVE (real money)" if settings.is_live else "paper"
     print(f"Running in {mode} mode on {settings.symbols} with {strategy.name}.")
@@ -148,10 +243,16 @@ def _run_dry(settings, args: argparse.Namespace) -> int:
     strategy = build_strategy(settings.strategy_name, settings.strategy_params)
     risk = RiskManager(settings.risk)
     storage = Storage(settings.db_path)
+    selector = settings.build_selector()
 
     replay = bool(args.replay or args.replay_csv)
     if replay:
-        data = _build_replay_data(settings, strategy, args)
+        # Replay generates frames for the configured symbols; a screened
+        # universe needs live data, so it does not apply here.
+        if settings.universe_name:
+            print("[DRY-RUN] `universe:` is ignored in replay mode "
+                  "(no live data to screen); using the configured symbols.")
+        data = _build_replay_data(settings, strategy, args, selector=selector)
     else:
         from .config import AlpacaCredentials
         from .data import get_alpaca_data
@@ -165,6 +266,10 @@ def _run_dry(settings, args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 2
+        if not _resolve_universe(settings):
+            return 2
+        if settings.universe_name:
+            storage.record_universe(settings.symbols, "dry_run")
         data = get_alpaca_data(creds.api_key, creds.api_secret, feed=creds.feed)
 
     broker = DryRunBroker(
@@ -177,6 +282,10 @@ def _run_dry(settings, args: argparse.Namespace) -> int:
     engine = Engine(
         settings, broker, data, strategy, risk, storage,
         mode_label="dry_run", enforce_live_ack=False,
+        allocator=settings.build_allocator(),
+        selector=selector,
+        overlays=settings.build_overlays(),
+        notifier=settings.build_notifier(),
     )
 
     src = "replay" if replay else "live data"
@@ -199,11 +308,13 @@ def _run_dry(settings, args: argparse.Namespace) -> int:
     return 0
 
 
-def _build_replay_data(settings, strategy, args):
+def _build_replay_data(settings, strategy, args, selector=None):
     from .data.replay import ReplayData
     from .data.synthetic import load_csv, synthetic_ohlcv
 
     warmup = strategy.required_history + 2
+    if selector is not None:
+        warmup = max(warmup, selector.required_history + 2)
     if args.replay_csv:
         frames = {settings.symbols[0]: load_csv(args.replay_csv)}
     else:
@@ -288,17 +399,24 @@ def cmd_arena_run(args: argparse.Namespace) -> int:
         args.algos, scenario, metric=args.score, time_budget_s=args.time_budget,
         isolation=args.isolation, cpu_seconds=args.cpu_seconds, memory_mb=args.memory_mb,
         harden=args.harden, seccomp=args.seccomp,
+        require_sandbox=getattr(args, "require_sandbox", False),
     )
     print(outcome.leaderboard.table())
     for e in outcome.load_errors:
         print(f"  ! load error: {e.path}: {e.message}", file=sys.stderr)
 
-    if args.save:
+    if args.save or args.journal:
         from .arena.store import ArenaStore
 
         with ArenaStore(args.db) as store:
-            run_id = store.record_run(scenario, args.score, outcome)
-        print(f"Saved as run #{run_id} in {args.db}")
+            run_id = None
+            if args.save:
+                run_id = store.record_run(scenario, args.score, outcome)
+                print(f"Saved as run #{run_id} in {args.db}")
+            if args.journal:
+                n = store.record_attempts(scenario, args.score, outcome, run_id=run_id)
+                print(f"Journaled {n} attempt(s) in {args.db} — "
+                      "review with `tradebot arena journal`.")
 
     if args.out:
         import json
@@ -347,6 +465,186 @@ def cmd_arena_validate(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def cmd_arena_gate(args: argparse.Namespace) -> int:
+    """Promotion pass gate: judge one candidate against a baseline over a gauntlet."""
+    from .arena.gate import evaluate_gate
+    from .arena.scenario import Scenario
+    from .arena.store import ArenaStore, library_fingerprint
+    from .arena.tournament import run_tournament
+
+    import dataclasses
+
+    seeds = max(1, int(getattr(args, "seeds", 1)))
+    base_scenarios = [Scenario.from_yaml(p) for p in args.scenarios]
+
+    # One verdict per seed. A single synthetic draw is a weak basis for a
+    # binary decision: a high-vol window carries enough noise that the same
+    # scenario can resolve either way, so a one-path verdict is close to a coin
+    # flip on whether the effect it advertises is even present. Re-drawing the
+    # whole gauntlet and reporting the median — plus UNSTABLE when the verdict
+    # flips across draws — strips both lucky passes and unlucky fails, and it
+    # cannot be aimed at a candidate.
+    reports, all_runs = [], []
+    for k in range(seeds):
+        runs = []
+        for base in base_scenarios:
+            scenario = (base if k == 0
+                        else dataclasses.replace(base, seed=base.seed + k))
+            label = scenario.name if seeds == 1 else f"{scenario.name} (seed {scenario.seed})"
+            print(f"  gauntlet: {label} ...", flush=True)
+            outcome = run_tournament(
+                args.algos, scenario, metric="worst_fold",
+                time_budget_s=args.time_budget, isolation=args.isolation,
+            )
+            for e in outcome.load_errors:
+                print(f"  ! load error: {e.path}: {e.message}", file=sys.stderr)
+            runs.append((scenario, outcome))
+        all_runs.extend(runs)
+        reports.append(evaluate_gate(
+            args.candidate, args.baseline,
+            # Pass the Scenario, not just its name: the return aggregation needs
+            # `source`/`symbols` to tell a genuinely duplicated price path from
+            # two generated draws that merely share an epoch.
+            [(sc, out) for sc, out in runs],
+            max_drawdown_limit=args.max_drawdown))
+
+    report = reports[0] if seeds == 1 else _median_report(reports)
+
+    fam = report.family or args.candidate
+    with ArenaStore(args.db) as store:
+        if args.journal:
+            # Only the candidate's family: the rest of the field is run to
+            # produce a baseline, not because anyone is iterating on it.
+            for scenario, outcome in all_runs:
+                store.record_attempts(scenario, "worst_fold", outcome,
+                                      only_families={fam},
+                                      library=library_fingerprint(args.scenarios))
+        summary = {r["family"]: r for r in store.journal_summary()}
+        if fam in summary:
+            report.attempts = summary[fam]["attempts"]
+
+    print(report.table())
+    if seeds > 1:
+        passes = sum(1 for r in reports if r.passed)
+        print(f"  seed ensemble: PASS in {passes}/{seeds} draws"
+              + ("" if passes in (0, seeds) else "  <-- UNSTABLE, the verdict is noise"))
+    return 0 if report.passed else 1
+
+
+def _median_report(reports):
+    """Collapse per-seed gate reports into one, criterion by criterion.
+
+    The median is taken per *criterion*, not over a summary score, so a
+    candidate has to clear each bar in most draws rather than in a lucky one.
+    A verdict that flips across seeds is reported as UNSTABLE by the caller
+    rather than being silently resolved either way.
+    """
+    from statistics import median
+
+    base = reports[0]
+    for i, check in enumerate(base.checks):
+        votes = [r.checks[i].passed for r in reports if i < len(r.checks)]
+        check.passed = sum(votes) > len(votes) / 2
+        check.detail = (f"{check.detail}  [{sum(votes)}/{len(votes)} seeds pass]")
+    # Median the headline per-scenario numbers so the printed table is not just
+    # the first draw pretending to be the ensemble.
+    for row_idx, row in enumerate(base.rows):
+        if not row.get("ok"):
+            continue
+        for key in ("cand_return", "base_return", "cand_cagr", "base_cagr",
+                    "cand_worst_fold", "base_worst_fold", "cand_max_drawdown"):
+            values = [r.rows[row_idx][key] for r in reports
+                      if row_idx < len(r.rows) and r.rows[row_idx].get("ok") and key in r.rows[row_idx]]
+            if values:
+                row[key] = median(values)
+    return base
+
+
+def _balance(row) -> str:
+    """'10,000 -> 12,458 (+24.6%)' from a journal row; '-' when not recorded."""
+    if not row or row.get("start_balance") is None or row.get("final_balance") is None:
+        return "-"
+    start, final = row["start_balance"], row["final_balance"]
+    pct = f" ({final / start - 1.0:+.1%})" if start else ""
+    return f"{start:,.0f} -> {final:,.0f}{pct}"
+
+
+def _period(row) -> str:
+    """'2023-01-02 -> 2024-05-15': the simulated data window; '-' when unknown."""
+    if not row or not row.get("start_date") or not row.get("end_date"):
+        return "-"
+    return f"{row['start_date'][:10]} -> {row['end_date'][:10]}"
+
+
+def cmd_arena_journal(args: argparse.Namespace) -> int:
+    """The multiple-testing ledger: how many attempts each algo family has burned."""
+    from .arena.store import ArenaStore
+
+    with ArenaStore(args.db) as store:
+        if args.export:
+            # The DB is gitignored and every session runs in a fresh container,
+            # so the ledger is ephemeral by construction — which is why the
+            # attempt counts quoted in past write-ups could never be checked
+            # against anything. Exporting to CSV makes the record committable,
+            # and therefore auditable.
+            import csv
+
+            rows = store.journal_rows()
+            if not rows:
+                print(f"No attempts journaled yet in {args.db}; nothing to export.")
+                return 0
+            with open(args.export, "w", newline="") as fh:
+                writer = csv.DictWriter(fh, fieldnames=list(rows[0]))
+                writer.writeheader()
+                writer.writerows(rows)
+            print(f"Exported {len(rows)} attempt(s) to {args.export}. "
+                  "Commit it: an ephemeral ledger proves nothing.")
+            return 0
+
+        if args.family:
+            rows = store.journal_entries(args.family)
+            if not rows:
+                print(f"No attempts recorded for family {args.family!r} in {args.db}.")
+                return 0
+            print(f"\nExperiment journal — family {args.family!r}, "
+                  f"{len(rows)} attempt(s), newest first")
+            header = (f"{'#':>4}  {'when (UTC)':<19} {'name':<20} {'scenario':<16} "
+                      f"{'metric':<12} {'score':>10}  {'balance':<26} "
+                      f"{'simulated period':<26} status")
+            print(header)
+            print("-" * len(header))
+            for r in rows:
+                score = f"{r['score']:.3f}" if r["score"] is not None else "-"
+                print(f"{r['id']:>4}  {r['ts'][:19]:<19} {r['name']:<20} "
+                      f"{r['scenario']:<16} {r['metric']:<12} {score:>10}  "
+                      f"{_balance(r):<26} {_period(r):<26} {r['status']}")
+            return 0
+
+        rows = store.journal_summary()
+        if not rows:
+            print(f"No attempts journaled yet in {args.db}. "
+                  "`tradebot arena run` journals automatically.")
+            return 0
+        print("\nExperiment journal — attempts per algorithm family")
+        header = (f"{'family':<20} {'attempts':>8} {'variants':>8} {'scenarios':>9}  "
+                  f"{'best score (metric @ scenario)':<38} {'balance':<26} "
+                  f"{'simulated period':<26} last tried")
+        print(header)
+        print("-" * len(header))
+        for r in rows:
+            best = r["best"]
+            best_s = (f"{best['score']:.3f} ({best['metric']} @ {best['scenario']})"
+                      if best else "-")
+            print(f"{r['family']:<20} {r['attempts']:>8} {r['variants']:>8} "
+                  f"{r['scenarios']:>9}  {best_s:<38} {_balance(best):<26} "
+                  f"{_period(best):<26} {r['last_ts'][:10]}")
+        if any(r["attempts"] > 1 for r in rows):
+            print("\nA best-of-N result overstates skill: the more attempts a family has,")
+            print("the stricter the bar its winner must clear (survive the regime gauntlet")
+            print("and a walk-forward, not one lucky leaderboard).")
+    return 0
+
+
 def _format_standings(snap) -> str:
     parts = "  ".join(
         f"{s.rank}.{s.name}({s.total_return:+.1%})" for s in snap.standings
@@ -380,12 +678,52 @@ def cmd_season_create(args: argparse.Namespace) -> int:
         name=args.name, symbols=args.symbols, timeframe=args.timeframe,
         metric=args.score, algo_paths=args.algos,
         initial_cash=args.cash, max_position_pct=args.max_position,
-        isolation=args.isolation,
+        isolation=args.isolation, time_budget_s=args.time_budget,
     )
     with SeasonStore(args.db) as store:
         season = Season.create(store, config)
     print(f"Created season #{season.id} '{config.name}' "
           f"({', '.join(config.symbols)}, ranked by {config.metric}) in {args.db}")
+    return 0
+
+
+def cmd_season_seed(args: argparse.Namespace) -> int:
+    """Backfill real history into a season so the field starts warmed up.
+
+    Bars come from the local cache, and from Alpaca only on a miss — so a season
+    seeded once re-seeds offline forever, like every other cached path.
+    """
+    from .arena.season import Season, SeasonStore, seed_season
+    from .data.cache import BarCache, build_default_fetcher
+
+    cache = BarCache(args.cache_dir)
+    fetcher = build_default_fetcher()
+    with SeasonStore(args.db) as store:
+        season = Season.load(store, args.season_id)
+        frames = {}
+        for symbol in season.config.symbols:
+            try:
+                df = cache.get(symbol, season.config.timeframe,
+                               args.start, args.end, fetcher)
+            except RuntimeError as exc:
+                print(f"  {symbol}: {exc}", file=sys.stderr)
+                return 2
+            if len(df):
+                frames[symbol] = df
+            print(f"  {symbol}: {len(df)} bars")
+
+        if not frames:
+            print("No bars to seed. Pull them first: tradebot data pull "
+                  "--symbols ... --start ... --end ...", file=sys.stderr)
+            return 2
+        written = seed_season(season, frames)
+        boundary = store.seeded_through(season.id)
+
+    print(f"\nSeeded season #{season.id} with {written} bars "
+          f"across {len(frames)} symbols, through {boundary[:10]}.")
+    print("Standings over seeded bars are BACKFILLED, not live-earned: the "
+          "window was chosen\nafter the fact. `season standings` marks the "
+          "boundary; keep the two claims apart.")
     return 0
 
 
@@ -410,11 +748,21 @@ def cmd_season_standings(args: argparse.Namespace) -> int:
 
     with SeasonStore(args.db) as store:
         snap = store.latest_standings(args.season_id)
+        seeded = store.seeded_through(args.season_id)
     if snap is None:
         print(f"Season #{args.season_id} has no standings yet.", file=sys.stderr)
         return 1
     print(f"Season #{args.season_id} standings (step {snap.step}, {snap.timestamp[:19]}):")
     print(_format_standings(snap))
+    if seeded:
+        # Say it at the point of use, not only in a doc: a table built on
+        # backfilled bars looks exactly like one earned live, and the window was
+        # chosen after the fact.
+        live = "none yet — everything here is backfilled"
+        if snap.timestamp > seeded:
+            live = f"live since {seeded[:10]}"
+        print(f"\n  ~ seeded through {seeded[:10]}; {live}. Standings over "
+              f"backfilled bars are\n    not a live-forward result.")
     return 0
 
 
@@ -513,6 +861,34 @@ def cmd_arena_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_universe(args: argparse.Namespace) -> int:
+    """Resolve and print the screened candidate universe (needs Alpaca creds)."""
+    from .config import Settings
+
+    settings = Settings.from_yaml(args.config)
+    uni = settings.build_universe()
+    if uni is None:
+        print("No `universe:` block in the config — the static `symbols` list "
+              "is the candidate pool. See config.example.yaml.", file=sys.stderr)
+        return 2
+    try:
+        details = uni.resolve_details()
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    if not details:
+        print("Universe screen returned no symbols; loosen the thresholds.",
+              file=sys.stderr)
+        return 1
+    print(f"{'symbol':<8} {'price':>10} {'avg $ volume':>16}")
+    print("-" * 38)
+    for row in details:
+        print(f"{row['symbol']:<8} {row['price']:>10.2f} {row['adv']:>16,.0f}")
+    print(f"\n{len(details)} candidates pass the screen "
+          "(note: IEX volume understates consolidated liquidity).")
+    return 0
+
+
 def cmd_data_pull(args: argparse.Namespace) -> int:
     """Pull bars from Alpaca into the local cache for offline/repeatable use."""
     from .data.cache import BarCache, build_default_fetcher
@@ -537,7 +913,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     d = sub.add_parser("demo", help="offline backtest on synthetic data (no creds)")
     d.add_argument("--strategy", default="sma_crossover",
-                   choices=["sma_crossover", "rsi_reversion"])
+                   choices=["sma_crossover", "rsi_reversion", "buy_and_hold"])
+    d.add_argument("--portfolio", action="store_true",
+                   help="showcase the portfolio stack: momentum top-K selection "
+                        "+ inverse-vol weighting over a synthetic candidate pool")
     d.add_argument("--seed", type=int, default=42)
     d.set_defaults(func=cmd_demo)
 
@@ -547,6 +926,10 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--symbol", help="symbol label when using --csv")
     b.add_argument("--lookback", type=int, default=365, help="days of history (Alpaca)")
     b.add_argument("--out", help="write equity curve CSV here")
+    b.add_argument("--walk-forward", dest="walk_forward", type=int, default=None,
+                   metavar="N",
+                   help="evaluate over N independent contiguous folds instead of "
+                        "one run (regime-robustness check)")
     b.set_defaults(func=cmd_backtest)
 
     r = sub.add_parser("run", help="run the paper/live/dry-run trading loop")
@@ -595,7 +978,8 @@ def build_parser() -> argparse.ArgumentParser:
     ar.add_argument("--algos", required=True, nargs="+", help="algo files and/or folders")
     ar.add_argument("--scenario", help="scenario YAML (default: built-in synthetic)")
     ar.add_argument("--score", default="sharpe",
-                    help="ranking metric: sharpe|total_return|cagr|calmar (default sharpe)")
+                    help="ranking metric: sharpe|total_return|cagr|calmar|"
+                         "worst_fold|consistency (default sharpe)")
     ar.add_argument("--time-budget", dest="time_budget", type=float, default=10.0,
                     help="per-contestant wall-clock budget in seconds (default 10)")
     ar.add_argument("--isolation", choices=["process", "thread", "auto"], default="process",
@@ -609,12 +993,21 @@ def build_parser() -> argparse.ArgumentParser:
     ar.add_argument("--no-harden", dest="harden", action="store_false", default=True,
                     help="disable the contestant sandbox (no-disk-writes / no-network); "
                          "hardening is ON by default for process isolation")
+    ar.add_argument("--require-sandbox", dest="require_sandbox", action="store_true",
+                    default=False,
+                    help="fail a contestant outright when requested containment "
+                         "cannot be enforced (default: run it and warn loudly). "
+                         "Kernels in CI and unprivileged containers commonly "
+                         "refuse a network namespace.")
     ar.add_argument("--seccomp", action="store_true", default=False,
                     help="adversarial tier: also install a seccomp filter denying "
                          "execve/execveat/ptrace (blocks subprocess/os.system); "
                          "process isolation only")
     ar.add_argument("--out", help="write the leaderboard to this JSON file")
     ar.add_argument("--save", action="store_true", help="persist this run to the arena DB")
+    ar.add_argument("--no-journal", dest="journal", action="store_false", default=True,
+                    help="skip the experiment journal (attempts are recorded by "
+                         "default — the multiple-testing ledger)")
     ar.add_argument("--db", default="arena.db", help="arena results DB (default arena.db)")
     ar.set_defaults(func=cmd_arena_run)
 
@@ -622,7 +1015,8 @@ def build_parser() -> argparse.ArgumentParser:
     aL.add_argument("--algos", required=True, nargs="+", help="algo files and/or folders")
     aL.add_argument("--scenario", help="scenario YAML (default: built-in synthetic)")
     aL.add_argument("--score", default="sharpe",
-                    help="ranking metric: sharpe|total_return|cagr|calmar (default sharpe)")
+                    help="ranking metric: sharpe|total_return|cagr|calmar|"
+                         "worst_fold|consistency (default sharpe)")
     aL.add_argument("--snapshots", type=int, default=10,
                     help="number of standings snapshots over the season (default 10)")
     aL.add_argument("--pace", type=float, default=0.0,
@@ -649,9 +1043,22 @@ def build_parser() -> argparse.ArgumentParser:
     sc.add_argument("--score", default="sharpe")
     sc.add_argument("--cash", type=float, default=10_000.0)
     sc.add_argument("--max-position", dest="max_position", type=float, default=0.95)
-    sc.add_argument("--isolation", choices=["process", "thread", "auto"], default="thread")
+    sc.add_argument("--isolation", choices=["process", "thread", "auto"], default="thread",
+                    help="thread (default) is light but its timeout is SOFT — an "
+                         "over-budget contestant leaks a busy thread every tick; "
+                         "process makes the budget a hard kill (and sandboxes)")
+    sc.add_argument("--time-budget", dest="time_budget", type=float, default=10.0,
+                    help="per-contestant seconds per tick (default 10)")
     sc.add_argument("--db", default="season.db")
     sc.set_defaults(func=cmd_season_create)
+
+    ss = aSsub.add_parser("seed", help="backfill real history so the field starts warmed up")
+    ss.add_argument("season_id", type=int)
+    ss.add_argument("--start", required=True, help="ISO date, inclusive")
+    ss.add_argument("--end", required=True, help="ISO date")
+    ss.add_argument("--cache-dir", dest="cache_dir", default="data/cache")
+    ss.add_argument("--db", default="season.db")
+    ss.set_defaults(func=cmd_season_seed)
 
     sl = aSsub.add_parser("list", help="list seasons")
     sl.add_argument("--db", default="season.db")
@@ -676,6 +1083,38 @@ def build_parser() -> argparse.ArgumentParser:
                     action="store_true", help="(live) step even when the market is closed")
     sr.set_defaults(func=cmd_season_run)
 
+    ag = asub.add_parser("gate", help="promotion pass gate: candidate vs baseline "
+                                      "over a scenario gauntlet (exit code = verdict)")
+    ag.add_argument("--algos", required=True, nargs="+", help="algo files and/or folders")
+    ag.add_argument("--candidate", required=True, help="contestant name to judge")
+    ag.add_argument("--baseline", default="buy_and_hold",
+                    help="benchmark contestant every idea must beat (default buy_and_hold)")
+    ag.add_argument("--scenarios", required=True, nargs="+",
+                    help="scenario YAMLs forming the gauntlet (use the regime library)")
+    ag.add_argument("--max-drawdown", dest="max_drawdown", type=float, default=0.35,
+                    help="fail if any scenario drawdown is worse than this (default 0.35)")
+    ag.add_argument("--time-budget", dest="time_budget", type=float, default=10.0,
+                    help="per-contestant wall-clock budget in seconds (default 10)")
+    ag.add_argument("--seeds", type=int, default=1,
+                    help="re-draw the whole gauntlet N times and take the median "
+                         "verdict; flags UNSTABLE when the decision flips (a single "
+                         "high-vol draw is not a reliable basis for a binary call)")
+    ag.add_argument("--isolation", choices=["process", "thread", "auto"], default="process")
+    ag.add_argument("--no-journal", dest="journal", action="store_false", default=True,
+                    help="skip journaling the gauntlet runs as attempts")
+    ag.add_argument("--db", default="arena.db", help="arena results DB (default arena.db)")
+    ag.set_defaults(func=cmd_arena_gate)
+
+    aj = asub.add_parser("journal",
+                         help="attempts-per-family ledger (multiple-testing honesty)")
+    aj.add_argument("--family", help="list every attempt for one family")
+    aj.add_argument("--export", metavar="PATH",
+                    help="write the whole ledger to CSV so it can be committed "
+                         "(the DB is gitignored, so counts are otherwise "
+                         "unauditable)")
+    aj.add_argument("--db", default="arena.db", help="arena results DB (default arena.db)")
+    aj.set_defaults(func=cmd_arena_journal)
+
     ah = asub.add_parser("history", help="list past saved tournaments")
     ah.add_argument("--db", default="arena.db")
     ah.set_defaults(func=cmd_arena_history)
@@ -684,6 +1123,12 @@ def build_parser() -> argparse.ArgumentParser:
     ash.add_argument("run_id", nargs="?", type=int, help="run id (default: latest)")
     ash.add_argument("--db", default="arena.db")
     ash.set_defaults(func=cmd_arena_show)
+
+    u = sub.add_parser("universe",
+                       help="resolve & print the screened candidate universe "
+                            "(needs Alpaca creds)")
+    u.add_argument("--config", required=True)
+    u.set_defaults(func=cmd_universe)
 
     data = sub.add_parser("data", help="market-data utilities")
     dsub = data.add_subparsers(dest="data_command", required=True)

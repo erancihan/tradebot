@@ -3,12 +3,14 @@
 import type {
   AccountView,
   ArenaRunDetail,
+  CacheEntry,
   CandleSeries,
   EquitySeries,
   JobRequest,
   JobView,
   OrderRow,
   SeasonDetail,
+  StrategySpec,
 } from "../types";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -63,6 +65,14 @@ export async function getPartial(url: string): Promise<string> {
     throw new Error(`Partial failed (${response.status}): ${url}`);
   }
   return response.text();
+}
+
+export function getStrategies(): Promise<StrategySpec[]> {
+  return getJson<StrategySpec[]>("/api/strategies");
+}
+
+export function getCache(): Promise<CacheEntry[]> {
+  return getJson<CacheEntry[]>("/api/cache");
 }
 
 export function submitJob(body: JobRequest): Promise<{ job_id: string }> {
