@@ -22,60 +22,25 @@ adapter when credentials are present.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Protocol
 
 import pandas as pd
 
 from ..models import BAR_COLUMNS
-
-# Stand-ins for an unbounded coverage edge, kept inside pandas' representable
-# range so they compare like any other timestamp. Serialised back out as null.
-_MIN_TS = pd.Timestamp("1678-01-01", tz="UTC")
-_MAX_TS = pd.Timestamp("2261-01-01", tz="UTC")
+from .coverage import (  # noqa: F401  (_MIN_TS/_MAX_TS/_merge_windows re-exported)
+    _MAX_TS,
+    _MIN_TS,
+    _merge_windows,
+    _spans,
+    _ts,
+    read_manifest,
+    write_manifest,
+)
 
 
 class Fetcher(Protocol):
     def __call__(self, symbol: str, timeframe: str, start, end) -> pd.DataFrame: ...
-
-
-def _ts(value) -> pd.Timestamp | None:
-    if value is None:
-        return None
-    return pd.Timestamp(value, tz="UTC") if pd.Timestamp(value).tzinfo is None else pd.Timestamp(value)
-
-
-def _merge_windows(
-    windows: list[tuple[pd.Timestamp, pd.Timestamp]],
-) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
-    """Merge overlapping/touching windows, leaving disjoint ones separate.
-
-    Two pulls with a gap between them stay two entries on purpose: a later
-    request spanning the gap must re-fetch rather than trust a hole it never
-    downloaded.
-    """
-    merged: list[tuple[pd.Timestamp, pd.Timestamp]] = []
-    for start, end in sorted(windows):
-        if merged and start <= merged[-1][1]:
-            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
-        else:
-            merged.append((start, end))
-    return merged
-
-
-def _spans(windows: list[tuple[pd.Timestamp, pd.Timestamp]], start, end) -> bool:
-    """True if one recorded window contains ``[start, end]`` outright.
-
-    The manifest records what we *asked* the provider for, which is the honest
-    coverage signal: whatever bars came back inside that window are, by
-    definition, all the bars that exist there. Observed timestamps can't say
-    that — a requested boundary landing on a weekend, a holiday, or before the
-    session open simply has no bar to compare against.
-    """
-    lo = _ts(start) or _MIN_TS
-    hi = _ts(end) or _MAX_TS
-    return any(a <= lo and hi <= b for a, b in windows)
 
 
 class BarCache:
@@ -90,28 +55,12 @@ class BarCache:
 
     def coverage(self, symbol: str, timeframe: str) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
         """Provider windows already pulled for this symbol, merged and sorted."""
-        p = self.coverage_path(symbol, timeframe)
-        if not p.exists():
-            return []
-        try:
-            raw = json.loads(p.read_text())
-        except (OSError, ValueError):
-            return []          # an unreadable manifest just means "prove it by fetching"
-        return _merge_windows([
-            (_ts(w.get("start")) or _MIN_TS, _ts(w.get("end")) or _MAX_TS) for w in raw
-        ])
+        return read_manifest(self.coverage_path(symbol, timeframe))
 
     def record_coverage(self, symbol: str, timeframe: str, start, end) -> None:
         """Note that ``[start, end]`` was fetched from a provider for this symbol."""
-        windows = self.coverage(symbol, timeframe)
-        windows.append((_ts(start) or _MIN_TS, _ts(end) or _MAX_TS))
-        p = self.coverage_path(symbol, timeframe)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps([
-            {"start": None if lo == _MIN_TS else lo.isoformat(),
-             "end": None if hi == _MAX_TS else hi.isoformat()}
-            for lo, hi in _merge_windows(windows)
-        ], indent=1))
+        write_manifest(self.coverage_path(symbol, timeframe),
+                       self.coverage(symbol, timeframe), start, end)
 
     def load(self, symbol: str, timeframe: str) -> pd.DataFrame | None:
         p = self.path(symbol, timeframe)
