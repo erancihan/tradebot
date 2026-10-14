@@ -39,7 +39,9 @@ def _record(symbols, result) -> None:
     curve = result.equity_curve
     _LEDGER.setdefault(node, []).append({
         "symbols": ",".join(symbols),
-        "start": float(result.initial_cash),
+        # All cash put in, so a plan with monthly contributions is not read as
+        # a return; equal to initial_cash for every closed book.
+        "start": float(getattr(result, "total_contributed", result.initial_cash)),
         "final": float(result.final_equity),
         "trades": result.num_trades,
         "first": str(curve.index[0])[:10] if len(curve) else "?",
@@ -56,8 +58,8 @@ def _balance_ledger():
     orig_run = backtest_mod.Backtester.run
     orig_simulate = simulation_mod.simulate
 
-    def run_wrapper(self, data, symbol="ASSET"):
-        result = orig_run(self, data, symbol)
+    def run_wrapper(self, data, symbol="ASSET", **kwargs):
+        result = orig_run(self, data, symbol, **kwargs)
         _record(list(data) if isinstance(data, dict) else [symbol], result)
         return result
 

@@ -1,30 +1,95 @@
 {% extends "base.html" %}
 {% block title %}What-if · tradebot{% endblock %}
 {% block content %}
+{% set input = "min-h-[48px] w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-base text-slate-100" %}
 <section class="mx-auto max-w-xl space-y-5" x-data="whatIf()">
   <h1 class="text-xl font-semibold text-slate-100">What if…</h1>
   <p class="text-sm text-slate-400">
     Replay a past plan and see what it would have made, next to just buying and holding.
   </p>
 
-  <button type="button" @click="submit()" :disabled="state === 'running'"
-          class="min-h-[48px] w-full rounded-lg bg-emerald-600 text-base font-semibold text-white hover:bg-emerald-500 disabled:opacity-50">
-    <span x-show="state !== 'running'">Run what-if</span>
-    <span x-show="state === 'running'" x-cloak>Running…</span>
-  </button>
+  <form @submit.prevent="submit()" class="space-y-4">
+    <label class="block">
+      <span class="mb-1 block text-sm text-slate-400">Symbols</span>
+      <input type="text" x-model="form.symbols" autocapitalize="characters"
+             placeholder="SPY QQQ" class="{{ input }}" />
+    </label>
+
+    <label class="block">
+      <span class="mb-1 block text-sm text-slate-400">Data</span>
+      <select x-model="form.source" class="{{ input }}">
+        <option value="real">Cached real bars</option>
+        <option value="synthetic">Synthetic (invented prices)</option>
+      </select>
+    </label>
+
+    <div class="grid grid-cols-2 gap-3">
+      <label class="block">
+        <span class="mb-1 block text-sm text-slate-400">Start</span>
+        <input type="date" x-model="form.start" class="{{ input }}" />
+      </label>
+      <label class="block">
+        <span class="mb-1 block text-sm text-slate-400">End</span>
+        <input type="date" x-model="form.end" class="{{ input }}" />
+      </label>
+    </div>
+
+    <div class="grid grid-cols-2 gap-3">
+      <label class="block">
+        <span class="mb-1 block text-sm text-slate-400">Starting cash</span>
+        <input type="number" inputmode="decimal" min="1" step="100"
+               x-model.number="form.initial_cash" class="{{ input }}" />
+      </label>
+      <label class="block">
+        <span class="mb-1 block text-sm text-slate-400">Each month</span>
+        <input type="number" inputmode="decimal" min="0" step="50"
+               x-model.number="form.monthly_contribution" class="{{ input }}" />
+      </label>
+    </div>
+
+    <button type="submit" :disabled="state === 'running'"
+            class="min-h-[48px] w-full rounded-lg bg-emerald-600 text-base font-semibold text-white hover:bg-emerald-500 disabled:opacity-50">
+      <span x-show="state !== 'running'">Run what-if</span>
+      <span x-show="state === 'running'" x-cloak>Running…</span>
+    </button>
+  </form>
 
   <div x-show="state === 'error'" x-cloak
-       class="rounded-lg border border-rose-800 bg-rose-950/40 p-4 text-sm text-rose-300" x-text="error"></div>
+       class="break-words rounded-lg border border-rose-800 bg-rose-950/40 p-4 text-sm text-rose-300" x-text="error"></div>
 
-  <div x-show="state === 'done'" x-cloak data-result-card
-       class="space-y-2 rounded-lg border border-slate-800 bg-slate-900/50 p-4">
-    <div class="text-xs uppercase tracking-wide text-slate-500">Result</div>
-    <template x-for="[key, value] in Object.entries(summary || {})" :key="key">
-      <div class="flex justify-between text-sm">
-        <span class="text-slate-400" x-text="key"></span>
-        <span class="font-semibold text-slate-100" x-text="value"></span>
+  <div x-show="state === 'done'" x-cloak data-result-card class="space-y-4">
+    <div class="inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium"
+         :class="provenance && provenance.source === 'real'
+                 ? 'border-emerald-700 bg-emerald-950/50 text-emerald-300'
+                 : 'border-amber-700 bg-amber-950/50 text-amber-300'">
+      <span x-text="provenanceLabel()"></span>
+    </div>
+
+    <div class="space-y-3 rounded-lg border border-slate-800 bg-slate-900/50 p-4">
+      <div>
+        <div class="text-xs uppercase tracking-wide text-slate-500">You would have made</div>
+        <div class="text-3xl font-semibold"
+             :class="Number(summary?.gain ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'"
+             x-text="money('gain')"></div>
+        <div class="text-sm text-slate-400">
+          <span x-text="money('final_value')"></span> from
+          <span x-text="money('contributions')"></span> put in
+        </div>
       </div>
-    </template>
+      <dl class="grid grid-cols-2 gap-2 text-sm">
+        <dt class="text-slate-400">Yearly growth (CAGR)</dt>
+        <dd class="text-right font-semibold text-slate-100" x-text="pct('cagr')"></dd>
+        <dt class="text-slate-400">Worst drop</dt>
+        <dd class="text-right font-semibold text-slate-100" x-text="pct('max_drawdown')"></dd>
+      </dl>
+      <p class="text-xs text-slate-500">
+        Growth and worst drop are plan performance: they leave your monthly cash out.
+      </p>
+    </div>
+
+    <div class="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+      <div x-ref="chart" class="h-64 w-full"></div>
+    </div>
     <p class="text-xs text-slate-500" x-text="provenance?.note"></p>
   </div>
 </section>

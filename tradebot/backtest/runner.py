@@ -17,6 +17,7 @@ import pandas as pd
 from ..portfolio import Portfolio
 from ..risk import RiskManager
 from ..strategies.base import Strategy
+from .flows import bar_cash_flows
 from .result import BacktestResult
 from .steps import (
     _prepare_components,
@@ -54,7 +55,19 @@ class Backtester:
         self.selector = selector
         self.overlays = list(overlays or [])
 
-    def run(self, data: dict[str, pd.DataFrame] | pd.DataFrame, symbol: str = "ASSET") -> BacktestResult:
+    def run(
+        self,
+        data: dict[str, pd.DataFrame] | pd.DataFrame,
+        symbol: str = "ASSET",
+        cash_flows: dict[pd.Timestamp, float] | None = None,
+    ) -> BacktestResult:
+        """Run the book over ``data``.
+
+        ``cash_flows`` maps a bar timestamp to cash added to the book *before*
+        that bar is sized, so a contribution is invested at that bar's open
+        like any other cash. ``None`` (the default, and the arena's only mode)
+        leaves the loop exactly as it was.
+        """
         if isinstance(data, pd.DataFrame):
             data = {symbol: data}
         if not data:
@@ -67,6 +80,7 @@ class Backtester:
         opens = {s: aligned[s]["open"] for s in data}
         closes = {s: aligned[s]["close"] for s in data}
         member = shifted_membership(self.selector, aligned)
+        flows = bar_cash_flows(cash_flows, common)
 
         pf = Portfolio(cash=self.initial_cash)
         equity_points: list[float] = []
@@ -75,6 +89,8 @@ class Backtester:
 
         for i in range(len(common)):
             close_prices = close_prices_at(closes, i)
+            if flows is not None:
+                pf.cash += float(flows.iloc[i])
             # Gather this bar's fillable symbols, then size the book jointly so
             # the result never depends on symbol iteration order.
             bar_targets, bar_prices = fillable_targets(
@@ -90,7 +106,7 @@ class Backtester:
             equity_points.append(pf.equity(close_prices))
             prev_closes = close_prices
 
-        return build_result(equity_points, common, pf, self.initial_cash)
+        return build_result(equity_points, common, pf, self.initial_cash, flows)
 
     def _shifted_targets(self, aligned: dict[str, pd.DataFrame]) -> dict[str, pd.Series]:
         """Per-symbol targets on the one-bar shift: decide on t, act on t+1."""

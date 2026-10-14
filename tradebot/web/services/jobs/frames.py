@@ -25,6 +25,7 @@ def _equity_payload(index, values) -> dict:
 
 
 def _pull_hint(symbol: str, timeframe: str, start, end) -> str:
+    """The exact pull command; ``symbol`` may be several, space-separated."""
     parts = [f"tradebot data pull --symbols {symbol}", f"--timeframe {timeframe}"]
     if start:
         parts.append(f"--start {start}")

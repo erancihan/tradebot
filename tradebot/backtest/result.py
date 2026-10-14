@@ -20,28 +20,58 @@ class BacktestResult:
     trades: list[Trade]
     initial_cash: float
     periods_per_year: float = 252.0
+    #: Per-bar contributions (zeros between them), or None for a closed book.
+    #: When set, the time-weighted metrics strip them out (see ``flows.py``);
+    #: when None every metric is computed exactly as it always was.
+    cash_flows: pd.Series | None = None
 
     @property
     def final_equity(self) -> float:
         return float(self.equity_curve.iloc[-1])
 
     @property
+    def total_contributed(self) -> float:
+        """Every unit of cash put in: the starting cash plus all contributions."""
+        extra = 0.0 if self.cash_flows is None else float(self.cash_flows.sum())
+        return self.initial_cash + extra
+
+    @property
+    def money_gain(self) -> float:
+        """Final value minus all cash put in: what the plan actually made."""
+        return self.final_equity - self.total_contributed
+
+    def _growth(self) -> pd.Series | None:
+        if self.cash_flows is None:
+            return None
+        from .flows import growth_index
+
+        return growth_index(self.equity_curve, self.cash_flows, self.initial_cash)
+
+    @property
     def total_return(self) -> float:
+        growth = self._growth()
+        if growth is not None:
+            return float(growth.iloc[-1]) - 1.0
         return self.final_equity / self.initial_cash - 1.0
 
     @property
     def returns(self) -> pd.Series:
+        growth = self._growth()
+        if growth is not None:
+            return growth.pct_change().dropna()
         return self.equity_curve.pct_change().dropna()
 
     @property
     def cagr(self) -> float:
         n = len(self.equity_curve)
-        if n < 2 or self.final_equity <= 0:
+        growth = self._growth()
+        ending = self.final_equity / self.initial_cash if growth is None else float(growth.iloc[-1])
+        if n < 2 or ending <= 0:
             return 0.0
         years = n / self.periods_per_year
         if years <= 0:
             return 0.0
-        return (self.final_equity / self.initial_cash) ** (1.0 / years) - 1.0
+        return ending ** (1.0 / years) - 1.0
 
     @property
     def sharpe(self) -> float:
@@ -52,7 +82,8 @@ class BacktestResult:
 
     @property
     def max_drawdown(self) -> float:
-        curve = self.equity_curve
+        growth = self._growth()
+        curve = self.equity_curve if growth is None else growth
         peak = curve.cummax()
         dd = (curve - peak) / peak
         return float(dd.min())
@@ -69,7 +100,7 @@ class BacktestResult:
         return wins / len(self.trades)
 
     def summary(self) -> dict[str, float]:
-        return {
+        out = {
             "initial_cash": self.initial_cash,
             "final_equity": round(self.final_equity, 2),
             "total_return": round(self.total_return, 4),
@@ -79,6 +110,10 @@ class BacktestResult:
             "num_trades": self.num_trades,
             "win_rate": round(self.win_rate, 4),
         }
+        if self.cash_flows is not None:
+            out["total_contributed"] = round(self.total_contributed, 2)
+            out["money_gain"] = round(self.money_gain, 2)
+        return out
 
 
 def _infer_periods_per_year(index: pd.DatetimeIndex) -> float:
