@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest a new strategy, arena capability, or improvement
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: The motivation — what can't you do today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: |
+        What should it look like? If it's a new strategy, note the signal logic and
+        which indicators it needs — remember strategies emit only targets in {-1, 0, +1}
+        and never size positions (that's the RiskManager's job).
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+  - type: checkboxes
+    id: invariants
+    attributes:
+      label: Invariant awareness
+      description: Tick any that apply — see CLAUDE.md.
+      options:
+        - label: This keeps the paper-by-default gate intact
+        - label: This introduces no look-ahead (only past+present data)
+        - label: This keeps a credential-free, offline path

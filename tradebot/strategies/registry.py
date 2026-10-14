@@ -10,8 +10,10 @@ from .buy_and_hold import BuyAndHold
 from .donchian_breakout import DonchianBreakout
 from .macd_trend import MacdTrend
 from .meta import EnsembleVote, FollowTheLeader
+from .momentum import Momentum
 from .rsi_reversion import RsiReversion
 from .sma_crossover import SmaCrossover
+from .supertrend import Supertrend
 
 STRATEGIES: dict[str, type[Strategy]] = {
     SmaCrossover.name: SmaCrossover,
@@ -22,6 +24,8 @@ STRATEGIES: dict[str, type[Strategy]] = {
     BollingerReversion.name: BollingerReversion,
     FollowTheLeader.name: FollowTheLeader,
     EnsembleVote.name: EnsembleVote,
+    Momentum.name: Momentum,
+    Supertrend.name: Supertrend,
 }
 
 

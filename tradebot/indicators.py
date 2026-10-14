@@ -102,3 +102,49 @@ def crossunder(fast: pd.Series, slow: pd.Series) -> pd.Series:
     prev = fast.shift(1) >= slow.shift(1)
     now = fast < slow
     return (prev & now).fillna(False)
+
+
+def true_range(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+    """Wilder's True Range: max(H-L, |H-prevC|, |L-prevC|) per bar.
+
+    The first bar (no previous close) falls back to H-L.
+    """
+    prev_close = close.shift(1)
+    ranges = pd.concat(
+        [high - low, (high - prev_close).abs(), (low - prev_close).abs()], axis=1
+    )
+    return ranges.max(axis=1)
+
+
+def atr(
+    high: pd.Series, low: pd.Series, close: pd.Series, window: int = 14
+) -> pd.Series:
+    """Average True Range via Wilder's smoothing (EWM with alpha = 1/window).
+
+    The first ``window`` values are NaN. Look-ahead safe (only past+present).
+    """
+    if window < 1:
+        raise ValueError("window must be >= 1")
+    tr = true_range(high, low, close)
+    return tr.ewm(alpha=1.0 / window, adjust=False, min_periods=window).mean()
+
+
+def donchian(high: pd.Series, low: pd.Series, window: int = 20) -> pd.DataFrame:
+    """Donchian channel: rolling ``window`` high/low and their midpoint.
+
+    Returns columns ``upper``, ``lower``, ``mid``. Note the channel *includes*
+    the current bar; breakout strategies should ``shift(1)`` to compare the
+    current bar against the *prior* window (no look-ahead).
+    """
+    if window < 1:
+        raise ValueError("window must be >= 1")
+    upper = high.rolling(window=window, min_periods=window).max()
+    lower = low.rolling(window=window, min_periods=window).min()
+    return pd.DataFrame({"upper": upper, "lower": lower, "mid": (upper + lower) / 2.0})
+
+
+def roc(series: pd.Series, window: int = 10) -> pd.Series:
+    """Rate of change over ``window`` bars, in percent. First ``window`` NaN."""
+    if window < 1:
+        raise ValueError("window must be >= 1")
+    return series.pct_change(periods=window) * 100.0
