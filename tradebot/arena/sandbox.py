@@ -161,3 +161,18 @@ def apply_hardening(no_write: bool = True, isolate_network: bool = True,
         report["seccomp"] = _apply_seccomp()
 
     return report
+
+
+#: Environment variables a contestant must never see. The forked child
+#: inherits the parent's whole environment, and a tournament is often run from
+#: a shell that also holds the broker keys. Sandboxing stops writes and
+#: network, not reads of ``os.environ``.
+SECRET_PREFIXES = ("ALPACA_", "TRADEBOT_LIVE_CONFIRM")
+
+
+def scrub_secrets(env) -> list[str]:
+    """Delete broker credentials and the live latch from ``env``; return names."""
+    names = sorted(k for k in env if k.startswith(SECRET_PREFIXES))
+    for name in names:
+        del env[name]
+    return names

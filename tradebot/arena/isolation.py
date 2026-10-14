@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import multiprocessing as mp
 import queue as queue_mod
 import time
 
 from .result import ERROR, OK, TIMEOUT, ContestantResult
+from .sandbox import scrub_secrets
 from .scoring import Scorer
 
 log = logging.getLogger("tradebot.arena.runner")
@@ -59,6 +61,7 @@ def subprocess_work(work, contestant, frames, risk_config, config, result_queue,
                     require_sandbox=False) -> None:
     """Child entrypoint: apply limits, optionally sandbox, run ``work``, ship back."""
     _apply_limits(cpu_seconds, memory_mb)
+    scrub_secrets(os.environ)
     denied: list[str] = []
     if harden or seccomp:
         from .sandbox import apply_hardening

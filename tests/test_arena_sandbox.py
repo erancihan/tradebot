@@ -235,3 +235,31 @@ def test_a_missing_libc_symbol_is_reported_not_raised(monkeypatch):
     # Only the libc-backed mechanisms: the rlimit ones would cap this process.
     report = sandbox_mod.apply_hardening(no_write=False, max_open_files=0)
     assert report == {"no_new_privs": False, "network": False}
+
+
+# --- the child never sees broker secrets -------------------------------------
+
+def test_scrub_secrets_removes_broker_keys_and_the_live_latch():
+    from tradebot.arena.sandbox import scrub_secrets
+
+    env = {"ALPACA_API_KEY": "k", "ALPACA_API_SECRET": "s", "ALPACA_DATA_FEED": "iex",
+           "TRADEBOT_LIVE_CONFIRM": "I_UNDERSTAND", "HOME": "/tmp", "PATH": "/bin"}
+    removed = scrub_secrets(env)
+    assert removed == ["ALPACA_API_KEY", "ALPACA_API_SECRET", "ALPACA_DATA_FEED",
+                       "TRADEBOT_LIVE_CONFIRM"]
+    assert env == {"HOME": "/tmp", "PATH": "/bin"}
+
+
+@needs_fork
+def test_forked_contestant_cannot_read_broker_keys(monkeypatch):
+    monkeypatch.setenv("ALPACA_API_KEY", "leak-me")
+    monkeypatch.setenv("TRADEBOT_LIVE_CONFIRM", "I_UNDERSTAND")
+
+    class EnvPeek(Algo):
+        def on_bar(self, bar, ctx):
+            if "ALPACA_API_KEY" in os.environ or "TRADEBOT_LIVE_CONFIRM" in os.environ:
+                raise RuntimeError("secret visible in the sandbox")
+            return Action.hold()
+
+    result = _run(EnvPeek, harden=False)
+    assert result.status == "ok", result.error
