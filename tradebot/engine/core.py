@@ -1,13 +1,14 @@
 """Live/paper trading engine.
 
-One ``rebalance()`` pass per symbol:
-  1. pull recent bars and current account/position from the broker,
-  2. ask the strategy for the latest target regime,
-  3. size it with the RiskManager (respecting per-position and gross caps),
-  4. submit the difference as a market order and persist it.
+One ``rebalance()`` pass:
+  1. pull recent bars and current account/positions from the broker,
+  2. build a :class:`~tradebot.advisor.Proposal` with ``advisor.propose`` —
+     strategy targets, selector gate, allocator weights, RiskManager sizing,
+  3. submit each line's delta as a market order and persist it.
 
-The same Strategy + RiskManager objects power the backtester, so behaviour is
-consistent between simulation and live. A daily-loss circuit breaker flattens
+Step 2 is the very function the Today page calls, so a suggestion and an
+execution cannot disagree. The same Strategy + RiskManager objects power the
+backtester, so behaviour is consistent between simulation and live. A daily-loss circuit breaker flattens
 and stops trading for the session once breached.
 """
 
@@ -16,6 +17,8 @@ from __future__ import annotations
 import logging
 import time
 
+from .. import advisor
+from ..advisor import Proposal
 from ..broker.base import Broker
 from ..config import Settings
 from ..notify import LogNotifier
@@ -89,14 +92,9 @@ class Engine:
                 needed = max(needed, component.required_history)
         return max(needed * 2, 60)
 
-    def _submit_delta(
-        self, symbol: str, target: int, desired: float, price: float, equity: float
-    ) -> RebalanceAction:
-        return orders.submit_delta(self, symbol, target, desired, price, equity)
-
     def rebalance(self) -> list[RebalanceAction]:
-        """One full pass: gather signals for all symbols, size the book
-        jointly, then submit the per-symbol deltas."""
+        """One full pass: book bracket exits, read the account, build the
+        proposal (``advisor.propose``), then submit its lines."""
         if not self.broker.is_market_open():
             log.info("Market closed; skipping rebalance.")
             return []
@@ -113,10 +111,24 @@ class Engine:
         if self._halt_on_daily_loss(acct.equity):
             return []
 
-        frames, targets, prices = self._gather_signals()
-        self._apply_selector(frames, targets)
-        desired = self._size_book(frames, targets, prices, acct.equity)
-        return self._submit_all(targets, desired, prices, acct.equity)
+        proposal = self.propose(acct.equity, acct.cash)
+        if self.storage and self.allocator is not None:
+            # Post-overlay: what the book actually targets.
+            self.storage.record_weights(proposal.weights or {}, self.mode)
+        return self._submit_all(proposal)
+
+    def propose(self, equity: float, cash: float = 0.0) -> Proposal:
+        """What this pass would trade: fetch bars and positions, then ask the
+        advisor. Submits nothing."""
+        frames = signals.fetch_frames(self)
+        positions = orders.current_positions(self, frames)
+        return advisor.propose(
+            symbols=list(self.settings.symbols), frames=frames, equity=equity,
+            cash=cash, positions=positions, strategy=self.strategy, risk=self.risk,
+            selector=self.selector, allocator=self.allocator, overlays=self.overlays,
+            # Full stored history for a ranked selector (see `_selector_frames`).
+            selector_frames=self._selector_frames(frames) if self.selector else None,
+        )
 
     def _halt_on_daily_loss(self, equity: float) -> bool:
         """Circuit breaker: stop opening risk if today's drawdown is too deep."""
@@ -134,47 +146,15 @@ class Engine:
         })
         return True
 
-    def _gather_signals(self):
-        return signals.gather_signals(self)
-
-    def _apply_selector(self, frames: dict[str, object], targets: dict[str, int]) -> None:
-        """Force symbols outside the selection flat, in place.
-
-        Membership is recomputed every pass from the FULL accumulated history
-        (bars are the only state), not from the bounded window the strategy
-        uses — see `_selector_frames`.
-        """
-        if self.selector is None:
-            return
-        membership = self.selector.latest_targets(self._selector_frames(frames))
-        for sym in targets:
-            if not membership.get(sym):
-                targets[sym] = 0
-
-    def _size_book(self, frames, targets: dict[str, int], prices: dict[str, float],
-                   equity: float) -> dict[str, float]:
-        """Size the whole book at once (order-independent). Live decisions use
-        bars up to now, same as the strategy's latest_target."""
-        weights = None
-        if self.allocator is not None:
-            weights = self.allocator.weights(targets, frames)
-            for overlay in self.overlays:
-                weights = overlay.transform(weights, targets, frames)
-            if self.storage:
-                # Post-overlay: what the book actually targets.
-                self.storage.record_weights(weights, self.mode)
-        return self.risk.allocate(targets, equity, prices, weights)
-
-    def _submit_all(self, targets: dict[str, int], desired: dict[str, float],
-                    prices: dict[str, float], equity: float) -> list[RebalanceAction]:
+    def _submit_all(self, proposal: Proposal) -> list[RebalanceAction]:
         actions: list[RebalanceAction] = []
-        for sym in targets:
+        for line in proposal.lines:
+            if line.skipped:      # never sized: no bars, bad price, failed signal
+                continue
             try:
-                actions.append(
-                    self._submit_delta(sym, targets[sym], desired[sym], prices[sym], equity)
-                )
+                actions.append(orders.submit_line(self, line))
             except Exception:  # one bad symbol shouldn't kill the whole pass
-                log.exception("Rebalance failed for %s", sym)
+                log.exception("Rebalance failed for %s", line.symbol)
         return actions
 
     def run_forever(self, max_iterations: int | None = None) -> None:

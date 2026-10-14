@@ -47,25 +47,37 @@ def check_brackets(engine) -> None:
         })
 
 
-def submit_delta(
-    engine, symbol: str, target: int, desired: float, price: float, equity: float
-) -> RebalanceAction:
-    current = engine.broker.position(symbol).qty
-    delta = engine.risk.material_delta(desired, current, price, equity)
-    if not engine.risk.config.allow_fractional:
-        delta = float(round(delta))
+def current_positions(engine, frames: dict[str, object]) -> dict[str, float]:
+    """Signed quantity held per fetched symbol, read from the broker.
 
+    A symbol whose position cannot be read is dropped from ``frames`` (in
+    place): sizing it against an unknown holding could double an entry.
+    """
+    out: dict[str, float] = {}
+    for sym in list(frames):
+        try:
+            out[sym] = float(engine.broker.position(sym).qty)
+        except Exception:
+            log.exception("Position read failed for %s; skipping it this pass", sym)
+            frames.pop(sym)
+    return out
+
+
+def submit_line(engine, line) -> RebalanceAction:
+    """Submit one proposal line's delta. The advisor already applied the band
+    and the rounding, so the quantity here is final."""
+    symbol, target, delta, price = line.symbol, line.target, line.order_qty, line.price
+    current = line.current_qty
     action = RebalanceAction(
         symbol=symbol,
         target=target,
         current_qty=current,
-        desired_qty=desired,
+        desired_qty=line.desired_qty,
         order_qty=delta,
     )
     if delta == 0:
         log.info("%s: target=%d, holding %.4f shares (no order)", symbol, target, current)
         return action
-
     # Brackets ride on entries only: a reduction is already an exit, and
     # attaching a stop to it would rest an exit against a position that is
     # on its way out.

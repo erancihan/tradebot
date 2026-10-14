@@ -42,7 +42,10 @@ tradebot/
   consortium/    voice, consensus, panel
   broker/        base (Broker ABC), alpaca (lazy SDK), dryrun + brackets (BracketsMixin)
   data/          synthetic + factor_panel, cache + coverage, replay, csv, alpaca_data, stream
-  engine/        core (Engine.rebalance: halt, gather, gate, size, submit), signals, orders
+  advisor/       propose (pure: bars + account -> Proposal of signed deltas), explain
+                 (one-sentence reasons), types (Proposal, ProposalLine)
+  engine/        core (Engine.rebalance: halt, advisor.propose, submit lines), signals
+                 (fetch_frames, selector_frames), orders (current_positions, submit_line)
   storage/       SQLite tradebot.db: schema, orders, bars, weights (Storage = mixins)
   cli/           __init__ (build_parser, main), common, demo, backtest, run, dryrun, status,
                  universe, data, arena, arena_history, arena_gate, arena_journal,
@@ -63,7 +66,7 @@ tests/  docs/ (research-record.md, adr/, plans/)  data/cache/ (gitignored)
 config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])  Makefile
 ```
 
-Later epics add `advisor.py`, `autopilot.py`, `whatif.py` and `market/`.
+Later epics add `autopilot.py`, `whatif.py` and `market/`.
 
 ## Invariants
 
@@ -151,6 +154,12 @@ build on every push and PR, with no credentials.
 ## Gotchas
 
 **Execution and data**
+- **Engine and advisor share one code path; change `propose`, not
+  `rebalance`.** `Engine.rebalance` fetches bars and positions, calls
+  `advisor.propose` and submits the lines. Targets, the selector gate,
+  weights, sizing, the band and rounding all live in `propose`, so a
+  suggestion on the Today page is exactly what a pass would trade.
+  `test_propose_matches_engine_rebalance_deltas` guards it.
 - **Bad prices are flat.** NaN, inf or non-positive prices never reach sizing.
   `RiskManager` returns 0 for them and all three loops skip the symbol.
   `math.floor(NaN)` raises.

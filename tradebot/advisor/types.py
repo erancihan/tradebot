@@ -1,9 +1,4 @@
-"""The advisor: what the engine would trade right now, without trading it.
-
-A :class:`Proposal` is the set of signed share deltas one rebalance pass would
-submit. Suggestions (the Today page) and executions (``Engine.rebalance``) are
-two consumers of the same proposal, so they cannot disagree.
-"""
+"""Proposal value types: one suggested trade per line, one batch per pass."""
 
 from __future__ import annotations
 
@@ -50,3 +45,4 @@ class Proposal:
             "lines": [line.to_dict() for line in self.lines],
             "provenance": dict(self.provenance),
         }
+
