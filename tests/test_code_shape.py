@@ -19,27 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # `path` for an oversized module and `path::function` for an oversized
 # function. An entry that no longer offends fails the suite, so this list can
 # only shrink — delete the line in the same change that fixes the offender.
-KNOWN_OFFENDERS: set[str] = {
-    "tradebot/arena/gate.py",  # split in progress
-    "tradebot/arena/gate.py::evaluate_gate",  # split in progress
-    "tradebot/arena/runner.py",  # split in progress
-    "tradebot/arena/season.py",  # split in progress
-    "tradebot/arena/simulation.py::simulate",  # split in progress
-    "tradebot/arena/store.py",  # split in progress
-    "tradebot/backtest.py",  # split in progress
-    "tradebot/backtest.py::run",  # split in progress
-    "tradebot/broker/dryrun.py",  # split in progress
-    "tradebot/consortium.py",  # split in progress
-    "tradebot/data/cache.py",  # split in progress
-    "tradebot/data/synthetic.py",  # split in progress
-    "tradebot/data/synthetic.py::synthetic_factor_panel",  # split in progress
-    "tradebot/engine.py",  # split in progress
-    "tradebot/engine.py::rebalance",  # split in progress
-    "tradebot/selection.py",  # split in progress
-    "tradebot/storage.py",  # split in progress
-    "tradebot/universe.py",  # split in progress
-    "tradebot/walkforward.py::walk_forward",  # split in progress
-}
+KNOWN_OFFENDERS: set[str] = set()
 
 
 def _python_files(*roots: str) -> list[Path]:

@@ -108,7 +108,7 @@ def absolute_drawdown_check(ok_rows: list[dict], max_drawdown_limit: float) -> G
 
     Splitting them is what actually resolves M5; it is not a loosening. Both
     are required, so this can only ever turn a PASS into a FAIL — which is
-    precisely what makes it admissible under PLAN.md's test (a change that
+    precisely what makes it admissible under the admissibility rule in docs/research-record.md (a change that
     makes the candidate in flight fail *harder*). The earlier proposal —
     replacing the absolute bound with `absolute OR relative` — would have
     converted the recorded synthetic FAIL and was rejected for exactly that

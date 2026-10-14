@@ -24,8 +24,7 @@ Project skills live in `.claude/skills/`. Keep them in sync with this file.
 
 ## Layout
 
-Target layout of epic E1 (`03-program-design.md`). The package split is in
-progress, so some modules still sit at their old single-file paths.
+Package layout. Every module stays under 200 lines (see Code rules).
 
 ```
 tradebot/
@@ -35,21 +34,28 @@ tradebot/
   indicators.py  pure pandas indicators
   risk.py        RiskManager + RiskConfig (sizing, allocate, caps, band, daily loss, brackets)
   allocation.py  equal, inverse_vol, explicit      overlays.py  vol_target, sector_cap
-  selection/     base, ranked (momentum, low_vol), regime (regime_switch)
+  selection/     base, ranked (momentum, low_vol), regime (regime_switch), registry in __init__
   universe/      screen (LiquidityScreen), alpaca (AlpacaLiquidityUniverse)
-  backtest/      result, marks (_sizing_marks), runner (Backtester)
+  backtest/      result (BacktestResult), runner (Backtester), steps (shared per-bar
+                 helpers used by BOTH the backtester and arena/simulation.py)
   walkforward.py portfolio.py  models.py  notify.py  config.py
-  consortium/    voice, blend, panel
-  broker/        Broker ABC, AlpacaBroker (lazy SDK), dryrun + brackets
-  data/          synthetic + factor_panel, cache + coverage, replay, alpaca_data, stream
-  engine.py      live/paper/dry-run loop + engine_pass.py (gather, gate, size, submit)
-  storage/       SQLite tradebot.db: schema, orders, bars, weights
-  cli/           build_parser + main, common, one module per command, arena*, season
-  arena/         api, loader, interfaces, adapters, simulation, scenario, runner + isolation,
-                 sandbox, scoring, gate/, result, tournament, league, season/ (model,
-                 feeds, daemon), panel, market, contestant, store + journal
-  web/           app, server, dependencies, repository/, services/ (incl. jobs/),
-                 schemas/, routes/ (pages, partials, sse, api/), templates/, static/
+  consortium/    voice, consensus, panel
+  broker/        base (Broker ABC), alpaca (lazy SDK), dryrun + brackets (BracketsMixin)
+  data/          synthetic + factor_panel, cache + coverage, replay, csv, alpaca_data, stream
+  engine/        core (Engine.rebalance: halt, gather, gate, size, submit), signals, orders
+  storage/       SQLite tradebot.db: schema, orders, bars, weights (Storage = mixins)
+  cli/           __init__ (build_parser, main), common, demo, backtest, run, dryrun, status,
+                 universe, data, arena, arena_history, arena_gate, arena_journal,
+                 arena_league, season, season_run
+  arena/         api, loader, interfaces, adapters, simulation, scenario, runner + isolation
+                 (SubprocessRunner), sandbox, scoring, gate/ (measure, criteria, report,
+                 evaluate), result, tournament, league, season/ (schema, config, store,
+                 model, feeds, daemon), panel, market, contestant, store + journal
+  web/           app, server, dependencies, repository/ (trading, arena, season),
+                 services/ (account, cache, consortium, jobs/ {registry, frames,
+                 backtest, dryrun, catalog}), schemas/, routes/ (pages, partials, sse,
+                 api/ {trading, arena, jobs}), templates/ (components/tabbar.html),
+                 static-src/ (PWA manifest + icons, committed), static/ (built, gitignored)
 algos/           12 contestants + canaries/ and consortium/ (both opt-in)
 scenarios/       regime library, factor library (xs_*), real_xs_* (+ sealed holdout), legacy real_*
 frontend/        TypeScript, Tailwind, Alpine, ECharts, esbuild

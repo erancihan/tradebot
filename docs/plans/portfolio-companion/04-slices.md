@@ -11,7 +11,7 @@ merged to master from its `feat/<epic>` branch with a no-ff merge commit.
 ## E1: housekeeping
 - [x] S1.1 `tests/test_code_shape.py`: fail on any function over 60 lines, report modules over 200 lines
 - [x] S1.2 split `tradebot/cli.py` into `tradebot/cli/` (one module per command group)
-- [ ] S1.3 split any other module the shape test flags
+- [x] S1.3 split any other module the shape test flags
 - [x] S1.4 docs to final state: concise `CLAUDE.md`, research record moved to `docs/research-record.md`, `docs/PLAN.md` and `docs/DESIGN-HANDOFF.md` deleted, README describes the companion
 - [x] S1.5 mobile-first shell: responsive `base.html`, bottom tab bar, touch-size controls, PWA manifest
 
