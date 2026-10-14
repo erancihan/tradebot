@@ -12,12 +12,15 @@ pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from .web_client import local_client  # noqa: E402
+
 from tradebot.config import AlpacaCredentials  # noqa: E402
 from tradebot.data.cache import BarCache  # noqa: E402
 from tradebot.data.synthetic import synthetic_ohlcv  # noqa: E402
 from tradebot.models import Order, Side  # noqa: E402
 from tradebot.storage import Storage  # noqa: E402
 from tradebot.web.app import create_app  # noqa: E402
+from tradebot.web.guard import POST_HEADERS  # noqa: E402
 from tradebot.web.services import advisor_service  # noqa: E402
 
 from .test_advisor import dummy_proposal  # noqa: E402
@@ -34,7 +37,7 @@ def _config(tmp_path, symbols=("SPY", "QQQ"), extra: str = "") -> str:
 
 
 def _client(tmp_path, settings_path: str | None = None) -> TestClient:
-    return TestClient(create_app(trading_db=str(tmp_path / "t.db"),
+    return local_client(create_app(trading_db=str(tmp_path / "t.db"),
                                  arena_db=str(tmp_path / "a.db"),
                                  cache_dir=str(tmp_path / "cache"),
                                  settings_path=settings_path))
@@ -122,7 +125,7 @@ def _wait(client, job_id, timeout=15.0):
 
 
 def _refresh(client):
-    r = client.post("/api/proposal/refresh")
+    r = client.post("/api/proposal/refresh", headers=POST_HEADERS)
     assert r.status_code == 200
     return _wait(client, r.json()["job_id"])
 

@@ -5,7 +5,7 @@ import pytest
 pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
 
-from fastapi.testclient import TestClient  # noqa: E402
+from .web_client import local_client  # noqa: E402
 
 from tradebot.arena.scenario import Scenario  # noqa: E402
 from tradebot.arena.store import ArenaStore  # noqa: E402
@@ -63,7 +63,7 @@ def client(tmp_path):
     app = create_app(trading_db=str(tmp_path / "tradebot.db"),
                      arena_db=str(tmp_path / "arena.db"),
                      season_db=str(tmp_path / "season.db"))
-    return TestClient(app)
+    return local_client(app)
 
 
 def test_dashboard_renders(client):
@@ -147,7 +147,7 @@ def test_allocations_partial_and_dashboard_section(client):
 def test_allocations_empty_state(tmp_path):
     app = create_app(trading_db=str(tmp_path / "missing.db"),
                      arena_db=str(tmp_path / "missing2.db"))
-    c = TestClient(app)
+    c = local_client(app)
     a = c.get("/api/allocations").json()
     assert a["weights"] == [] and a["universe"] == []
     assert "No target weights recorded yet" in c.get("/partials/allocations").text
@@ -182,7 +182,7 @@ def test_seasons_page_renders(client):
 def test_empty_databases_render_gracefully(tmp_path):
     app = create_app(trading_db=str(tmp_path / "missing.db"),
                      arena_db=str(tmp_path / "missing2.db"))
-    c = TestClient(app)
+    c = local_client(app)
     assert c.get("/").status_code == 200
     assert c.get("/arena").status_code == 200
     assert c.get("/api/equity").json()["points"] == []
@@ -194,7 +194,7 @@ def test_empty_pages_explain_how_to_fill_themselves(tmp_path):
     app = create_app(trading_db=str(tmp_path / "missing.db"),
                      arena_db=str(tmp_path / "missing2.db"),
                      season_db=str(tmp_path / "missing3.db"))
-    c = TestClient(app)
+    c = local_client(app)
     assert "tradebot run --dry-run --replay" in c.get("/").text
     assert "tradebot arena run --algos ./algos" in c.get("/arena").text
     assert "tradebot run --dry-run --replay" in c.get("/consortium").text
@@ -212,7 +212,7 @@ def _panel_client(tmp_path, symbols=("SPY", "QQQ"), periods=40):
         st.record_bars(sym, "1day", synthetic_ohlcv(periods=periods, seed=i + 1), "paper")
     st.record_equity(10_000, 5_000, "paper")
     st.close()
-    return TestClient(create_app(trading_db=str(db)))
+    return local_client(create_app(trading_db=str(db)))
 
 
 def test_the_panel_page_shows_every_member_and_the_blend(tmp_path):
@@ -262,7 +262,7 @@ def test_an_empty_store_renders_a_panel_instead_of_failing(tmp_path):
     """No bars is a normal state, not a 500."""
     db = tmp_path / "empty.db"
     Storage(str(db)).close()
-    client = TestClient(create_app(trading_db=str(db)))
+    client = local_client(create_app(trading_db=str(db)))
 
     page = client.get("/consortium")
     assert page.status_code == 200
@@ -304,7 +304,7 @@ def test_a_seeded_season_says_so_on_the_dashboard(tmp_path):
         seed_season(season, frames)
         sid = season.id
 
-    client = TestClient(create_app(season_db=str(db)))
+    client = local_client(create_app(season_db=str(db)))
     body = client.get(f"/seasons/{sid}").text
 
     assert "Backfilled through" in body
@@ -316,7 +316,7 @@ def test_an_unseeded_season_shows_no_backfill_banner(tmp_path):
     """The banner is a signal, not decoration."""
     db = tmp_path / "season.db"
     _seed_season(db)
-    client = TestClient(create_app(season_db=str(db)))
+    client = local_client(create_app(season_db=str(db)))
 
     body = client.get("/seasons/1").text
     assert "Backfilled through" not in body

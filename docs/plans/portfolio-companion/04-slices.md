@@ -30,9 +30,9 @@ merged to master from its `feat/<epic>` branch with a no-ff merge commit.
 - [x] S3.5 account state from SQLite when no broker credentials exist
 
 ## E3b: Web hardening (before autopilot exposes trade actions)
-- [ ] S3b.1 same-origin guard: every `POST /api/*` requires the `X-Requested-With: tradebot` header, sent by the TypeScript client, refused with 403 otherwise (cross-origin forms cannot set it)
-- [ ] S3b.2 `TrustedHostMiddleware` with an allowlist from `--allow-host` (default localhost), blocks DNS rebinding
-- [ ] S3b.3 optional access token (`TRADEBOT_WEB_TOKEN`): when set, every request needs the cookie set by `/login?token=`; documented as the way to reach the app from a phone over the network
+- [x] S3b.1 same-origin guard: every `POST /api/*` requires the `X-Requested-With: tradebot` header, sent by the TypeScript client, refused with 403 otherwise (cross-origin forms cannot set it)
+- [x] S3b.2 `TrustedHostMiddleware` with an allowlist from `--allow-host` (default localhost), blocks DNS rebinding
+- [x] S3b.3 optional access token (`TRADEBOT_WEB_TOKEN`): when set, every request needs the cookie set by the `/login` form (or a Bearer header); documented as the way to reach the app from a phone over the network
 
 ## E4: Autopilot
 - [ ] S4.1 tracer: `/autopilot` page shows state from `autopilot_state`, the toggle writes the mode
