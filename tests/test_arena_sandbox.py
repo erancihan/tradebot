@@ -218,5 +218,20 @@ def test_the_degradation_warning_is_emitted_once_per_mechanism(monkeypatch, capl
         _run_with(runner)
         _run_with(runner)
 
-    assert caplog.text.count("could NOT be enforced") == 1
-    assert runner.degraded == {"network"}
+    # Once per mechanism, not once per run. The faked refusal is always among
+    # them; the host may genuinely refuse others too (macOS has no `prctl`, so
+    # `no_new_privs` degrades there), and each of those warns once as well.
+    assert "network" in runner.degraded
+    assert caplog.text.count("could NOT be enforced") == len(runner.degraded)
+
+
+def test_a_missing_libc_symbol_is_reported_not_raised(monkeypatch):
+    """`prctl`/`unshare` do not exist on macOS. The lookup used to raise inside
+    the forked child, killing it before it could report, so every hardened
+    contestant came back as a bare TIMEOUT instead of a degradation warning."""
+    import tradebot.arena.sandbox as sandbox_mod
+
+    monkeypatch.setattr(sandbox_mod, "_libc", lambda: object())  # no symbols at all
+    # Only the libc-backed mechanisms: the rlimit ones would cap this process.
+    report = sandbox_mod.apply_hardening(no_write=False, max_open_files=0)
+    assert report == {"no_new_privs": False, "network": False}

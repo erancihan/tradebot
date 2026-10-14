@@ -15,9 +15,14 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Cancel superseded runs on the same ref (e.g. rapid pushes to a PR branch).
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+# Least privilege: the jobs only read the checkout.
+permissions:
+  contents: read
 
 jobs:
   python:
@@ -27,7 +32,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: pip
       - name: Install
         run: |

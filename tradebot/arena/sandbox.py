@@ -52,6 +52,21 @@ def _libc() -> ctypes.CDLL:
     return ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6", use_errno=True)
 
 
+def _libc_call(libc: object, name: str, *args: int) -> bool:
+    """Call a libc function; True iff the symbol exists and it returned 0.
+
+    ``prctl`` and ``unshare`` are Linux-only. On macOS the ctypes lookup itself
+    raises ``AttributeError``, which used to kill the forked contestant before
+    it could report anything, so every hardened run surfaced as a misleading
+    10s TIMEOUT. A missing symbol is exactly "this mechanism is not enforced
+    here", so it belongs in the capability report like any other refusal.
+    """
+    fn = getattr(libc, name, None)
+    if fn is None:
+        return False
+    return fn(*args) == 0
+
+
 def _libseccomp() -> ctypes.CDLL:
     lib = ctypes.CDLL("libseccomp.so.2", use_errno=True)
     lib.seccomp_init.restype = ctypes.c_void_p
@@ -119,7 +134,7 @@ def apply_hardening(no_write: bool = True, isolate_network: bool = True,
     libc = _libc()
 
     if no_new_privs:
-        report["no_new_privs"] = libc.prctl(_PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) == 0
+        report["no_new_privs"] = _libc_call(libc, "prctl", _PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
 
     if no_write:
         try:
@@ -139,7 +154,7 @@ def apply_hardening(no_write: bool = True, isolate_network: bool = True,
 
     if isolate_network:
         # rc == 0 -> we entered a fresh, empty network namespace (no network).
-        report["network"] = libc.unshare(_CLONE_NEWNET) == 0
+        report["network"] = _libc_call(libc, "unshare", _CLONE_NEWNET)
 
     if seccomp:
         # Last: blocks execve/execveat/ptrace; needs no_new_privs (set above).

@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from tradebot import indicators
 
@@ -79,3 +80,36 @@ def test_bollinger_bands_order_and_warmup():
     assert (lower[valid] <= mid[valid]).all()
     # Bands are symmetric around the middle.
     assert np.allclose(upper[valid] - mid[valid], mid[valid] - lower[valid])
+
+
+def _ohlc(close: pd.Series) -> tuple[pd.Series, pd.Series, pd.Series]:
+    # Simple synthetic high/low around the close for OHLC indicators.
+    return close + 1.0, close - 1.0, close
+
+
+def test_true_range_and_atr_are_nonnegative():
+    close = pd.Series(np.linspace(100, 120, 40))
+    high, low, _ = _ohlc(close)
+    tr = indicators.true_range(high, low, close)
+    assert (tr >= 0).all()
+    a = indicators.atr(high, low, close, window=14)
+    assert a.iloc[:13].isna().all()          # warm-up
+    assert (a.dropna() >= 0).all()
+
+
+def test_donchian_channel_tracks_extremes_with_no_lookahead():
+    close = pd.Series(np.linspace(100, 120, 30))
+    high, low, _ = _ohlc(close)
+    d = indicators.donchian(high, low, window=10)
+    assert d.iloc[:9].isna().all().all()     # warm-up
+    # Rolling max/min include the current bar, so upper>=high, lower<=low.
+    tail = d.dropna()
+    assert (tail["upper"] >= high.loc[tail.index]).all()
+    assert (tail["lower"] <= low.loc[tail.index]).all()
+
+
+def test_roc_matches_pct_change():
+    s = pd.Series([100.0, 110.0, 121.0, 133.1])
+    r = indicators.roc(s, window=1)
+    assert r.iloc[1] == pytest.approx(10.0)
+    assert r.iloc[2] == pytest.approx(10.0)

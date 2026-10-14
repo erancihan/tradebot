@@ -68,7 +68,7 @@ class RiskManager:
         equity at ``price`` — capped at ``max_position_pct``, which is also
         the default when no weight is given.
         """
-        if target == 0 or price <= 0 or equity <= 0:
+        if target == 0 or not math.isfinite(price) or price <= 0 or equity <= 0:
             return 0.0
         if weight is None:
             weight = self.config.max_position_pct
@@ -121,7 +121,7 @@ class RiskManager:
         ``current_gross`` is the absolute market value of *other* positions
         already held (excluding the one being adjusted).
         """
-        if desired_qty == 0:
+        if desired_qty == 0 or not math.isfinite(price) or price <= 0:
             return 0.0
         cap = equity * self.config.max_gross_exposure
         room = cap - current_gross

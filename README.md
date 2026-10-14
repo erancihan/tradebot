@@ -1,5 +1,9 @@
 # tradebot
 
+[![CI](https://github.com/erancihan/tradebot/actions/workflows/ci.yml/badge.svg)](https://github.com/erancihan/tradebot/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+
 A lean, **paper-trading-first** equities trading bot in Python, built on
 [Alpaca](https://alpaca.markets/). It backtests, paper-trades, and (when you
 explicitly opt in) live-trades US stocks & ETFs using pluggable strategies and

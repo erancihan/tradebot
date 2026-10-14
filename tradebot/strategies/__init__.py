@@ -14,9 +14,11 @@ from .buy_and_hold import BuyAndHold
 from .donchian_breakout import DonchianBreakout
 from .macd_trend import MacdTrend
 from .meta import EnsembleVote, FollowTheLeader
+from .momentum import Momentum
 from .registry import STRATEGIES, build_strategy
 from .rsi_reversion import RsiReversion
 from .sma_crossover import SmaCrossover
+from .supertrend import Supertrend
 
 __all__ = [
     "Strategy",
@@ -28,6 +30,8 @@ __all__ = [
     "BollingerReversion",
     "FollowTheLeader",
     "EnsembleVote",
+    "Momentum",
+    "Supertrend",
     "STRATEGIES",
     "build_strategy",
 ]
