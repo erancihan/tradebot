@@ -91,7 +91,8 @@ Keep these in sync when workflows or invariants change.
 │   ├── engine.py             # live/paper/dry-run rebalance loop
 │   ├── storage.py            # SQLite: orders + equity snapshots + bars (tradebot.db)
 │   ├── config.py             # Settings (YAML) + AlpacaCredentials (env) + live gate
-│   ├── cli.py                # `tradebot` entrypoint (argparse)
+│   ├── cli/                  # `tradebot` entrypoint: __init__ builds the parser,
+│   │                         #   one module per command group exposes register(sub)
 │   ├── arena/                # competition system (see below)
 │   └── web/                  # FastAPI dashboard (see below)
 ├── algos/                    # example arena contestants + how-to README

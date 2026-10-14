@@ -94,7 +94,7 @@ accident. The design reflects that:
 | `tradebot/consortium.py` | Blend many algorithms into one book, weighted by voice |
 | `tradebot/storage.py` | SQLite persistence of orders + equity |
 | `tradebot/config.py` | YAML config + env secrets + live-trading gate |
-| `tradebot/cli.py` | `demo` / `backtest` / `run` / `status` commands |
+| `tradebot/cli/` | the `tradebot` CLI, one module per command group (`demo`, `backtest`, `run`, `status`, `arena`, ...) |
 
 ## Quickstart
 
