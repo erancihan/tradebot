@@ -54,3 +54,35 @@ def test_reads_need_no_header(tmp_path):
     client = _client(tmp_path)
     assert client.get("/api/strategies").status_code == 200
     assert client.get("/").status_code == 200
+
+
+# --- S3b.2 trusted hosts ----------------------------------------------------
+
+def test_a_foreign_host_header_is_refused(tmp_path):
+    r = _client(tmp_path).get("/", headers={"Host": "evil.example"})
+    assert r.status_code == 400
+
+
+@pytest.mark.parametrize("host", ["localhost:8000", "127.0.0.1", "[::1]:8000"])
+def test_loopback_hosts_are_served_by_default(tmp_path, host):
+    assert _client(tmp_path).get("/api/strategies", headers={"Host": host}).status_code == 200
+
+
+def test_an_allowed_host_is_served(tmp_path):
+    client = _client(tmp_path, allowed_hosts=["testserver", "pi.lan"])
+    assert client.get("/", headers={"Host": "pi.lan:8000"}).status_code == 200
+    assert client.get("/", headers={"Host": "evil.example"}).status_code == 400
+
+
+def test_a_wildcard_disables_the_check_loudly(tmp_path, caplog):
+    client = _client(tmp_path, allowed_hosts=["*"])
+    assert client.get("/", headers={"Host": "evil.example"}).status_code == 200
+    assert "DNS-rebinding" in caplog.text
+
+
+def test_cli_and_env_extend_the_defaults():
+    from tradebot.web.server import allowed_hosts
+
+    hosts = allowed_hosts(["pi.lan", "localhost"], env=" 192.168.1.5 ,,")
+    assert hosts[:4] == ["localhost", "127.0.0.1", "[::1]", "testserver"]
+    assert hosts[4:] == ["192.168.1.5", "pi.lan"]
