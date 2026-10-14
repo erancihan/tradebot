@@ -581,6 +581,35 @@ The `hedge` voice scores 3.68% against equal voice's 3.37% over the same seven
 scenarios — +0.31pp, same verdict, same pattern. Weighting members by their
 trailing P&L mostly reallocates noise, which is why equal weight is the default.
 
+## Today: suggestions
+
+Open `/today` on a phone (it is the first tab) to see what the bot would buy
+or sell right now. Each row shows the symbol, a BUY / SELL / HOLD badge, the
+share quantity and dollar amount, and a one-line reason built from what each
+layer decided, for example:
+
+> sma_crossover signals long; rank 2 of 5, weight 23%, capped by the risk limit; buy.
+
+A row can also say `not selected (rank 4 of 5)` when the selector dropped the
+symbol, or `within band, hold` when the change is smaller than the no-trade
+band. The account strip on top shows equity, cash and where they came from:
+`paper (Alpaca)` with credentials, `paper (from log)` from the local SQLite log
+(positions are the signed sum of logged orders), or `paper (starting cash)`.
+
+Tap **Refresh** to compute a new proposal on the server. It reads bars through
+the local cache and fetches missing bars only when Alpaca credentials are in the
+server's environment; without them it uses cached bars and, for a symbol that
+is not cached, answers with the exact `tradebot data pull` command. The
+suggestion is computed by `advisor.propose`, the same function the engine runs
+before it submits, so a suggestion is exactly what a paper pass would trade.
+Nothing on this page places an order.
+
+The page advises on the symbols and strategy stack in the server's settings:
+
+```bash
+tradebot-web --config config.yaml   # default: ./config.yaml if present, else SPY + QQQ
+```
+
 ## Dashboard (web UI)
 
 A FastAPI dashboard visualises everything the bot records: the equity curve,
@@ -596,7 +625,8 @@ long runs stamp dates years ahead; they are labels, not forecasts) or **cached
 real bars** (whatever `tradebot data pull` already put in `data/cache`, picked
 by symbol and date range). Every result wears a **provenance badge** saying
 which one produced it, so a synthetic curve can never pass for a real one. The
-dashboard itself **never fetches from the network** — ask for an uncached range
+Run page **never fetches from the network** (only the Today refresh may, and only
+with server-side credentials) — ask for an uncached range
 and it answers with the exact pull command to run instead. The strategy
 dropdown lists the whole registry, with its parameters introspected into form
 fields. Empty pages (dashboard, arena, consortium on a fresh machine) say which

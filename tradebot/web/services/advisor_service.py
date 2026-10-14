@@ -137,11 +137,16 @@ def _frames(settings, cache_dir, lookback, fetcher, now):
 
 
 def _account(settings, trading_db: str, creds):
-    """(equity, cash, positions, source) from the paper broker, else starting cash."""
+    """(equity, cash, positions, source) from the paper broker or the log."""
     if creds is not None:
         broker = _paper_broker(creds)
         acct = broker.account()
         positions = {s: float(p.qty) for s, p in broker.positions().items()}
         return float(acct.equity), float(acct.cash), positions, "alpaca"
-    cash = float(settings.initial_cash)
-    return cash, cash, {}, "initial_cash"
+    repo = TradingRepository(trading_db)
+    positions = repo.positions_from_orders(settings.mode)
+    latest = repo.latest_equity_for(settings.mode)
+    if latest is None:
+        cash = float(settings.initial_cash)
+        return cash, cash, positions, "initial_cash"
+    return float(latest["equity"]), float(latest["cash"]), positions, "log"

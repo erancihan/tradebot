@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from tradebot.config import AlpacaCredentials  # noqa: E402
 from tradebot.data.cache import BarCache  # noqa: E402
 from tradebot.data.synthetic import synthetic_ohlcv  # noqa: E402
+from tradebot.models import Order, Side  # noqa: E402
 from tradebot.storage import Storage  # noqa: E402
 from tradebot.web.app import create_app  # noqa: E402
 from tradebot.web.services import advisor_service  # noqa: E402
@@ -211,6 +212,45 @@ def test_refresh_job_attaches_a_fetcher_only_with_credentials(tmp_path, monkeypa
     assert {ln["symbol"]: ln["current_qty"] for ln in p["lines"]}["SPY"] == 4.0
     # Every fetch landed in the cache, so the next refresh can replay offline.
     assert BarCache(tmp_path / "cache").load("QQQ", "1day") is not None
+
+
+# --- account state from the SQLite log -----------------------------------------
+
+def _seed_log(tmp_path):
+    with Storage(tmp_path / "t.db") as st:
+        st.record_equity(9_000.0, 8_000.0, "paper")
+        st.record_equity(9_500.0, 8_100.0, "paper")
+        st.record_equity(1.0, 1.0, "dry_run")                # another account
+        for sym, qty, side, mode in (("SPY", 10, Side.BUY, "paper"),
+                                     ("SPY", 4, Side.SELL, "paper"),
+                                     ("QQQ", 3, Side.BUY, "paper"),
+                                     ("QQQ", 3, Side.SELL, "paper"),
+                                     ("SPY", 99, Side.BUY, "dry_run")):
+            st.record_order(Order(symbol=sym, qty=qty, side=side), None, mode)
+
+
+def test_positions_derived_from_the_order_log(tmp_path):
+    from tradebot.web.repository import TradingRepository
+
+    _seed_log(tmp_path)
+    repo = TradingRepository(str(tmp_path / "t.db"))
+    assert repo.positions_from_orders("paper") == {"SPY": 6.0}     # QQQ netted flat
+    assert repo.positions_from_orders("dry_run") == {"SPY": 99.0}
+    assert repo.latest_equity_for("paper")["equity"] == 9_500.0
+    assert TradingRepository(str(tmp_path / "missing.db")).positions_from_orders("paper") == {}
+
+
+def test_refresh_offline_reads_the_account_from_the_log(tmp_path, offline):
+    _seed_log(tmp_path)
+    _seed_cache(tmp_path)
+    client = _client(tmp_path, _config(tmp_path))
+    assert _refresh(client)["state"] == "done"
+    p = client.get("/api/proposal").json()["proposal"]
+    assert (p["equity"], p["cash"]) == (9_500.0, 8_100.0)
+    assert p["account_label"] == "paper (from log)"
+    assert {ln["symbol"]: ln["current_qty"] for ln in p["lines"]} == {"SPY": 6.0, "QQQ": 0.0}
+    body = client.get("/today").text
+    assert "paper (from log)" in body and "$9,500.00" in body and "$8,100.00" in body
 
 
 def test_settings_come_from_an_explicit_path_then_cwd_then_defaults(tmp_path, monkeypatch):
