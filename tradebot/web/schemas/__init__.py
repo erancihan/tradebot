@@ -8,6 +8,12 @@ from .arena import (  # noqa: F401
     ArenaRunDetail,
     RunSummary,
 )
+from .autopilot import (  # noqa: F401
+    AutopilotCommand,
+    AutopilotMode,
+    AutopilotStateView,
+    AutopilotView,
+)
 from .consortium import (  # noqa: F401
     ConsortiumMember,
     ConsortiumPosition,

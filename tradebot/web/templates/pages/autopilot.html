@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Autopilot · tradebot{% endblock %}
+{% block content %}
+<section class="mx-auto max-w-xl space-y-4" x-data="autopilot" @click="onClick($event)">
+  <h1 class="text-lg font-semibold text-slate-100">Autopilot</h1>
+
+  <div x-show="error" x-cloak
+       class="rounded-lg border border-rose-800 bg-rose-950/40 p-3 text-sm text-rose-300 break-words"
+       x-text="error"></div>
+
+  <div x-ref="panel" class="space-y-4" :class="busy && 'opacity-60'">
+    {% include "components/autopilot_panel.html" %}
+  </div>
+
+  <p class="text-xs text-slate-600">Paper account only. Live trading stays behind the
+    config file and the confirmation latch; this page cannot reach it.</p>
+</section>
+{% endblock %}

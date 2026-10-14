@@ -218,3 +218,29 @@ export interface WhatIfPreset {
   description: string;
   request: WhatIfPresetRequest;
 }
+
+export type AutopilotModeKey = "off" | "approve" | "auto";
+
+// Exactly one key per command: a mode switch, or line ids to approve/reject.
+export type AutopilotCommand =
+  | { mode: AutopilotModeKey }
+  | { approve: number[] }
+  | { reject: number[] };
+
+export interface AutopilotState {
+  mode: AutopilotModeKey;
+  mode_label: string;
+  running: boolean;
+  account: string; // "paper" | "dry_run"
+  started_at?: string | null;
+  last_pass_at?: string | null;
+  next_pass_at?: string | null;
+  last_error?: string | null;
+  pending: number;
+}
+
+export interface AutopilotView {
+  state: AutopilotState;
+  modes: { key: AutopilotModeKey; label: string }[];
+  pending: ProposalLine[];
+}

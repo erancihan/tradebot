@@ -35,7 +35,7 @@ merged to master from its `feat/<epic>` branch with a no-ff merge commit.
 - [ ] S3b.3 optional access token (`TRADEBOT_WEB_TOKEN`): when set, every request needs the cookie set by `/login?token=`; documented as the way to reach the app from a phone over the network
 
 ## E4: Autopilot
-- [ ] S4.1 tracer: `/autopilot` page shows state from `autopilot_state`, the toggle writes the mode
+- [x] S4.1 tracer: `/autopilot` page shows state from `autopilot_state`, the toggle writes the mode
 - [ ] S4.2 `Autopilot` runner thread: passes on `poll_seconds` inside market hours, injected clock, offline test
 - [ ] S4.3 `approve` mode: pending proposals, approve and reject, submit only approved rows
 - [ ] S4.4 `auto` mode, notifications on fills and halts, stop on a daily-loss halt

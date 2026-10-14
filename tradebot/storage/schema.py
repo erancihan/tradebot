@@ -67,4 +67,10 @@ CREATE TABLE IF NOT EXISTS proposals (
     status       TEXT NOT NULL      -- suggested | pending | approved | rejected | submitted
 );
 CREATE INDEX IF NOT EXISTS proposals_batch ON proposals (batch_id);
+CREATE TABLE IF NOT EXISTS autopilot_state (
+    scope  TEXT NOT NULL,       -- the engine's mode label: paper | dry_run
+    key    TEXT NOT NULL,       -- mode | started_at | last_pass_at | next_pass_at | last_error
+    value  TEXT,
+    PRIMARY KEY (scope, key)
+);
 """
