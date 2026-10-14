@@ -9,11 +9,11 @@ merged to master from its `feat/<epic>` branch with a no-ff merge commit.
 - [x] S0.3 push master, CI green on GitHub (run 38643874486, 2026-10-15)
 
 ## E1: housekeeping
-- [ ] S1.1 `tests/test_code_shape.py`: fail on any function over 60 lines, report modules over 200 lines
-- [ ] S1.2 split `tradebot/cli.py` into `tradebot/cli/` (one module per command group)
+- [x] S1.1 `tests/test_code_shape.py`: fail on any function over 60 lines, report modules over 200 lines
+- [x] S1.2 split `tradebot/cli.py` into `tradebot/cli/` (one module per command group)
 - [ ] S1.3 split any other module the shape test flags
-- [ ] S1.4 docs to final state: concise `CLAUDE.md`, research record moved to `docs/research-record.md`, `docs/PLAN.md` and `docs/DESIGN-HANDOFF.md` deleted, README describes the companion
-- [ ] S1.5 mobile-first shell: responsive `base.html`, bottom tab bar, touch-size controls, PWA manifest
+- [x] S1.4 docs to final state: concise `CLAUDE.md`, research record moved to `docs/research-record.md`, `docs/PLAN.md` and `docs/DESIGN-HANDOFF.md` deleted, README describes the companion
+- [x] S1.5 mobile-first shell: responsive `base.html`, bottom tab bar, touch-size controls, PWA manifest
 
 ## E2: What-if simulator
 - [ ] S2.1 tracer: `/whatif` page posts a hardcoded request and shows a stub result card
