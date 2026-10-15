@@ -70,7 +70,7 @@ One new core concept, the proposal, feeds three flows.
 - They are the only URL-borne credential in the app. That is acceptable because
   a link can only approve or reject lines already pending in its own batch,
   through `Autopilot.act_on_batch` (account-checked, under the lock; it calls the page's approve/reject), never changes the mode, and
-  dies with the batch. Each link acts once (a replay is a 409) and a live
+  lives its TTL or until the batch is replaced, whichever comes first. Each link acts once (a replay is a 409) and a live
   account never gets an Approve link. The links ride through the ntfy topic,
   so the topic grants approval: the README asks for a self-hosted or
   access-controlled ntfy. The secret derives from `TRADEBOT_WEB_TOKEN`, else is
@@ -86,10 +86,16 @@ One new core concept, the proposal, feeds three flows.
 ## Addendum 2026-10-15: quiet re-proposals
 - In approve-first mode a pass whose trades are the same `(symbol, action)` set
   as the waiting batch (its pending and rejected lines) carries that batch over:
-  the pending lines take the new pass's sizing, prices and time, rejected lines
-  stay rejected, and the batch id stays, so the push's links keep working.
-- A changed proposal, an approval older than one `poll_seconds`, a daily-loss
-  halt and switching off expire the batch, as before.
+  the pending lines and holds take the new pass's sizing, prices and time, rejected
+  lines stay rejected, and the batch id stays, so the push's links keep working.
+  History and Today show a carried batch at its latest refresh time.
+- A rejection, even Skip of every line, holds until the proposal changes or the
+  trading day ends, never longer: the same trades are not asked about again that day.
+- A changed proposal, an approval older than one `poll_seconds`, a failed pass, a
+  pass the broker reports closed, a daily-loss halt and switching off expire the batch.
+- Each process pushes a carried batch once before going quiet: without
+  `TRADEBOT_WEB_TOKEN` a restart changes the link key, so the old push's buttons
+  no longer work.
 - A batch is pushed once when recorded, then again as a reminder every
   `links.ttl_seconds(poll)` = max(2 x `poll_seconds`, 30 minutes). The same
   number is the link lifetime, so a push's buttons work until the next push.

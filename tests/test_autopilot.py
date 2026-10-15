@@ -725,3 +725,105 @@ def test_orders_carry_the_pass_clock_not_wall_time(tmp_path):
     pending = pilot.storage.pending_lines(pilot.account)
     assert pilot.approve([pending[0]["id"]]) == 1
     assert _order_times(pilot) == [clock.now.isoformat()]
+
+
+# --- a waiting batch: rejections, restarts, Today, and the expiry points -------
+
+def test_rejecting_every_line_holds_until_the_proposal_changes(tmp_path):
+    """Skip on the phone rejects the whole batch; the same trades on the next
+    pass are the same question, already answered: no new batch, no push."""
+    pilot, broker, clock, notifier, first = _approve_pass(tmp_path)
+    assert pilot.reject([ln["id"] for ln in first]) == len(SYMBOLS)
+    clock.sleep(300)
+    pilot.tick()
+    assert pilot.storage.pending_lines("dry_run") == []
+    assert set(_statuses(pilot).values()) == {"rejected"}
+    batches = pilot.storage._conn.execute("SELECT COUNT(*) FROM proposal_batches").fetchone()
+    assert batches[0] == 1
+    assert len(_pushes(notifier)) == 1
+    assert broker._order_seq == 0
+
+
+def test_a_rejection_ends_with_the_trading_day(tmp_path):
+    pilot, _, clock, notifier, first = _approve_pass(tmp_path)
+    pilot.reject([ln["id"] for ln in first])
+    clock.now = OPEN_NOW + timedelta(days=1)            # Thursday's session
+    pilot.tick()
+    fresh = pilot.storage.pending_lines("dry_run")
+    assert {ln["symbol"] for ln in fresh} == set(SYMBOLS)
+    assert {ln["batch_id"] for ln in fresh} != {first[0]["batch_id"]}
+    pushes = _pushes(notifier)
+    assert len(pushes) == 2 and pushes[-1]["batch_id"] == fresh[0]["batch_id"]
+
+
+def test_a_restarted_pilot_pushes_its_carried_batch_once(tmp_path):
+    """The links the old process signed may be dead (a per-process key), so
+    the first pass after a restart pushes the carried batch again."""
+    first, _, _, _, parked = _approve_pass(tmp_path)
+    pilot, _, _, notifier = build(tmp_path, now=OPEN_NOW + timedelta(seconds=300),
+                                  storage=first.storage)
+    pilot.tick()
+    pushes = _pushes(notifier)
+    assert [p["batch_id"] for p in pushes] == [parked[0]["batch_id"]]
+    pilot.clock.sleep(300)
+    pilot.tick()
+    assert len(_pushes(notifier)) == 1                  # then quiet again
+
+
+def test_today_shows_the_carried_batch_over_an_older_suggestion(tmp_path):
+    from tradebot.web.repository.proposals import latest_proposal
+
+    pilot, _, clock, _, first = _approve_pass(tmp_path)
+    manual = pilot.engine.propose(10_000, 10_000, now=OPEN_NOW + timedelta(seconds=60))
+    pilot.storage.record_proposal(manual, "dry_run")    # a Today refresh in between
+    clock.sleep(300)
+    pilot.tick()
+    for head in (pilot.storage.latest_proposal("dry_run"),
+                 latest_proposal(str(tmp_path / "t.db"), "dry_run")):
+        assert head["id"] == first[0]["batch_id"]
+        assert head["created_at"] == clock.now.isoformat()
+
+
+def test_a_carried_batch_refreshes_its_hold_lines(tmp_path, monkeypatch):
+    pilot, _, _, _ = build(tmp_path)
+    real, prices = pilot.engine.propose, iter([10.0, 11.0])
+
+    def propose(*args, **kw):
+        proposal = real(*args, **kw)
+        hold = replace(proposal.lines[0], symbol="C", action="hold", target=0,
+                       order_qty=0.0, desired_qty=0.0, notional=0.0, price=next(prices))
+        return replace(proposal, lines=[*proposal.lines, hold])
+
+    monkeypatch.setattr(pilot.engine, "propose", propose)
+    pilot.set_mode("approve")
+    pilot.tick()
+    pilot.clock.sleep(300)
+    pilot.tick()
+    head = pilot.storage.latest_proposal("dry_run")
+    (hold,) = [ln for ln in head["lines"] if ln["symbol"] == "C"]
+    assert hold["status"] == "suggested" and hold["price"] == 11.0
+    assert hold["created_at"] == pilot.clock.now.isoformat()
+
+
+def test_a_failed_approve_pass_expires_the_waiting_batch(tmp_path, monkeypatch):
+    pilot, broker, clock, _, _ = _approve_pass(tmp_path)
+
+    def explode(**kw):
+        raise RuntimeError("broker unreachable")
+
+    monkeypatch.setattr(pilot.engine, "step", explode)
+    clock.sleep(300)
+    pilot.tick()
+    assert set(_statuses(pilot).values()) == {"expired"}
+    assert broker._order_seq == 0
+
+
+def test_a_broker_closed_approve_pass_expires_the_waiting_batch(tmp_path, monkeypatch):
+    from tradebot.engine.pending import PassOutcome
+
+    pilot, broker, clock, _, _ = _approve_pass(tmp_path)
+    monkeypatch.setattr(pilot.engine, "step", lambda **kw: PassOutcome(market_closed=True))
+    clock.sleep(300)
+    pilot.tick()
+    assert set(_statuses(pilot).values()) == {"expired"}
+    assert broker._order_seq == 0

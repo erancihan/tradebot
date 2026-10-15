@@ -68,6 +68,9 @@ class Autopilot(ApprovalsMixin, BackgroundMixin, BriefMixin, SessionMixin):
         self._thread: threading.Thread | None = None
         self._running = False
         self._session: object | None = None
+        # Batches this process pushed: after a restart a carried batch is
+        # pushed again, as the old process's link key may be gone.
+        self._announced_here: set[int] = set()
 
     # --- state -----------------------------------------------------------
     @property
@@ -133,7 +136,7 @@ class Autopilot(ApprovalsMixin, BackgroundMixin, BriefMixin, SessionMixin):
         if outcome.halted:
             self._halt()
         elif mode == "approve":
-            outcome.batch_id = self._park(outcome.proposal, now)
+            outcome.batch_id = self._park(outcome.proposal, now, day)
 
     def _halt(self) -> None:
         store_mode(self.storage, self.scope, "off", self.clock())

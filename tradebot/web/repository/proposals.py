@@ -8,10 +8,11 @@ from ._db import _read
 
 
 def latest_proposal(db_path: str, mode: str | None = None) -> dict | None:
-    """The newest proposal batch with its lines, or None before the first one."""
+    """The newest proposal batch with its lines, or None before the first one.
+    Newest by time: a carried autopilot batch keeps its id but its latest time."""
     where, args = ("WHERE mode = ?", (mode,)) if mode else ("", ())
-    head = _read(db_path,
-                 f"SELECT * FROM proposal_batches {where} ORDER BY id DESC LIMIT 1", args)
+    head = _read(db_path, f"SELECT * FROM proposal_batches {where}"
+                 " ORDER BY created_at DESC, id DESC LIMIT 1", args)
     if not head:
         return None
     out = head[0]

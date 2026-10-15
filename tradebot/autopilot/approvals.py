@@ -1,10 +1,12 @@
 """Approve-first: parking a pass's trades, the user's taps, and their expiry.
 
 A pass that proposes the same ``(symbol, action)`` trades as the waiting batch
-carries that batch over: its pending lines are re-sized in place, rejected
-lines stay rejected, and the batch id (so an earlier push's link) survives.
-A changed proposal expires the batch and records a new one. A batch is pushed
-once, then again only as a reminder every ``links.ttl_seconds`` (the link
+carries that batch over: its pending lines and holds are re-sized in place,
+rejected lines stay rejected, and the batch id (so an earlier push's link)
+survives. A rejection (even of every line) holds until the proposal changes
+or the trading day ends. A changed proposal expires the batch and records a
+new one. A batch is pushed once per process (a restart may have changed the
+link key), then again only as a reminder every ``links.ttl_seconds`` (the link
 lifetime, so a push's buttons work until the next one arrives).
 
 The lines are sized at the prices of the pass that last touched them. Once
@@ -15,9 +17,10 @@ approval expires them, never executes them.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from ..engine import pending
+from . import schedule
 from .links import ttl_seconds
 
 #: Line statuses that make up the shape of a waiting batch: a rejected line
@@ -39,6 +42,8 @@ class ForeignBatch(LookupError):
 
 class ApprovalsMixin:
     """Mixed into ``Autopilot``; uses its engine, storage, clock and lock."""
+
+    _announced_here: set[int]
 
     def approve(self, line_ids: list[int]) -> int:
         """Submit the chosen pending lines; returns how many were submitted.
@@ -79,11 +84,11 @@ class ApprovalsMixin:
                 return 0
             return self.approve(ids) if verb == "approve" else self.reject(ids)
 
-    def _park(self, proposal, now: datetime) -> int | None:
+    def _park(self, proposal, now: datetime, day: date) -> int | None:
         """Store an approve pass's proposal: carry the waiting batch over when
         the trades are unchanged, else replace it. Push a new batch, or a
         carried one whose last push is a link lifetime old."""
-        batch_id = self._carried_batch(proposal)
+        batch_id = self._carried_batch(proposal, day)
         if batch_id is None:
             self._expire_pending()
             batch_id = pending.record_pending(self.engine, proposal)
@@ -91,24 +96,35 @@ class ApprovalsMixin:
             self.storage.refresh_pending_batch(batch_id, proposal, self.account)
         if self._announce_due(batch_id, now):
             shown = self._announce_pending(batch_id)
+            self._announced_here.add(batch_id)
             self._set(announced_batch=str(batch_id), announced_at=now,
                       announced_notional=json.dumps(shown))
         return batch_id
 
-    def _carried_batch(self, proposal) -> int | None:
-        """The waiting batch when ``proposal`` trades exactly what it asks, else None."""
-        batches = {ln["batch_id"] for ln in self.storage.pending_lines(self.account)}
-        if len(batches) != 1:
+    def _carried_batch(self, proposal, day: date) -> int | None:
+        """The waiting batch when ``proposal`` trades exactly what it asks and
+        it was last refreshed this session day, else None. An all-rejected
+        batch still waits: Skip must not bring the same trades back."""
+        waiting = self.storage.waiting_batch(self.account)
+        if waiting is None:
             return None
-        (batch_id,) = batches
-        asked = {(ln["symbol"], ln["action"])
-                 for ln in self.storage.batch_lines(batch_id, self.account)
+        batch_id = waiting["id"]
+        if {ln["batch_id"] for ln in self.storage.pending_lines(self.account)} - {batch_id}:
+            return None
+        at = datetime.fromisoformat(waiting["created_at"])
+        if schedule.session_day(at, self.calendar.timezone) != day:
+            return None                     # a rejection ends with the trading day
+        lines = self.storage.batch_lines(batch_id, self.account)
+        if any(ln["status"] == "expired" for ln in lines):
+            return None
+        asked = {(ln["symbol"], ln["action"]) for ln in lines
                  if ln["status"] in _SHAPE_STATUSES and ln["order_qty"]}
         return batch_id if asked == _trades(proposal.lines) else None
 
     def _announce_due(self, batch_id: int | None, now: datetime) -> bool:
         raw = self.storage.autopilot_values(self.scope)
-        if batch_id is None or raw.get("announced_batch") != str(batch_id):
+        if (batch_id is None or batch_id not in self._announced_here
+                or raw.get("announced_batch") != str(batch_id)):
             return True
         last = raw.get("announced_at")
         if (last is None or now - datetime.fromisoformat(last)
