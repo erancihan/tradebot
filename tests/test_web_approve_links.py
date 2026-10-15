@@ -194,3 +194,15 @@ def test_a_non_ascii_signature_is_a_403_not_a_500(tmp_path):
     resp = client.post("/api/autopilot/batches/1/approve?exp=4000000000&sig=%C3%A9",
                        headers=POST_HEADERS)
     assert resp.status_code == 403
+
+
+@pytest.mark.parametrize("path", [
+    "/api/autopilot/batches/%D9%A1/approve",     # an Arabic-Indic one: \d matched it
+    "/api/autopilot/batches/1/approve/",
+    "/api/autopilot/batches/1/approve/x",
+    "/api/autopilot/batches/1/reject/",
+])
+def test_only_ascii_digit_link_paths_skip_the_gate(tmp_path, path):
+    client = local_client(_app(tmp_path, token="s3cret"))
+    resp = client.post(f"{path}?exp=4000000000&sig={'0' * 64}", headers=POST_HEADERS)
+    assert resp.status_code == 401

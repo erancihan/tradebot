@@ -32,7 +32,7 @@ OPEN_PREFIXES = ("/app/", "/static/")
 LOGIN_PATH = "/login"
 #: The phone push's signed batch links: their HMAC signature is the credential
 #: (``tradebot.autopilot.links``), and ntfy cannot hold a session cookie.
-SIGNED_PATH = re.compile(r"/api/autopilot/batches/\d+/(approve|reject)")
+SIGNED_PATH = re.compile(r"/api/autopilot/batches/[0-9]+/(approve|reject)", re.ASCII)
 #: A year: the point is to log a phone in once, then use the home-screen icon.
 COOKIE_MAX_AGE = 365 * 24 * 3600
 
