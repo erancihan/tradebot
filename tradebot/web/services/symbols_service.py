@@ -8,33 +8,20 @@ upper-case symbols that passed it.
 
 from __future__ import annotations
 
-import re
 from dataclasses import replace
 
+from ...models import SYMBOL_RE  # noqa: F401 - re-exported for the web
 from ...storage import Storage
-
-#: Letters plus the dot and dash some tickers carry (BRK.B, BF-B).
-SYMBOL_RE = re.compile(r"^[A-Z.\-]{1,10}$")
+from ...storage.watchlist import active_symbols, resolve_active
 
 
 class InvalidSymbols(ValueError):
     """One or more symbols failed ``SYMBOL_RE``."""
 
 
-def resolve(settings, store) -> dict:
-    """``{symbols, source}``: the watchlist when it has any, else the config.
-
-    ``store`` is anything with ``watchlist()``: the read-only web repository
-    or a ``Storage``.
-    """
-    watched = store.watchlist()
-    if watched:
-        return {"symbols": watched, "source": "watchlist"}
-    return {"symbols": list(settings.symbols), "source": "config"}
-
-
-def active_symbols(settings, store) -> list[str]:
-    return resolve(settings, store)["symbols"]
+#: ``{symbols, source}``: the core's one resolver (``storage/watchlist.py``),
+#: shared with the CLI so every process trades the same list.
+resolve = resolve_active
 
 
 def with_active_symbols(settings, store):

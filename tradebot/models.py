@@ -9,11 +9,16 @@ of trading: signals, orders, fills and positions.
 from __future__ import annotations
 
 import enum
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 # Canonical column names for an OHLCV bar DataFrame.
 BAR_COLUMNS = ("open", "high", "low", "close", "volume")
+
+#: An equity ticker: letters plus the dot and dash some carry (BRK.B, BF-B).
+#: Anything else in an account (a crypto pair, an option) is not ours to size.
+SYMBOL_RE = re.compile(r"^[A-Z.\-]{1,10}$")
 
 
 def utcnow() -> datetime:

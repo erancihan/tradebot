@@ -83,7 +83,7 @@ def _build_paper_engine(settings):
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    settings = _load_settings(args, "run")
+    settings = _load_settings(args, "run", active_list=True)
 
     # Replaying data only makes sense as a (offline) dry-run; imply the flag.
     if getattr(args, "replay", False) or getattr(args, "replay_csv", None):

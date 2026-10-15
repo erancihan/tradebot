@@ -156,7 +156,8 @@ class Engine:
     def propose(self, equity: float, cash: float = 0.0,
                 now: datetime | None = None) -> Proposal:
         """What this pass would trade: fetch bars and positions (held names off
-        the list too, to close them), then ask the advisor. Submits nothing."""
+        the list too, to close them, unless live or ``manage_unlisted`` is off),
+        then ask the advisor. Submits nothing."""
         frames = signals.fetch_frames(self)
         positions = orders.current_positions(self, frames)
         return advisor.propose(
@@ -170,7 +171,8 @@ class Engine:
 
     def _submit_all(self, proposal: Proposal, now: datetime) -> list[RebalanceAction]:
         actions: list[RebalanceAction] = []
-        for line in proposal.lines:
+        # Exits first: a swap's sell frees the buying power its buy needs.
+        for line in orders.exits_first(proposal.lines):
             if line.skipped:      # never sized: no bars, bad price, failed signal
                 continue
             try:
