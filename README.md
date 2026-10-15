@@ -293,7 +293,13 @@ Alpaca. Approve links in phone alerts outlive a restart only with
   for the account the dashboard shows. A card compares equity now with the
   first of the last 2000 snapshots and with equal-weight buy and hold of today's active list,
   held from the start (from cached daily closes, through the last close every name has; drawn as a
-  dashed line on the small equity chart). Below it one timeline mixes the
+  dashed line on the small equity chart). A **Trades** card under it answers "how did my
+  trades do?": each closed round trip ("SPY long 13 sh · 767.24 → 781.02 · +$179.14 (+1.8%)"),
+  newest first, with a summary line (closed, wins, realised P&L, profit factor), and each open
+  position as "open since <date> at avg <price>" with no P&L. Trips are built by average cost
+  from the bot's filled orders in that account only (hand trades are not included; a partial
+  fill counts the shares that filled); `/api/history/trades?mode=` serves the same as JSON.
+  Below it one timeline mixes the
   orders the bot sent (symbol, side, shares, and the amount at the price the
   trade was sized at) with each proposal batch (its trades by status: suggested,
   pending, approved, rejected, submitted or expired). Each order also says what

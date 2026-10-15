@@ -32,7 +32,7 @@ tradebot/
                  donchian_breakout, macd_trend, bollinger_reversion, momentum,
                  supertrend, meta.py (follow_leader, ensemble_vote)
   indicators.py  risk.py (RiskManager + RiskConfig)  allocation.py  overlays.py
-                 walkforward.py  portfolio.py  models.py
+                 walkforward.py  portfolio.py  portfolio_pnl.py (round trips from fills)  models.py
   selection/     base, ranked (momentum, low_vol), regime (regime_switch), registry
   universe/      screen (LiquidityScreen), alpaca, discover    consortium/  voice, consensus, panel
   backtest/      result, runner (Backtester), steps (per-bar helpers shared by the
@@ -56,12 +56,12 @@ tradebot/
                  season/, panel, market, contestant, store + journal
   web/           app (create_app, load_settings), server, startup, guard, access, repository/,
                  schemas/, services/ account, advisor, autopilot (+ reset), autopilot_build, cache,
-                   consortium, whatif_presets, notify_service, symbols_service, history_service,
+                   consortium, whatif_presets, notify_service, symbols_service, history_service (+ history_trades),
                    benchmark (+ _card), holdings_service, unlisted_service, discover_service, settings_service (view, save),
                    settings_validate, settings_secrets (mask alert targets), setup_service,
                    jobs/ {registry, frames, frames_many, backtest, dryrun, proposal, whatif,
                    whatif_compare, discover, catalog (strategy_catalog, stack_specs)}
-                 routes/ pages, partials (+ history), sse, api/ {trading, arena, jobs (+ /stack),
+                 routes/ pages, partials (+ history), sse, api/ {trading, arena, jobs (+ /stack), history (trades),
                    proposal, whatif (+ /compare), autopilot, notify, watchlist, discover, settings (+ /setup)}
                  templates/ pages (today, whatif, autopilot, history, settings, ...),
                    components (proposal_list, discover_card/_rows, watchlist, holdings, setup_card,
@@ -175,8 +175,8 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   The performance card compares with equal-weight buy and hold of today's active list from cached daily
   closes (`services/benchmark.py`, bought at the last close completed before the first snapshot; `benchmark_card.py`:
   alpha from the snapshot at the benchmark's last close), no fetch; absent (noted) without bars or mixed accounts.
-- **The Today refresh** gives the selector the whole cached history and the strategy the last
-  `required_history + 30` bars, so engine and web can differ when their histories start on different days.
+  **Trades** are round trips by average cost (`portfolio_pnl.book`) from filled orders only (`filled_orders`: `filled_qty > 0`, any status); hand trades never count, open ones show no P&L.
+- **The Today refresh** gives the selector the whole cached history and the strategy the last `required_history + 30` bars, so engine and web can differ when their histories start on different days.
 - **One list everywhere:** the watchlist when not empty, else `settings.symbols` (`storage/watchlist.resolve_active`;
   web `with_active_symbols`, a copy; `tradebot run` too, printing `symbols=watchlist(N)`). A watchlist edit stops a running
   autopilot (`autopilot_service.reset`), as a Settings save does. Symbols match `models.SYMBOL_RE` after upper-casing.
