@@ -154,6 +154,10 @@ class TradingRepository:
                               limit: int = 20) -> list[dict]:
         return _history.proposal_batches_page(self.db_path, mode, before, limit)
 
+    def filled_orders(self, mode: str) -> list[dict]:
+        """Orders of ``mode`` with a known fill, oldest fill first (History's trades)."""
+        return _history.filled_orders(self.db_path, mode)
+
     def watchlist(self) -> list[str]:
         """The Today page's watchlist (``storage/watchlist.py``), oldest first."""
         rows = _read(self.db_path, "SELECT symbol FROM watchlist ORDER BY rowid")

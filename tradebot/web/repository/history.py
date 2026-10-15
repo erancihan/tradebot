@@ -8,6 +8,7 @@ The id breaks ties, so a page boundary never moves when rows arrive.
 
 from __future__ import annotations
 
+from ...storage.orders import FILLED_ORDERS_SQL
 from ._db import _read
 
 
@@ -57,3 +58,9 @@ def proposal_batches_page(db_path: str, mode: str, before: Cursor | None,
     for head in heads:
         head["lines"] = by_batch[head["id"]]
     return heads
+
+
+def filled_orders(db_path: str, mode: str) -> list[dict]:
+    """The storage query, read-only: a log from before the fill columns has
+    no such column, and ``_read`` then answers with no rows."""
+    return _read(db_path, FILLED_ORDERS_SQL, (mode,))
