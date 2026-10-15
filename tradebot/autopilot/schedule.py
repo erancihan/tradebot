@@ -6,8 +6,9 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from typing import Callable
+from zoneinfo import ZoneInfo
 
-from ..arena.market import ET
+from ..market.us import ET
 
 IsOpen = Callable[[datetime], bool]
 NextOpen = Callable[[datetime], datetime]
@@ -29,6 +30,6 @@ def wait_seconds(now: datetime, next_at: datetime | None, poll_seconds: float) -
     return max(0.0, (next_at - now).total_seconds())
 
 
-def session_day(now: datetime):
+def session_day(now: datetime, tz: ZoneInfo = ET):
     """The exchange-local trading date: the daily-loss breaker's session."""
-    return now.astimezone(ET).date()
+    return now.astimezone(tz).date()

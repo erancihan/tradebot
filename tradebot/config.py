@@ -81,12 +81,20 @@ class Settings:
     db_path: str = "tradebot.db"
     commission: float = 0.0
     slippage_bps: float = 1.0
+    #: Exchange calendar for scheduling (see tradebot.market). Alpaca is the
+    #: only broker, so a non-US calendar changes when loops wake, not trading.
+    market: str = "us_equities"
+    #: YAML `autopilot: {brief_minutes_before_open: N}`; None = no brief.
+    brief_minutes_before_open: int | None = None
 
     def __post_init__(self) -> None:
         if self.mode not in VALID_MODES:
             raise ValueError(f"mode must be one of {VALID_MODES}, got {self.mode!r}")
         if not self.symbols:
             raise ValueError("At least one symbol is required")
+        from .market.registry import check_market   # stdlib-only; no pandas
+
+        check_market(self.market)
 
     # --- safety gate ---------------------------------------------------------
     @property
@@ -185,4 +193,7 @@ class Settings:
             db_path=raw.get("db_path", "tradebot.db"),
             commission=float(raw.get("commission", 0.0)),
             slippage_bps=float(raw.get("slippage_bps", 1.0)),
+            market=raw.get("market", "us_equities"),
+            brief_minutes_before_open=(raw.get("autopilot", {}) or {}).get(
+                "brief_minutes_before_open"),
         )

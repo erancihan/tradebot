@@ -130,3 +130,10 @@ def test_live_requires_confirmation(monkeypatch):
 def test_paper_never_requires_ack():
     s = Settings(mode="paper")
     s.require_live_ack()  # no-op, must not raise
+
+
+def test_market_defaults_to_us_and_rejects_unknown_calendars():
+    assert Settings().market == "us_equities"
+    assert Settings.from_dict({"market": "bist"}).market == "bist"
+    with pytest.raises(ValueError, match="market must be one of"):
+        Settings.from_dict({"market": "lse"})

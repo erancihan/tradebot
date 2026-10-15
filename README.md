@@ -615,7 +615,7 @@ tradebot-web --config config.yaml   # default: ./config.yaml if present, else SP
 Open `/autopilot` (the second tab on a phone) and pick one of three modes:
 
 - **Off**: nothing runs.
-- **Approve first**: every `poll_seconds` inside US market hours the bot
+- **Approve first**: every `poll_seconds` inside market hours the bot
   computes the same proposal the Today page shows and lists its trades under
   "Waiting for approval". Tap **Approve** or **Reject** per trade, or
   **Approve all**. Only the approved trades are submitted. A batch is sized at
@@ -649,6 +649,39 @@ It builds the engine exactly as `tradebot run` does (`--dry-run`, `--replay`
 and the live latch all apply). In approve mode the parked trades are approved
 from the Autopilot page of a server that uses the same database; with paper
 credentials both submit to the same paper account.
+
+### Morning brief
+
+Set a lead time and the autopilot sends the day's proposal that many minutes
+before each open, as a short plain list through the notifier (log, webhook):
+
+```yaml
+autopilot:
+  brief_minutes_before_open: 30
+```
+
+```
+BUY 35 SPY (buy_and_hold signals long; buy.)
+BUY 38 QQQ (buy_and_hold signals long; buy.)
+```
+
+The brief is a preview: it asks the advisor for the same lines the Today page
+shows and stores, parks or submits nothing. It fires once per session, in any
+mode, as long as the loop runs. To get only the brief, with no trading:
+
+```bash
+tradebot run --config config.yaml --autopilot --mode off
+```
+
+The event is `{"type": "brief", "opens_at": ..., "text": ..., "lines": [...]}`.
+
+### Market hours
+
+"Market hours" come from the config's `market:` calendar: `us_equities`
+(default, 09:30-16:00 New York, NYSE holidays) or `bist` (Borsa Istanbul,
+10:00-18:00 Istanbul, Turkish holidays through 2027). Alpaca is the only
+broker, so `bist` only moves when the loop wakes; orders still go to the US
+paper account.
 
 ## Dashboard (web UI)
 

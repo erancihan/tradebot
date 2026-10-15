@@ -47,9 +47,12 @@ def run_season(season: Season, feed, max_ticks: int | None = None,
 def run_season_daemon(season: Season, feed, poll_seconds: float = 60.0,
                       ignore_market_hours: bool = False, max_ticks: int | None = None,
                       on_step=None, on_error=None, clock=None, sleep=None,
-                      stop_on_empty: bool = False) -> int:
-    """Daemon loop: gate on US market hours, drop still-forming bars, step under
+                      stop_on_empty: bool = False, calendar=None) -> int:
+    """Daemon loop: gate on market hours, drop still-forming bars, step under
     supervision. Returns the number of ticks applied.
+
+    ``calendar`` (a `MarketCalendar`, default US) drives only the gate: the
+    partial-bar drop stays on US hours because the bars are Alpaca's.
 
     ``clock`` (-> tz-aware now) and ``sleep`` are injected so the *whole* loop is
     testable/runnable offline — pass a simulated clock + no-op sleep + a replay
@@ -58,8 +61,9 @@ def run_season_daemon(season: Season, feed, poll_seconds: float = 60.0,
     """
     from datetime import datetime, timezone
 
-    from ..market import drop_incomplete_bars, is_market_open
+    from ...market import get_calendar
 
+    calendar = calendar or get_calendar("us_equities")
     if clock is None:
         clock = lambda: datetime.now(timezone.utc)  # noqa: E731
     if sleep is None:
@@ -76,7 +80,7 @@ def run_season_daemon(season: Season, feed, poll_seconds: float = 60.0,
             break
         spins += 1
         now = clock()
-        if not ignore_market_hours and not is_market_open(now):
+        if not ignore_market_hours and not calendar.is_open(now):
             sleep(poll_seconds)
             continue
         bar = feed.next()
@@ -85,9 +89,7 @@ def run_season_daemon(season: Season, feed, poll_seconds: float = 60.0,
                 break
             sleep(poll_seconds)
             continue
-        bar = {s: drop_incomplete_bars(df, season.config.timeframe, now)
-               for s, df in bar.items()}
-        bar = {s: df for s, df in bar.items() if df is not None and len(df) > 0}
+        bar = _settled(bar, season.config.timeframe, now)
         if not bar:
             sleep(poll_seconds)
             continue
@@ -101,3 +103,12 @@ def run_season_daemon(season: Season, feed, poll_seconds: float = 60.0,
         ticks += 1
         sleep(poll_seconds)
     return ticks
+
+
+def _settled(bar: dict, timeframe: str, now) -> dict:
+    """The bar with each symbol's still-forming last row dropped; a symbol
+    left with nothing drops out."""
+    from ..market import drop_incomplete_bars
+
+    bar = {s: drop_incomplete_bars(df, timeframe, now) for s, df in bar.items()}
+    return {s: df for s, df in bar.items() if df is not None and len(df) > 0}

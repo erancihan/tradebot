@@ -53,8 +53,10 @@ tradebot/
                  pending (PassOutcome, record_pending, submit_stored)
   autopilot/     state (Mode off|approve|auto, AutopilotState, load/store), schedule
                  (next_pass, wait_seconds, session_day), runner (Autopilot: tick,
-                 run_forever, start/stop thread; injected clock/sleep/is_open),
-                 approvals (approve, reject, expiry, pending_trades notification)
+                 run_forever, start/stop thread; injected clock/sleep and a MarketCalendar,
+                 default from `Settings.market`),
+                 approvals (approve, reject, expiry, pending_trades notification),
+                 brief (MorningBrief, compose, BriefMixin)
   storage/       SQLite tradebot.db: schema, orders, bars, weights, proposals (batch header
                  + lines with a status), autopilot (autopilot_state scope/key/value)
                  (Storage = mixins; check_same_thread=False for the autopilot)
@@ -88,7 +90,10 @@ tests/  docs/ (research-record.md, adr/, plans/)  data/cache/ (gitignored)
 config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])  Makefile
 ```
 
-A later epic adds `market/` (the `MarketCalendar` protocol).
+`market/` holds the exchange calendars: base (`MarketCalendar` protocol: `name`,
+`timezone`, `is_open`, `next_open`, `session`, `is_holiday`; `TableCalendar`), us
+(`USEquities` + the old helpers, re-exported by `arena/market.py`), bist
+(`BorsaIstanbul`, holiday table through 2027), registry (`get_calendar`).
 
 ## Invariants
 
@@ -330,11 +335,13 @@ build on every push and PR, with no credentials.
 - **A daily-loss halt turns the autopilot off** (`last_error = "daily loss
   halt"`, an `autopilot_off` notification). Switching it back on the same day
   halts again on the first pass, because the engine's loss session is
-  re-anchored only when the ET trading day changes (`Engine.reset_session`).
+  re-anchored only when the calendar's trading day changes
+  (`Engine.reset_session`).
 - **One lock, one connection.** The loop thread and the web's approve taps
   share the engine and its SQLite connection (`check_same_thread=False`);
-  every Autopilot method holds its `RLock`. "Off" sets the stop event the
-  default sleep waits on, so a loop sleeping until Monday's open exits at once.
+  every Autopilot method holds its `RLock`. Every mode switch sets the wake
+  event the default sleep waits on, so a sleeping loop reacts at once; "off"
+  also sets the stop event, unless a morning brief is configured.
 - **The web autopilot is paper or dry-run, never live.** `autopilot_build`
   always uses the paper endpoint with credentials, else a `DryRunBroker` over
   cached bars parked at the newest shared date. Its in-memory virtual account
@@ -342,6 +349,14 @@ build on every push and PR, with no credentials.
 - **`tradebot run --autopilot` builds the engine exactly as `run` does** (a
   live config still needs the latch). A replay gets a simulated clock: every
   bar is open, each sleep advances one bar, the tape's end stops the loop.
+- **With a morning brief, "off" no longer ends the loop.** `autopilot.brief_
+  minutes_before_open` makes the loop wake at `next_open - N` in every mode
+  and send a `brief` event from `engine.propose` (never `step`: nothing is
+  stored, parked or submitted). The open it was sent for is stored as
+  `brief_for` in `autopilot_state`, so a restart does not resend it, and it is
+  marked before composing so a failing brief is skipped, not retried every
+  wake. The web only resumes a loop in a non-off mode, so a brief-only (off)
+  loop is `tradebot run --autopilot --mode off`.
 
 **Web and CI**
 - **Pydantic coercion.** `dict[str, float]` turns integer params into floats

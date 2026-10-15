@@ -352,3 +352,27 @@ def test_run_autopilot_headless_replay_ends_when_the_tape_does(tmp_path, capsys)
                "--autopilot", "--mode", "auto"])
     assert rc == 0
     assert "ticks=" in capsys.readouterr().out          # no cap, still terminated
+
+
+# --- exchange calendars ------------------------------------------------------------
+
+def test_an_autopilot_on_bist_sleeps_until_the_istanbul_open(tmp_path):
+    from tradebot.market import get_calendar
+
+    pilot, broker, clock, _ = build(tmp_path, now=WEEKEND)
+    pilot = Autopilot(pilot.engine, pilot.storage, poll_seconds=300, clock=clock,
+                      sleep=clock.sleep, calendar=get_calendar("bist"))
+    pilot.set_mode("auto")
+    assert pilot.run_forever(max_ticks=2) == 2
+    istanbul_open = datetime(2026, 10, 19, 7, 0, tzinfo=timezone.utc)   # 10:00 UTC+3
+    assert clock.slept == [(istanbul_open - WEEKEND).total_seconds()]
+    assert pilot.state().last_pass_at == istanbul_open
+    assert broker._order_seq == len(SYMBOLS)
+
+
+def test_the_autopilot_takes_its_calendar_from_the_settings(tmp_path):
+    pilot, _, _, _ = build(tmp_path)
+    assert pilot.calendar.name == "us_equities"
+    pilot.engine.settings.market = "bist"
+    again = Autopilot(pilot.engine, pilot.storage, poll_seconds=300)
+    assert again.calendar.name == "bist"
