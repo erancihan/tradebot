@@ -11,6 +11,7 @@
     {%- if prov.bars %} · {{ prov.bars }} bars{% endif %}
     {%- if prov.start and prov.end %} {{ prov.start[:10] }} to {{ prov.end[:10] }}{% endif %}
     {%- if prov.pool is defined %} · {{ prov.ranked }} of {{ prov.pool }} ranked{% endif %}
+    {%- if prov.stale %} · {{ prov.stale }} skipped as stale (no bar in the last 5 sessions){% endif %}
     · computed {{ run.created_at[:16] | replace('T', ' ') }} UTC
   </p>
   {% if prov.failed %}

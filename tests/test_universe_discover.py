@@ -121,3 +121,13 @@ def test_cached_daily_symbols_lists_the_daily_cache_only(tmp_path):
 def test_as_of_date_type_is_accepted():
     frames_for, _ = _fetch(_frames(names=["SA"]))
     assert discover(frames_for, ["SA"], as_of=date(2099, 1, 1)).rows
+
+
+def test_a_frame_the_cache_stopped_updating_is_dropped_as_stale():
+    frames = _frames(names=["FRESH", "EDGE", "OLD"])
+    frames["EDGE"] = frames["EDGE"].iloc[:-5]       # five sessions behind: kept
+    frames["OLD"] = frames["OLD"].iloc[:-6]         # six behind: stale
+    frames_for, _ = _fetch(frames)
+    result = discover(frames_for, list(frames), top_n=3)
+    assert sorted(r.symbol for r in result.rows) == ["EDGE", "FRESH"]
+    assert result.provenance["stale"] == 1 and result.provenance["screened"] == 2

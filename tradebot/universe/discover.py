@@ -25,6 +25,9 @@ from .screen import LiquidityScreen
 LOOKBACK = 126
 SKIP = 21
 TOP_N = 10
+#: A frame whose newest bar trails the pool's newest by more sessions than
+#: this is a name the cache stopped updating: its momentum is old news.
+MAX_STALE_SESSIONS = 5
 
 FramesFor = Callable[[list[str]], "dict[str, pd.DataFrame]"]
 
@@ -76,6 +79,22 @@ def _cut(df: pd.DataFrame, as_of: date | None) -> pd.DataFrame:
     return df[df.index < bound]
 
 
+def drop_stale(frames: dict[str, pd.DataFrame],
+               limit: int = MAX_STALE_SESSIONS) -> tuple[dict[str, pd.DataFrame], int]:
+    """``frames`` minus those ending over ``limit`` sessions before the newest.
+
+    Sessions are the pool's own: the distinct stamps any frame has a bar on,
+    so a frame is stale when more than ``limit`` of them come after its end.
+    """
+    ends = {s: f.index.max() for s, f in frames.items() if not f.empty}
+    if not ends:
+        return frames, 0
+    days = pd.DatetimeIndex(sorted({d for f in frames.values() for d in f.index}))
+    kept = {s: f for s, f in frames.items()
+            if s not in ends or int((days > ends[s]).sum()) <= limit}
+    return kept, len(frames) - len(kept)
+
+
 def momentum_score(df: pd.DataFrame, lookback: int = LOOKBACK, skip: int = SKIP) -> float:
     """The newest ``MomentumSelector`` score for one frame (NaN when too short)."""
     selector = MomentumSelector(lookback=lookback, skip=skip, top_k=1)
@@ -94,6 +113,7 @@ def discover(frames_for: FramesFor, pool: Iterable[str], *, lookback: int = LOOK
     screen = screen or LiquidityScreen()
     frames = {s: _cut(df, as_of) for s, df in (frames_for(candidates) if candidates
                                                else {}).items() if df is not None}
+    frames, stale = drop_stale(frames)
     rows: list[DiscoverRow] = []
     for metrics in screen.details(frames):
         sym = str(metrics["symbol"])
@@ -108,7 +128,8 @@ def discover(frames_for: FramesFor, pool: Iterable[str], *, lookback: int = LOOK
     used = [f for s, f in frames.items() if s in scored and not f.empty]
     return DiscoverResult(rows[:top_n], _provenance(
         source, as_of, used, pool=len(candidates), screened=len(frames),
-        ranked=len(rows), excluded=sorted(skipped), lookback=lookback, skip=skip))
+        ranked=len(rows), stale=stale, excluded=sorted(skipped), lookback=lookback,
+        skip=skip))
 
 
 def _provenance(source: str, as_of: date | None, used: list[pd.DataFrame],
