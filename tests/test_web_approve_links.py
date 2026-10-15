@@ -206,3 +206,20 @@ def test_only_ascii_digit_link_paths_skip_the_gate(tmp_path, path):
     client = local_client(_app(tmp_path, token="s3cret"))
     resp = client.post(f"{path}?exp=4000000000&sig={'0' * 64}", headers=POST_HEADERS)
     assert resp.status_code == 401
+
+
+def test_a_link_looks_up_and_acts_on_its_batch_under_the_autopilot_lock(
+        tmp_path, pushes, monkeypatch):
+    """The request thread shares the loop's engine and SQLite connection: the
+    batch lookup must not run while a pass holds them."""
+    app, client, pilot, links = _setup(tmp_path, pushes)
+    real, held = pilot.storage.pending_lines_in_batch, []
+
+    def lookup(batch_id, mode):
+        held.append(pilot._lock._is_owned())
+        return real(batch_id, mode)
+
+    monkeypatch.setattr(pilot.storage, "pending_lines_in_batch", lookup)
+    resp = client.post(links["Skip"], headers=POST_HEADERS)
+    assert resp.status_code == 200 and resp.json()["rejected"] == 2
+    assert held == [True]
