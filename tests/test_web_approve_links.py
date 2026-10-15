@@ -187,3 +187,10 @@ def test_an_old_batch_link_finds_nothing_after_the_next_pass(tmp_path, pushes):
     resp = client.post(links["Approve all"], headers=POST_HEADERS)
     assert resp.status_code == 200 and resp.json()["approved"] == 0
     assert _pending(pilot) == fresh and pilot.engine.broker.positions() == {}
+
+
+def test_a_non_ascii_signature_is_a_403_not_a_500(tmp_path):
+    client = local_client(_app(tmp_path))
+    resp = client.post("/api/autopilot/batches/1/approve?exp=4000000000&sig=%C3%A9",
+                       headers=POST_HEADERS)
+    assert resp.status_code == 403

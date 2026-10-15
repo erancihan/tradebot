@@ -101,3 +101,10 @@ def test_each_link_is_claimed_once_and_forgotten_after_it_expires():
     assert used.claim(7, "reject", 1000, "cd", now=2)               # given back
     assert used.claim(8, "approve", 5000, "ef", now=1001)           # prunes the rest
     assert used.claim(7, "approve", 1000, "ab", now=1001)           # expired anyway
+
+
+@pytest.mark.parametrize("sig", ["é", "é" * 64, "A" * 64, "0" * 63, "0" * 65, " " + "0" * 63])
+def test_a_malformed_signature_is_refused_without_raising(sig):
+    """Only 64 lowercase hex digits are compared; anything else (a non-ASCII
+    character made compare_digest raise) is simply not a valid link."""
+    assert verify(SECRET, 7, "approve", 2_000_000_000, sig, now=0) is False

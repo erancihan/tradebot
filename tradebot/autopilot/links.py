@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import re
 import secrets
 import threading
 import time
@@ -26,6 +27,9 @@ TOKEN_ENV = "TRADEBOT_WEB_TOKEN"
 VERBS = ("approve", "reject")
 #: Never shorter than this, whatever the poll interval.
 MIN_TTL_SECONDS = 600
+#: What ``signature`` emits; anything else is refused before comparing
+#: (``compare_digest`` raises on a non-ASCII str).
+_SIG = re.compile(r"[0-9a-f]{64}", re.ASCII)
 
 #: Created once per process, at import: a link signed by this process is
 #: verifiable only by this process.
@@ -56,7 +60,9 @@ def verify(secret: bytes, batch_id: int, verb: str, exp: int, sig: str,
         return False
     if (time.time() if now is None else now) > int(exp):
         return False
-    return hmac.compare_digest(signature(secret, batch_id, verb, exp), str(sig))
+    if not isinstance(sig, str) or _SIG.fullmatch(sig) is None:
+        return False
+    return hmac.compare_digest(signature(secret, batch_id, verb, exp).encode(), sig.encode())
 
 
 def ttl_seconds(poll_seconds: float) -> int:
