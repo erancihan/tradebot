@@ -69,7 +69,7 @@
         ("stop_loss_pct", "Stop loss, % below entry", "Empty = none. Paper/live only: backtests do not model it."),
         ("take_profit_pct", "Take profit, % above entry", "Empty = none."),
       ] %}
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2" data-field-grid>
         {% for key, label, hint in pct_fields %}
           {% call field(label, hint) %}
             <input type="number" inputmode="decimal" step="any" min="0" max="100"
@@ -84,7 +84,7 @@
       </label>
     {% endcall %}
     {% call section("Autopilot") %}
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2" data-field-grid>
         {% call field("Pass every, seconds", "300 = every 5 minutes.") %}
           <input type="number" inputmode="numeric" min="10" step="1"
                  x-model.number="form.poll_seconds" name="poll_seconds" class="{{ input }}">
