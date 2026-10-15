@@ -21,8 +21,9 @@ class RiskConfig:
     max_position_pct: float = 0.10
     #: Max fraction of equity deployed across *all* positions at once.
     max_gross_exposure: float = 1.0
-    #: Halt new risk-increasing trades once equity falls this fraction below the
-    #: session's starting equity (e.g. 0.03 == stop after a 3% drawdown today).
+    #: Daily-loss breaker: once equity falls this fraction below the session's
+    #: starting equity (e.g. 0.03 == a 3% drawdown today), flatten every equity
+    #: position and stay out for the rest of that session day (engine/session.py).
     max_daily_loss_pct: float = 0.03
     #: Trade whole shares only (Alpaca supports fractional, but integers are the
     #: safer default and make sizing math obvious).
