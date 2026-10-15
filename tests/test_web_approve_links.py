@@ -275,3 +275,30 @@ def test_a_foreign_batch_is_a_409_and_changes_nothing(tmp_path, pushes):
     assert resp.json()["detail"] == "batch belongs to another account"
     assert len(pilot.storage.pending_lines("dry_run")) == 2
     assert pilot.engine.broker.positions() == {}
+
+
+_SETUP_DETAIL = ("No Alpaca credentials and no cached bars for SPY. "
+                 "Pull once with: tradebot data pull SPY")
+
+
+def _unready(app, monkeypatch):
+    """The pilot is gone (e.g. a settings save) and cannot be rebuilt."""
+    def fail(*a, **kw):
+        raise RuntimeError(_SETUP_DETAIL)
+
+    monkeypatch.setattr(autopilot_build, "build", fail)
+    app.state.autopilot = None
+
+
+def test_an_unready_autopilot_tells_a_link_nothing_about_the_setup(
+        tmp_path, pushes, monkeypatch, caplog):
+    """Anyone reading the topic holds the link: the 503 is generic, the
+    reason (symbols, the pull command) goes to the server log."""
+    app, client, pilot, links = _setup(tmp_path, pushes)
+    _unready(app, monkeypatch)
+    with caplog.at_level("WARNING", logger="tradebot.web.autopilot"):
+        resp = client.post(links["Approve all"], headers=POST_HEADERS)
+    assert resp.status_code == 503
+    assert resp.json() == {"detail": "autopilot not ready"}
+    assert "SPY" not in resp.text and "pull" not in resp.text
+    assert any(_SETUP_DETAIL in r.getMessage() for r in caplog.records)
