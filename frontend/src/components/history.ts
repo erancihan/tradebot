@@ -58,22 +58,32 @@ export function history() {
 
     async poll() {
       if (this.pages > 1 || this.busy) return;
+      // The page's account, never whichever is newest now (see the route).
+      const query = this.mode ? `?mode=${encodeURIComponent(this.mode)}` : "";
       try {
-        // The page's account, never whichever is newest now (see the route).
-        const query = this.mode ? `?mode=${encodeURIComponent(this.mode)}` : "";
         const page = await getHistoryPage(FIRST_PAGE + query);
         // A "Show more" that finished while this was in flight wins.
         if (this.pages > 1) return;
         refs(this).list.innerHTML = page.html;
         this.next = page.next;
-        const card = refs(this).performance;
-        if (card) card.innerHTML = await getPartial(`/partials/history/performance${query}`);
-        const trades = refs(this).trades;
-        if (trades) trades.innerHTML = await getPartial(`/partials/history/trades${query}`);
-        await this.drawChart();
       } catch (err) {
         console.error(err);
+        return;
       }
+      // Each card refreshes on its own: one failed partial (or the chart)
+      // never leaves the others stale.
+      await Promise.allSettled([
+        this.swap("performance", `/partials/history/performance${query}`),
+        this.swap("trades", `/partials/history/trades${query}`),
+        this.drawChart(),
+      ]).then((results) => {
+        for (const r of results) if (r.status === "rejected") console.error(r.reason);
+      });
+    },
+
+    async swap(ref: string, url: string) {
+      const card = refs(this)[ref];
+      if (card) card.innerHTML = await getPartial(url);
     },
 
     async drawChart() {
