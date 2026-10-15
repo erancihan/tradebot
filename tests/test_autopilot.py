@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from tradebot.autopilot import Autopilot
+from tradebot.autopilot import HALT_ERROR, Autopilot
 from tradebot.broker import DryRunBroker
 from tradebot.cli import main
 from tradebot.config import Settings
@@ -402,3 +402,35 @@ def test_storage_tolerates_concurrent_writers(tmp_path):
     with Storage(tmp_path / "t.db") as st:
         assert st._conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
         assert st._conn.execute("PRAGMA busy_timeout").fetchone()[0] == 5000
+
+
+# --- the daily-loss anchor survives a rebuild ------------------------------------
+
+def _restarted(tmp_path, *, now, equity):
+    """A second runner on the same database (a restart, or a Settings save
+    that rebuilt the engine) whose account now stands at ``equity``."""
+    risk = RiskConfig(max_position_pct=0.4, max_gross_exposure=0.9, max_daily_loss_pct=0.03)
+    pilot, broker, _, _ = build(tmp_path, now=now, risk=risk)
+    broker.portfolio.cash = equity
+    return pilot
+
+
+def test_a_restart_keeps_the_days_loss_anchor(tmp_path):
+    first, _, _, _ = build(tmp_path)
+    first.set_mode("auto")
+    first.tick()
+    assert float(first.storage.autopilot_values("dry_run")["session_start_equity"]) == 10_000
+
+    pilot = _restarted(tmp_path, now=OPEN_NOW + timedelta(hours=1), equity=9_500)
+    state = pilot.tick()                       # down 5% on the day: the breaker trips
+    assert state.mode == "off" and state.last_error == HALT_ERROR
+
+
+def test_a_new_day_re_anchors_after_a_restart(tmp_path):
+    first, _, _, _ = build(tmp_path)
+    first.set_mode("auto")
+    first.tick()
+
+    pilot = _restarted(tmp_path, now=OPEN_NOW + timedelta(days=1), equity=9_500)
+    assert pilot.tick().mode == "auto"         # yesterday's anchor no longer applies
+    assert float(pilot.storage.autopilot_values("dry_run")["session_start_equity"]) == 9_500

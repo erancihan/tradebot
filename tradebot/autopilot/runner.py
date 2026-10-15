@@ -21,6 +21,7 @@ from ..models import utcnow
 from . import schedule
 from .approvals import ApprovalsMixin
 from .brief import BriefMixin, MorningBrief
+from .session import SessionMixin
 from .state import AutopilotState, load_state, store_mode
 
 log = logging.getLogger("tradebot.autopilot")
@@ -28,7 +29,7 @@ log = logging.getLogger("tradebot.autopilot")
 HALT_ERROR = "daily loss halt"
 
 
-class Autopilot(ApprovalsMixin, BriefMixin):
+class Autopilot(ApprovalsMixin, BriefMixin, SessionMixin):
     def __init__(self, engine, storage, *, poll_seconds: float,
                  clock: Callable[[], datetime] = utcnow,
                  sleep: Callable[[float], object] | None = None,
@@ -102,15 +103,16 @@ class Autopilot(ApprovalsMixin, BriefMixin):
     def _pass(self, mode: str, now: datetime) -> None:
         day = schedule.session_day(now, self.calendar.timezone)
         if day != self._session:            # a new trading day: a new loss budget
-            self.engine.reset_session()
-            self._session = day
+            self._begin_session(day)
         self._expire_pending()              # the last batch is stale: replaced
         try:
             outcome = self.engine.step(submit=(mode == "auto"), now=now)
         except Exception as exc:  # noqa: BLE001 - the loop must outlive a bad pass
+            self._save_session(day)
             log.exception("Autopilot pass failed")
             self._set(last_pass_at=now, last_error=f"{type(exc).__name__}: {exc}")
             return
+        self._save_session(day)
         if outcome.market_closed:
             return
         self._set(last_pass_at=now, last_error=None)

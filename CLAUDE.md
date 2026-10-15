@@ -237,8 +237,8 @@ build on every push and PR, with no credentials.
   errors. `deliver() -> bool` is only for the test-alert button ("not delivered").
 - **A pending batch expires, never executes late:** the next pass, an approval
   older than one `poll_seconds`, and switching off all expire it.
-- **A daily-loss halt turns the autopilot off.** The loss session re-anchors
-  only when the calendar day changes (`Engine.reset_session`).
+- **A daily-loss halt turns the autopilot off.** The anchor is persisted per
+  scope (`autopilot/session.py`), so a restart or Settings save never re-anchors mid-day.
 - **One lock, one connection:** the loop thread and web taps share the engine
   and SQLite (`check_same_thread=False`, WAL, `busy_timeout=5000`) under the
   Autopilot `RLock`. A line is `submitted` once the broker accepts it; later
