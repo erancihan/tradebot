@@ -70,18 +70,22 @@ tradebot arena history && tradebot arena show
 ```
 
 Then run the **regime gauntlet** — one scenario proves nothing. `scenarios/`
-ships `bull_trend`, `sideways_chop`, `crash_recovery`, `vol_spike`,
-`cross_sectional`; rank with a robustness metric (`worst_fold` = worst quarter
+ships the single-symbol regime library (`bull_trend`, `sideways_chop`,
+`crash_recovery`, `vol_spike`), `cross_sectional`, the balanced factor library
+(`xs_*`) and real packs (`real_xs_*`, which need cached bars; the holdout
+`real_xs_2024_2025h1` runs once, last); rank with a robustness metric (`worst_fold` = worst quarter
 of the run, `consistency` = mean fold return − dispersion):
 ```bash
 tradebot arena run --algos ./algos --scenario scenarios/crash_recovery.yaml --score worst_fold
 ```
 
 To judge a candidate for promotion, use the **pass gate** (exit code =
-verdict; checks completes-everywhere, beats-baseline mean return, worst-fold
-majority, drawdown bound; prints the family's journal attempt count):
+verdict; checks completes-everywhere, beats-baseline mean CAGR, worst-fold
+majority, the absolute drawdown bound and, where the baseline breaches it, no
+worse than the baseline; prints the family's journal attempt count). One draw
+is a coin flip, so use `--seeds N`:
 ```bash
-tradebot arena gate --algos ./algos --candidate my_algo --scenarios scenarios/*.yaml
+tradebot arena gate --algos ./algos --candidate my_algo --scenarios scenarios/xs_*.yaml --seeds 5
 ```
 Do not tune the gate or grid-search params to force a pass — iterations must
 be theory-driven, and the journal counts every one (see the README runbook).
@@ -102,15 +106,17 @@ changes the field size some tests assert on — see the CLAUDE.md gotcha.
   (`build_frames`); real data flows Alpaca → `data/cache.py BarCache` → frames.
   Synthetic scenarios support piecewise `regimes:` segments
   (`data/synthetic.py synthetic_regime_ohlcv`, continuous price path).
-- **Isolation:** `runner.py` has two runners behind the `Runner` protocol,
+- **Isolation:** two runners behind the `Runner` protocol (`runner.py`),
   chosen by `default_runner` via `--isolation`: `process` (default, hard
   kill-on-timeout + CPU/memory `rlimit`s — **raises** if fork is unavailable,
   never silently downgrades), `thread` (portable **soft** runner), `auto`
-  (process if possible, else warned soft fallback). Each contestant is
+  (process if possible, else warned soft fallback). `SubprocessRunner` lives in
+  `isolation.py`, `InProcessRunner` in `runner.py`. Each contestant is
   **sandboxed by default** (process isolation) via `sandbox.py` — no disk writes
   + network-namespace isolation; `--no-harden` opts out. `--seccomp` adds an
   execve/ptrace filter and `--require-sandbox` makes refusals fatal; containers
-  are out of scope (ADR 0002). Don't touch `tournament.py`/`scoring.py`.
+  are out of scope (ADR 0002). Isolation changes never need `tournament.py`
+  or `scoring.py`.
 - **Persistence:** `tradebot/arena/store.py` (SQLite `arena_runs`/`arena_results`,
   equity curves as JSON). The web dashboard reads these.
 

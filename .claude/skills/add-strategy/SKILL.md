@@ -62,4 +62,5 @@ backtest, live, and the arena.
   the position is on, use a causal walk instead (see `bollinger_reversion.py`).
 - Strategies are also valid arena contestants — add `@register` to enter one
   (see the `add-arena-algo` skill).
-- Update `CLAUDE.md`/`README.md` if you're adding a notable capability.
+- Add the name to `CLAUDE.md`'s layout, the README strategy table and the
+  `Available:` list in `config.example.yaml`.

@@ -16,7 +16,8 @@ make install        # .venv + pip install -e ".[dev]"
 make test           # pytest, green before and after your change
 ```
 For dashboard work also run `make install-web` (adds the `[web]` extra and
-runs `npm install`).
+runs `npm install`), or `make install-all` for every extra (`[dev,live,web]`)
+plus `npm install`.
 
 ## Common loops
 ```bash
@@ -46,8 +47,8 @@ build` (output to the gitignored `tradebot/web/static/`), `npm run watch:js`.
 - Every commit carries `--no-gpg-sign`. Never edit git config.
 
 ## Before you commit
-- `make test` green, `tests/test_code_shape.py` included. `npm run typecheck`
-  and `npm test` green for frontend changes.
+- `make test` green, `tests/test_code_shape.py` included. `cd frontend && npm
+  run typecheck && npm test` green for frontend changes.
 - An offline, credential-free path and offline tests remain.
 - Invariants hold (see CLAUDE.md): paper-first gate, no look-ahead, risk
   centralised in `RiskManager`, import isolation (lazy Alpaca, the core never
