@@ -193,8 +193,9 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   open and earns that bar. The arena never passes flows. What-if cash: month's first bar.
 - **What-if books are fully investable** (`whatif_risk()`). The benchmark is
   equal-weight buy and hold with the same cash, so a buy-and-hold plan ties it.
-- **Compare strategies** runs each strategy on default params with the plan's allocator and
-  selector. Meta strategies (a roster) are skipped, a raising one is an `errors` entry, 120 s cap.
+- **Compare strategies** runs each strategy on defaults with the plan's allocator and selector,
+  plus a tuned plan as `<name> (your settings)`; the server flags the plan's row (`plan`). Meta
+  strategies (a roster) are skipped, a raising one is an `errors` entry, 120 s cap.
 
 **Arena and season**
 - **Isolation:** `process` (POSIX default) forks with a hard kill and never
@@ -277,9 +278,8 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   clients use `tests/web_client.local_client` (Host `localhost`).
 - **The login body is bounded twice** (declared `Content-Length` <= 4096 and the
   streamed body). `test_web_guard.py` drives raw ASGI because clients fix lying lengths.
-- **Chart axes drop the clock on daily data.** What-if presets are real when
-  daily bars are cached (`MIN_SHARED_DAYS`), else labelled synthetic.
-- **A green local suite is not a green CI.** Check the actual run.
+- **Chart axes drop the clock on daily data.** What-if presets are real when daily bars are
+  cached (`MIN_SHARED_DAYS`), else labelled synthetic. **A green local suite is not a green CI.**
 
 ## Docs policy
 

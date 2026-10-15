@@ -86,3 +86,13 @@ def test_whatif_page_offers_compare_strategies(tmp_path):
     text = _client(tmp_path).get("/whatif").text
     assert "Compare strategies" in text
     assert "data-compare-card" in text
+
+
+def test_a_tuned_plan_comes_back_as_its_own_flagged_row(tmp_path):
+    client = _client(tmp_path)
+    body = {**PLAN, "params": {"fast": 5, "slow": 12}}
+    job = _wait(client, _compare(client, body).json()["job_id"], timeout=60)
+    assert job["state"] == "done", job.get("error")
+    flagged = [r["name"] for r in job["compare"]["rows"] if r.get("plan")]
+    assert flagged == ["sma_crossover (your settings)"]
+    assert "sma_crossover" in [r["name"] for r in job["compare"]["rows"]]

@@ -101,3 +101,26 @@ def test_unknown_names_and_required_params_are_skipped_with_a_reason():
     assert needs_configuration(STRATEGIES["buy_and_hold"]) is None
     out = compare_strategies(_plan(), _frames(), ["nope"])
     assert out.skipped[0]["reason"].startswith("unknown strategy")
+
+
+def test_a_tuned_plan_gets_its_own_row_and_only_that_row_is_the_plan():
+    """The default-params row is not the user's plan; with strategy_params the
+    plan runs once more as given, named "(your settings)" and flagged."""
+    frames = _frames()
+    tuned = _plan(strategy="sma_crossover", strategy_params={"fast": 5, "slow": 12})
+    out = compare_strategies(tuned, frames, ["sma_crossover", "buy_and_hold"])
+    mine = "sma_crossover (your settings)"
+    assert set(out.results) == {"sma_crossover", mine, "buy_and_hold"}
+    assert out.row(mine)["plan"] is True
+    assert "plan" not in out.row("sma_crossover") and "plan" not in out.row("buy_and_hold")
+    single = run_whatif(tuned, frames)
+    assert out.row(mine)["final_value"] == single.comparison["final_value"]
+    assert out.row(mine)["final_value"] != out.row("sma_crossover")["final_value"]
+
+
+def test_an_untuned_plan_flags_its_plain_row():
+    out = compare_strategies(_plan(strategy="sma_crossover"), _frames(),
+                             ["sma_crossover", "buy_and_hold"])
+    assert set(out.results) == {"sma_crossover", "buy_and_hold"}
+    assert out.row("sma_crossover")["plan"] is True
+    assert "plan" not in out.row("buy_and_hold")

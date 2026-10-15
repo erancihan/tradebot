@@ -219,6 +219,7 @@ export interface CompareRow {
   max_drawdown: number;
   vs_benchmark_pct: number;
   benchmark?: boolean; // the equal-weight buy-and-hold row
+  plan?: boolean; // the user's plan as given (a tuned plan's "(your settings)" row)
 }
 
 export interface WhatIfCompare {
