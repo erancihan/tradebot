@@ -818,6 +818,19 @@ def test_a_failed_approve_pass_expires_the_waiting_batch(tmp_path, monkeypatch):
     assert broker._order_seq == 0
 
 
+def test_the_first_closed_tick_expires_the_waiting_batch(tmp_path):
+    """After the close no pass runs, so the tick itself must retire the batch:
+    Today would otherwise show it all night, and an approval queued after the
+    close would ride to the open at unknown prices."""
+    pilot, broker, clock, _, _ = _approve_pass(tmp_path)
+    clock.now = datetime(2026, 10, 14, 20, 1, tzinfo=timezone.utc)    # 16:01 EDT
+    state = pilot.tick()
+    assert set(_statuses(pilot).values()) == {"expired"}
+    assert broker._order_seq == 0
+    assert state.last_pass_at == OPEN_NOW                             # no pass ran
+    assert state.next_pass_at == datetime(2026, 10, 15, 13, 30, tzinfo=timezone.utc)
+
+
 def test_a_broker_closed_approve_pass_expires_the_waiting_batch(tmp_path, monkeypatch):
     from tradebot.engine.pending import PassOutcome
 
