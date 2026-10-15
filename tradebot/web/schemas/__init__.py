@@ -32,6 +32,8 @@ from .proposal import (  # noqa: F401
     ProposalLineView,
     ProposalView,
     ProposalEnvelope,
+    HoldingRow,
+    HoldingsView,
     WatchlistChange,
     WatchlistView,
 )

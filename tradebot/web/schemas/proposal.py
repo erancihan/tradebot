@@ -51,3 +51,20 @@ class WatchlistChange(BaseModel):
 class WatchlistView(BaseModel):
     symbols: list[str]
     source: str                       # "watchlist" | "config"
+
+
+class HoldingRow(BaseModel):
+    symbol: str
+    qty: float
+    price: float                      # last cached close (or cost basis, see as_of)
+    value: float
+    weight: float | None = None       # value / equity
+    as_of: str | None = None          # the close's date, or "cost basis"
+
+
+class HoldingsView(BaseModel):
+    source: str                       # "alpaca" | "log"
+    equity: float
+    rows: list[HoldingRow] = []
+    skipped: list[str] = []           # held, but no cached bars to price them
+    note: str | None = None

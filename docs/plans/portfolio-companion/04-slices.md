@@ -44,6 +44,6 @@ merged to master from its `feat/<epic>` branch with a no-ff merge commit.
 ## E5: Expansion
 - [x] S5.0 polish from the phone smoke test: equity chart axis shows dates only on daily bars, What-if presets use real cached symbols when a cache exists (verified synthetic fallback works)
 - [x] S5.1 ntfy phone alerts documented, one-tap test button on the Autopilot page
-- [x] S5.2 watchlist (symbols the advisor scans) editable from the Today page
+- [x] S5.2 watchlist (symbols the advisor scans) editable from the Today page; holdings card on Today (`/api/holdings`, broker positions with credentials, else the order log at the last cached close; uncached symbols are named, not priced)
 - [ ] S5.3 `MarketCalendar` protocol with `us_equities`, used by the season daemon and the autopilot, BIST stub with a holidays table
 - [ ] S5.4 further ideas evaluated, then built or recorded as an ADR "not now"

@@ -615,6 +615,13 @@ band. The account strip on top shows equity, cash and where they came from:
 `paper (Alpaca)` with credentials, `paper (from log)` from the local SQLite log
 (positions are the signed sum of logged orders), or `paper (starting cash)`.
 
+Under the account strip a **Holdings** card lists what the account owns:
+quantity, last price, value and weight (value / equity). With credentials it
+reads the paper account's positions; without them it sums the order log for
+the server's mode. Prices are the last cached close (a held symbol with no
+cached bars is named instead of guessed). API: `GET /api/holdings` returns
+`{source, equity, rows: [{symbol, qty, price, value, weight, as_of}], skipped}`.
+
 Tap **Refresh** to compute a new proposal on the server. It reads bars through
 the local cache and fetches missing bars only when Alpaca credentials are in the
 server's environment; without them it uses cached bars and, for a symbol that

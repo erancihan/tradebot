@@ -17,6 +17,7 @@ from ..services import (
     advisor_service,
     autopilot_service,
     consortium_service,
+    holdings_service,
     metrics_service,
     whatif_presets,
 )
@@ -49,6 +50,8 @@ def today_page(request: Request, repo: TradingRepository = Depends(get_trading_r
     """Phone-first: the trades the advisor suggests right now, with reasons."""
     state = request.app.state
     context = {"today": advisor_service.view(repo, state.settings, state.settings_path),
+               "holdings": holdings_service.view(state.settings, trading_db=state.trading_db,
+                                                 cache_dir=state.cache_dir),
                "active": "today"}
     return templates.TemplateResponse(request, "pages/today.html", context)
 

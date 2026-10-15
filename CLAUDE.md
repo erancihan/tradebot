@@ -76,12 +76,15 @@ tradebot/
                  consortium, whatif_presets, notify_service (test alert),
                  symbols_service (watchlist else config: resolve, active_symbols,
                  with_active_symbols, edits),
+                 holdings_service (Today holdings: paper broker, else order log
+                 priced at the last cached close),
                  jobs/ {registry, frames, frames_many, backtest, dryrun, proposal, whatif,
                  catalog}), schemas/ (+ proposal, whatif), routes/ (pages incl. /today
                  /whatif and /autopilot, partials incl. /partials/proposal and
-                 /partials/autopilot, /partials/watchlist, sse, api/ {trading, arena, jobs,
+                 /partials/autopilot, /partials/watchlist, /partials/holdings, sse, api/ {trading, arena, jobs,
                  proposal, whatif, autopilot, notify, watchlist}), templates/ (pages/today.html, pages/whatif.html,
                  pages/autopilot.html, components/proposal_list.html, components/watchlist.html,
+                 components/holdings.html,
                  components/autopilot_panel.html, components/pending_trades.html,
                  components/tabbar.html), app lifespan resumes/stops the autopilot,
                  static-src/ (PWA manifest + icons, committed), static/ (built, gitignored)
@@ -225,6 +228,13 @@ build on every push and PR, with no credentials.
   positions by summing signed orders per symbol for the server's mode (every
   order is assumed filled in full, as in the dry-run broker). Equity and cash
   come from the newest equity snapshot for that mode, else `initial_cash`.
+- **The holdings card agrees with the proposal's "held" column.** Offline it
+  reads the same signed order-log sum for `settings.mode` (so a web autopilot
+  running as `dry_run` does not show there), priced at the last cached close;
+  a held symbol with no cached bars is listed under "skipped", never priced at
+  a guess. With credentials it reads the paper broker and falls back to the
+  cost basis (labelled) for an uncached symbol, and to the log (with a note)
+  when the broker does not answer. It never fetches bars.
 - **The Today refresh gives the selector the whole cached history** and the
   strategy only the last `required_history + 30` bars. A ranked selector's
   verdict depends on where its frame starts, so the engine (which reads its
