@@ -516,3 +516,27 @@ def test_concurrent_starts_run_one_loop(tmp_path, monkeypatch):
         assert sorted(started) == [False, True]
     finally:
         pilot.stop()
+
+
+def _order_times(pilot) -> list[str]:
+    rows = pilot.storage._conn.execute("SELECT ts FROM orders ORDER BY id").fetchall()
+    return [r[0] for r in rows]
+
+
+def test_orders_carry_the_pass_clock_not_wall_time(tmp_path):
+    """History merges orders with batches by time: in a replay both must read
+    the replay clock. An approval is stamped with the clock at approval."""
+    past = OPEN_NOW - timedelta(days=7)                # a Wednesday session
+    pilot, _, clock, _ = build(tmp_path, now=past)
+    pilot.set_mode("auto")
+    pilot.tick()
+    assert _order_times(pilot) == [past.isoformat()] * len(SYMBOLS)
+
+    (tmp_path / "approve").mkdir()
+    pilot, _, clock, _ = build(tmp_path / "approve", now=past)
+    pilot.set_mode("approve")
+    pilot.tick()
+    clock.now = past + timedelta(seconds=60)          # inside the poll window
+    pending = pilot.storage.pending_lines(pilot.account)
+    assert pilot.approve([pending[0]["id"]]) == 1
+    assert _order_times(pilot) == [clock.now.isoformat()]

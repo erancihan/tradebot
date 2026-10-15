@@ -18,7 +18,7 @@ import logging
 from datetime import date, datetime
 
 from ..market import get_calendar
-from ..models import Order, Side
+from ..models import Order, Side, utcnow
 
 log = logging.getLogger("tradebot.engine")
 
@@ -33,7 +33,8 @@ def roll_session(engine, now: datetime) -> date:
     return day
 
 
-def halt_on_daily_loss(engine, equity: float, day: date) -> bool:
+def halt_on_daily_loss(engine, equity: float, day: date,
+                       now: datetime | None = None) -> bool:
     """Circuit breaker: flatten and stop trading once today's drawdown is too deep."""
     if engine._halted_day == day:
         return True                  # already flat for this session: stay out quietly
@@ -42,7 +43,7 @@ def halt_on_daily_loss(engine, equity: float, day: date) -> bool:
     log.warning("Daily loss limit hit (start=%.2f now=%.2f). Flattening and halting.",
                 engine._session_start_equity, equity)
     engine._halted_day = day
-    closed = flatten(engine)
+    closed = flatten(engine, now)
     engine._notify({
         "type": "halt", "reason": "daily_loss",
         "start_equity": engine._session_start_equity, "equity": equity,
@@ -51,7 +52,7 @@ def halt_on_daily_loss(engine, equity: float, day: date) -> bool:
     return True
 
 
-def flatten(engine) -> list[str]:
+def flatten(engine, now: datetime | None = None) -> list[str]:
     """Cancel resting orders and close every open position at market.
 
     One symbol failing never stops the others from closing; each close is
@@ -71,7 +72,8 @@ def flatten(engine) -> list[str]:
         qty = float(pos.qty)
         if qty == 0:
             continue
-        order = Order(symbol=symbol, qty=abs(qty), side=Side.from_delta(-qty))
+        order = Order(symbol=symbol, qty=abs(qty), side=Side.from_delta(-qty),
+                      created_at=now or utcnow())
         try:
             order_id = engine.broker.submit(order)
         except Exception:  # noqa: BLE001

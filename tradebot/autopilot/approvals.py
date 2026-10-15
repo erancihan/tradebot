@@ -23,7 +23,8 @@ class ApprovalsMixin:
             if self._pending_is_stale():
                 self._expire_pending()
                 return 0
-            return len(self.engine.submit_lines(chosen))
+            # Stamped with the autopilot's clock: a replay's reads its bars.
+            return len(self.engine.submit_lines(chosen, now=self.clock()))
 
     def reject(self, line_ids: list[int]) -> int:
         """Mark the chosen pending lines rejected; nothing is submitted."""

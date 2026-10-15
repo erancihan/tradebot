@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 
-from ..models import Order, Side, opens_exposure
+from ..models import Order, Side, opens_exposure, utcnow
 
 log = logging.getLogger("tradebot.engine")
 
@@ -72,13 +73,17 @@ def _after_send(action: RebalanceAction, step) -> None:
                       action.symbol, action.submitted_id)
 
 
-def submit_line(engine, line, on_submitted=None) -> RebalanceAction:
+def submit_line(engine, line, on_submitted=None,
+                now: datetime | None = None) -> RebalanceAction:
     """Submit one proposal line's delta. The advisor already applied the band
     and the rounding, so the quantity here is final.
 
     ``on_submitted`` runs as soon as the broker accepts the order, before any
     bookkeeping. Once the broker has it, nothing after may raise: a failure
     there must not make the caller believe the order was never sent.
+
+    ``now`` is the pass clock (a replay's bar time), so History sorts the
+    order beside the batch it came from; live it is the wall clock.
     """
     symbol, target, delta, price = line.symbol, line.target, line.order_qty, line.price
     current = line.current_qty
@@ -100,7 +105,7 @@ def submit_line(engine, line, on_submitted=None) -> RebalanceAction:
         stop, target_price = engine.risk.bracket_prices(delta, price)
 
     order = Order(symbol=symbol, qty=abs(delta), side=Side.from_delta(delta),
-                  stop_loss=stop, take_profit=target_price)
+                  stop_loss=stop, take_profit=target_price, created_at=now or utcnow())
     action.submitted_id = engine.broker.submit(order)
     log.info(
         "%s: target=%d, %s %.4f @~%.2f (order %s)%s",
