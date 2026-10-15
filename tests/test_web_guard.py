@@ -145,6 +145,15 @@ def test_the_login_page_is_a_password_form_that_posts(tmp_path):
     _assert_login_headers(r)
 
 
+def test_the_sign_in_pages_are_dark_and_thumb_sized_like_the_app(tmp_path):
+    # Both pages render before /static is reachable, so the style is inline.
+    client = _locked(tmp_path)
+    for r in (client.get("/today"), client.get("/login")):
+        assert "background:#020617" in r.text and 'name="viewport"' in r.text
+    form = client.get("/login").text
+    assert "min-height:44px" in form and "{error}" not in form
+
+
 def test_a_token_in_the_query_string_does_not_log_in(tmp_path):
     r = _locked(tmp_path).get(f"/login?token={TOKEN}", follow_redirects=False)
     assert r.status_code == 200

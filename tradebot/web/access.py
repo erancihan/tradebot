@@ -39,19 +39,23 @@ COOKIE_MAX_AGE = 365 * 24 * 3600
 #: Login responses must not be cached or leak where they came from.
 _LOGIN_HEADERS = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
 
-_ASK_FOR_LOGIN = """<!doctype html><meta charset="utf-8">
+# Inline, because /static sits behind this gate too; dark like the app (slate-950).
+_STYLE = """<meta name="theme-color" content="#020617">
+<style>body{font:16px system-ui,sans-serif;max-width:24rem;margin:3rem auto;padding:0 1rem;
+background:#020617;color:#e2e8f0}a{color:#34d399}label{color:#94a3b8}
+input,button{font:inherit;padding:.5rem;width:100%;min-height:44px;box-sizing:border-box;
+margin-top:.5rem;border-radius:.5rem;border:1px solid #334155;background:#0f172a;color:inherit}
+button{background:#059669;border-color:#059669;color:#fff;font-weight:600}
+.err{color:#fda4af}</style>
+"""
+_HEAD = """<!doctype html><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>tradebot: sign in</title>
-<p>This dashboard needs its access token.</p>
+""" + _STYLE
+_ASK_FOR_LOGIN = _HEAD + """<p>This dashboard needs its access token.</p>
 <p><a href="/login">Sign in</a> once in this browser and paste it.</p>
 """
-_LOGIN_FORM = """<!doctype html><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>tradebot: sign in</title>
-<style>body{font:16px system-ui,sans-serif;max-width:24rem;margin:3rem auto;padding:0 1rem}
-input,button{font:inherit;padding:.5rem;width:100%;box-sizing:border-box;margin-top:.5rem}
-.err{color:#b91c1c}</style>
-<h1>tradebot</h1>
+_LOGIN_FORM = _HEAD + """<h1>tradebot</h1>
 {error}
 <form method="post" action="/login">
 <label for="token">Access token (TRADEBOT_WEB_TOKEN)</label>
