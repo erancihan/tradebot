@@ -20,7 +20,10 @@ from . import symbols_service
 from .jobs.frames import _pull_hint
 
 
-def build(settings, *, trading_db: str, cache_dir: str) -> Autopilot:
+def build(settings, *, trading_db: str, cache_dir: str,
+          link_secret: bytes | None = None) -> Autopilot:
+    """``link_secret`` signs the push's Approve/Skip links (``autopilot.links``)."""
+    from ...autopilot.links import link_signer
     from ...engine import Engine
     from ...risk import RiskManager
     from ...strategies import build_strategy
@@ -40,7 +43,9 @@ def build(settings, *, trading_db: str, cache_dir: str) -> Autopilot:
                     allocator=settings.build_allocator(),
                     selector=settings.build_selector(),
                     overlays=settings.build_overlays(),
-                    notifier=settings.build_notifier())
+                    notifier=settings.build_notifier(
+                        link_signer(link_secret, settings.poll_seconds)
+                        if link_secret else None))
     return Autopilot(engine, storage, poll_seconds=settings.poll_seconds)
 
 

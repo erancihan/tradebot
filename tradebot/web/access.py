@@ -7,6 +7,9 @@ request needs either the session cookie that ``/login?token=...`` issues or an
 token, not the token, so a leaked cookie jar does not leak the secret that
 mints new sessions; changing the token invalidates every cookie at once.
 
+The phone push's signed batch links (``SIGNED_PATH``) skip the gate: ntfy
+holds no cookie, and the link's HMAC is its own one-batch, one-verb credential.
+
 The token is posted from a form, never put in a URL: a query string lands in
 server access logs, browser history and Referer headers.
 """
@@ -15,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 from urllib.parse import parse_qs
 
 from starlette.requests import HTTPConnection, Request
@@ -26,6 +30,9 @@ COOKIE_NAME = "tradebot_session"
 #: own styling, the PWA manifest and icons the home-screen shortcut needs.
 OPEN_PREFIXES = ("/app/", "/static/")
 LOGIN_PATH = "/login"
+#: The phone push's signed batch links: their HMAC signature is the credential
+#: (``tradebot.autopilot.links``), and ntfy cannot hold a session cookie.
+SIGNED_PATH = re.compile(r"/api/autopilot/batches/\d+/(approve|reject)")
 #: A year: the point is to log a phone in once, then use the home-screen icon.
 COOKIE_MAX_AGE = 365 * 24 * 3600
 
@@ -151,7 +158,7 @@ async def _bounded_body(request: Request) -> bytes:
 
 
 def _is_open(path: str) -> bool:
-    return path.startswith(OPEN_PREFIXES)
+    return path.startswith(OPEN_PREFIXES) or SIGNED_PATH.fullmatch(path) is not None
 
 
 def _same(given: str, token: str) -> bool:

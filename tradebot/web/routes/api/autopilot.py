@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 
+from ....autopilot.links import verify
 from ...schemas import AutopilotCommand, AutopilotView
 from ...services import autopilot_service
 
@@ -31,3 +32,18 @@ def command(cmd: AutopilotCommand, request: Request):
         # Not an HTTP error: the page shows the reason (e.g. the pull command
         # for missing bars) beside an unchanged state.
         return autopilot_service.view(request.app, notice=str(exc))
+
+
+@router.post("/autopilot/batches/{batch_id}/{verb}")
+def batch_link(batch_id: int, verb: str, exp: int, sig: str, request: Request):
+    """The phone push's Approve all / Skip buttons (signed links, see
+    ``tradebot.autopilot.links``). The signature is the only credential, so
+    these paths skip the cookie gate. A repeat returns a count of 0."""
+    if verb not in ("approve", "reject") or not verify(
+            request.app.state.link_secret, batch_id, verb, exp, sig):
+        raise HTTPException(status_code=403, detail="invalid or expired link")
+    try:
+        done = autopilot_service.act_on_batch(request.app, batch_id, verb)
+    except autopilot_service.AutopilotUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"batch_id": batch_id, ("approved" if verb == "approve" else "rejected"): done}

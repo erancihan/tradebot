@@ -78,6 +78,14 @@ class ProposalsMixin:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def pending_lines_in_batch(self, batch_id: int, mode: str) -> list[dict]:
+        """One batch's lines still waiting for approval (a signed link's scope)."""
+        rows = self._conn.execute(
+            "SELECT * FROM proposals WHERE batch_id = ? AND mode = ? AND status = 'pending'"
+            " ORDER BY id", (int(batch_id), mode),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     def proposal_lines(self, ids: list[int], mode: str, status: str) -> list[dict]:
         """The given lines that still belong to ``mode`` and carry ``status``."""
         if not ids:

@@ -45,8 +45,9 @@ def get(app) -> Autopilot:
         if pilot is None:
             state = app.state
             try:
-                pilot = autopilot_build.build(state.settings, trading_db=state.trading_db,
-                                              cache_dir=state.cache_dir)
+                pilot = autopilot_build.build(
+                    state.settings, trading_db=state.trading_db, cache_dir=state.cache_dir,
+                    link_secret=getattr(state, "link_secret", None))
             # ValueError: a stored config a component rejects (e.g. a
             # hand-edited negative brief). Reported, never a 500 or a server
             # that fails to start.
@@ -134,3 +135,17 @@ def approve(app, line_ids: list[int]) -> dict:
 def reject(app, line_ids: list[int]) -> dict:
     get(app).reject(line_ids)
     return view(app)
+
+
+def act_on_batch(app, batch_id: int, verb: str) -> int:
+    """A signed link's command: approve or reject the batch's still-pending lines.
+
+    Only lines of that batch in this account's scope are touched, through the
+    same ``Autopilot.approve``/``reject`` the page uses (one lock, one submit
+    path). The mode never changes. Idempotent: a repeat finds nothing pending.
+    """
+    pilot = get(app)
+    ids = [ln["id"] for ln in pilot.storage.pending_lines_in_batch(batch_id, pilot.account)]
+    if not ids:
+        return 0
+    return pilot.approve(ids) if verb == "approve" else pilot.reject(ids)
