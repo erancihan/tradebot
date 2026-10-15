@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ...dependencies import get_trading_repo
 from ...repository import TradingRepository
-from ...services import discover_service
+from ...schemas import DiscoverAdd, WatchlistView
+from ...services import autopilot_service, discover_service, symbols_service
 
 router = APIRouter()
 
@@ -25,3 +26,19 @@ def run(request: Request):
         "cache_dir": state.cache_dir,
     })
     return {"job_id": job_id}
+
+
+@router.post("/discover/add", response_model=WatchlistView, response_model_exclude_none=True)
+def add(body: DiscoverAdd, request: Request):
+    """Add a row to the watchlist, keeping the current symbols (seeded when empty)."""
+    state = request.app.state
+    try:
+        view = discover_service.add_to_watchlist(state.settings, state.trading_db,
+                                                 body.symbol)
+    except symbols_service.InvalidSymbols as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # Same rule as any watchlist edit: a running loop copied the old list.
+    if autopilot_service.reset(request.app):
+        view["notice"] = ("The autopilot loop was stopped so it does not trade the old "
+                          "list: open Autopilot and tap a mode to start it again.")
+    return view

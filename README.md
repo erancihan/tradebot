@@ -100,8 +100,9 @@ traded.` With server-side Alpaca keys the pool is Alpaca's most-active
 shortlist after the liquidity screen (at most 20 names, whose bars land in the
 cache); without keys it is every symbol with cached daily bars, through the same
 screen. The card says which, with the as-of date and the bar window. **Add**
-puts a name on the watchlist and, like any watchlist edit, stops a running
-autopilot. The last run survives a restart. Discover never places an order.
+puts a name on your watchlist next to your current symbols: an empty watchlist
+is first filled with the symbols in use, so the config list never drops out.
+Like any watchlist edit, it stops a running autopilot. The last run survives a restart. Discover never places an order.
 
 ### 5. Autopilot: let it trade
 

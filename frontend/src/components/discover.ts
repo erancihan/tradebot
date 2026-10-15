@@ -1,10 +1,11 @@
 // Today's Discover card: "what else could I buy?". "Find candidates" runs the
 // server's `discover` job (momentum over a screened pool, minus what is watched
 // or held), polls it, then swaps in the server-rendered rows. A row's Add
-// posts to the watchlist, re-renders the rows (that row now reads "on
+// posts to /api/discover/add (an empty watchlist is first seeded with the
+// active symbols, so they stay), re-renders the rows (that row now reads "on
 // watchlist") and fires `watchlist-changed` so the Today panes reload too.
 
-import { changeWatchlist, getPartial, runDiscover, waitForJob } from "../api/client";
+import { addFromDiscover, getPartial, runDiscover, waitForJob } from "../api/client";
 import { dispatch, refs } from "../alpine";
 
 // The symbol a tapped Add button asks for, or null.
@@ -51,7 +52,7 @@ export function discover() {
       this.adding = symbol;
       this.error = "";
       try {
-        this.notice = (await changeWatchlist({ add: [symbol] })).notice ?? "";
+        this.notice = (await addFromDiscover(symbol)).notice ?? "";
         await this.reloadRows();
         dispatch(this, "watchlist-changed", { symbol });
       } catch (err) {

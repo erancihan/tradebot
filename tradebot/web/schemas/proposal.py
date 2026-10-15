@@ -48,6 +48,11 @@ class WatchlistChange(BaseModel):
     remove: list[str] | None = None
 
 
+class DiscoverAdd(BaseModel):
+    """One Discover row to put on the watchlist."""
+    symbol: str
+
+
 class WatchlistView(BaseModel):
     symbols: list[str]
     source: str                       # "watchlist" | "config"

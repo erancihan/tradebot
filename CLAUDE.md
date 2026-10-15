@@ -183,8 +183,8 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   else `settings.symbols` (`symbols_service.with_active_symbols`, a copy). A
   watchlist edit stops a running autopilot (`autopilot_service.reset`), as a Settings save does.
   Symbols match `^[A-Z.\-]{1,10}$` after upper-casing.
-- **Discover** ranks by the `MomentumSelector` score (126/21) over the cached or Alpaca
-  pool, excludes held and watched names; the last run persists in `discover_runs`.
+- **Discover** ranks by the `MomentumSelector` score over the cached or Alpaca pool, excludes
+  held and watched names, persists in `discover_runs`; Add seeds an empty watchlist first.
 - **Contributions are not returns.** With `cash_flows` metrics use the growth
   index `equity_t / (equity_{t-1} + flow_t)`: a flow is invested at its bar's
   open and earns that bar. The arena never passes flows. What-if cash: month's first bar.
@@ -208,8 +208,8 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
 - **The `algos/` head-count (12) is in tests** (`test_web.py`,
   `test_arena_season.py`, `test_arena_tournament.py`, `test_arena_journal.py`).
   `canaries/` and `consortium/` are subdirectories the loader glob skips.
-- **Meta strategies are expensive:** `_TailBounded` caps each call to
-  `2 x required_history`. Use `--time-budget 20`. Never trim a roster to fit a budget.
+- **Meta strategies are expensive:** `_TailBounded` caps each call to `2 x required_history`.
+  Use `--time-budget 20`. Never trim a roster to fit a budget.
 - **Fold scorers are in-sample for the analyst** (parameters chosen knowing the
   scenarios), and `worst_fold` alone has a trivial optimum (all cash = 0.0). Check a
   scenario for degeneracy first (`tests/test_scenario_library.py`).

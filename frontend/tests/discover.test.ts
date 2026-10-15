@@ -1,5 +1,5 @@
 // Discover: a search swaps in the rows, a failed job shows its error, and an
-// Add posts to the watchlist with the guard header, re-renders the rows and
+// Add posts to /api/discover/add with the guard header, re-renders the rows and
 // tells the Today page.
 
 import { additionFor, discover } from "../src/components/discover";
@@ -19,7 +19,7 @@ stubFetch((url, init) => {
     return json({ id: "d1", kind: "discover", state: jobState, error: "RuntimeError: no cache" });
   }
   if (url === "/partials/discover") return new Response(partial);
-  if (url === "/api/watchlist") {
+  if (url === "/api/discover/add") {
     return json({ symbols: ["AAA"], source: "watchlist", notice: "The autopilot loop was stopped" });
   }
   return json({}, 404);
@@ -57,15 +57,15 @@ function mount() {
   jobState = "done";
 }
 
-// Add posts {add: [symbol]}, re-renders the rows and announces the change.
+// Add posts {symbol}, re-renders the rows and announces the change.
 {
   posts.length = 0;
   partial = "<li data-discover-row=\"AAA\"><span data-on-watchlist>on watchlist</span></li>";
   const { page, rows, events } = mount();
   await page.add("AAA");
   await sleep(0);
-  check(posts.length === 1 && posts[0].url === "/api/watchlist", "one watchlist post");
-  check(JSON.parse(posts[0].body).add[0] === "AAA", `posted ${posts[0].body}`);
+  check(posts.length === 1 && posts[0].url === "/api/discover/add", "one add post");
+  check(JSON.parse(posts[0].body).symbol === "AAA", `posted ${posts[0].body}`);
   check(posts[0].guard === "tradebot", "the add carries the guard header");
   check(rows.innerHTML.includes("on watchlist"), "the row flipped to on watchlist");
   check(events.includes("watchlist-changed"), "the Today panes were told");
