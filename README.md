@@ -238,6 +238,20 @@ other users see command-line arguments in `ps`. The connection is plain HTTP.
 Keep it on a network you trust, or put HTTPS in front (the cookie is then
 marked `Secure`). `--config other.yaml` serves a different settings file.
 
+**Away from home.** Do not open the port on your router. Put the server and
+the phone on one private network with [Tailscale](https://tailscale.com)
+(free for personal use, WireGuard under the hood): install it on both, then
+allow the tailnet name the phone will use and point the push buttons at it:
+
+```bash
+tradebot-web --host 0.0.0.0 --allow-host myserver.tail1234.ts.net
+```
+
+Set **Public URL** on Settings to `http://myserver.tail1234.ts.net:8000`. The
+Approve and Skip buttons in a push then open only for a phone on the tailnet.
+`tailscale serve 8000` adds HTTPS with a certificate Tailscale manages; the
+public URL and `--allow-host` then use the `https://` name without a port.
+
 ### 9. Keep it running
 
 The autopilot is a thread inside `tradebot-web`, so it trades only while the
