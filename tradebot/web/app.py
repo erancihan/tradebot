@@ -18,6 +18,7 @@ from .guard import SameOriginGuard
 from .routes import api, pages, partials, sse
 from .services import autopilot_service
 from .services.jobs import JobRegistry
+from .startup import startup_line
 
 # Not every platform's mimetypes table knows the PWA manifest extension, and a
 # text/plain manifest is ignored by some browsers.
@@ -53,7 +54,9 @@ def load_settings(settings_path: str | None) -> tuple[Settings, str | None]:
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     # The autopilot loop is a thread inside this process: resume it if the
-    # user left it on, and stop it with the server so no pass outlives it.
+    # user left it on, and stop it with the server so no pass outlives it
+    # (uvicorn turns SIGTERM from a service manager into this shutdown).
+    log.info(startup_line(app))
     autopilot_service.resume(app)
     yield
     autopilot_service.shutdown(app)
@@ -71,6 +74,9 @@ def create_app(trading_db: str = "tradebot.db", arena_db: str = "arena.db",
     app.state.season_db = season_db
     app.state.cache_dir = cache_dir
     app.state.jobs = JobRegistry()
+    app.state.allowed_hosts = list(DEFAULT_ALLOWED_HOSTS if allowed_hosts is None
+                                   else allowed_hosts)
+    app.state.token_required = bool(access_token)
     # Signs the phone push's Approve/Skip links: from the token, else random
     # for this process (links then die with a restart, as the batch does).
     app.state.link_secret = link_secret(access_token)
@@ -88,12 +94,11 @@ def create_app(trading_db: str = "tradebot.db", arena_db: str = "arena.db",
     app.include_router(partials.router)
     app.include_router(api.router)
     app.include_router(sse.router)
-    _install_middleware(app, allowed_hosts, access_token)
+    _install_middleware(app, access_token)
     return app
 
 
-def _install_middleware(app: FastAPI, allowed_hosts: list[str] | None,
-                        access_token: str | None) -> None:
+def _install_middleware(app: FastAPI, access_token: str | None) -> None:
     """Starlette runs the LAST middleware added FIRST, so add innermost first.
 
     Request order: trusted host -> access token -> same-origin guard -> routes.
@@ -103,7 +108,7 @@ def _install_middleware(app: FastAPI, allowed_hosts: list[str] | None,
     app.add_middleware(SameOriginGuard)
     if access_token:
         app.add_middleware(AccessToken, token=access_token)
-    hosts = list(DEFAULT_ALLOWED_HOSTS if allowed_hosts is None else allowed_hosts)
+    hosts = app.state.allowed_hosts
     if "*" in hosts:
         log.warning("Host checking is disabled (--allow-host '*'): the dashboard "
                     "is open to DNS-rebinding attacks from any web page")

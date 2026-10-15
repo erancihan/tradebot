@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  tradebot-web as a macOS LaunchAgent: starts at login, restarts on a crash.
+  Replace the two placeholders: /PATH/TO/tradebot, YOUR_HOST. See deploy/README.md.
+
+  launchd has no EnvironmentFile. Put ALPACA_API_KEY, ALPACA_API_SECRET and
+  TRADEBOT_WEB_TOKEN in /PATH/TO/tradebot/.env (chmod 600): tradebot-web reads
+  the .env at the root of the checkout at start. Keep secrets out of this file.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tradebot.web</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/PATH/TO/tradebot/.venv/bin/tradebot-web</string>
+        <string>--host</string>
+        <string>0.0.0.0</string>
+        <string>--port</string>
+        <string>8000</string>
+        <string>--config</string>
+        <string>/PATH/TO/tradebot/config.yaml</string>
+        <string>--allow-host</string>
+        <string>YOUR_HOST</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/PATH/TO/tradebot</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>/PATH/TO/tradebot/logs/tradebot-web.log</string>
+    <key>StandardErrorPath</key>
+    <string>/PATH/TO/tradebot/logs/tradebot-web.log</string>
+</dict>
+</plist>

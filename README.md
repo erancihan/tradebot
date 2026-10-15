@@ -216,6 +216,26 @@ other users see command-line arguments in `ps`. The connection is plain HTTP.
 Keep it on a network you trust, or put HTTPS in front (the cookie is then
 marked `Secure`). `--config other.yaml` serves a different settings file.
 
+### 9. Keep it running
+
+The autopilot is a thread inside `tradebot-web`, so it trades only while the
+server is up. [`deploy/`](deploy/README.md) has a systemd unit (Linux) and a
+launchd agent (macOS) that start the server at boot or login and restart it
+after a crash. Run `tradebot-web --check` with the same flags first: it
+validates the config, opens the database, prints the startup line and exits 0
+(1 says what is wrong). The service logs that line at every start: the config
+file, the database, the allowed hosts, and whether the token and the Alpaca
+keys are set (never their values), plus the autopilot's stored mode.
+
+A restart keeps the config, the databases, the watchlist and the autopilot
+mode. A loop left on **Approve first** or **Automatic** resumes by itself at
+start, so a crash or reboot does not quietly stop the bot. Set it to **Off**
+before a restart you want to look at first. Trades waiting for approval do not
+survive: the first pass after the restart expires them and proposes afresh.
+A dry-run's virtual account starts over, while the paper account lives at
+Alpaca. Approve links in phone alerts outlive a restart only with
+`TRADEBOT_WEB_TOKEN` set (they are signed with it).
+
 ### More pages (under More on a phone)
 
 - **History** (`/history`): what the bot has done and decided, newest first,
@@ -347,8 +367,8 @@ Parked trades wait on the Autopilot page of a server with the same database.
 bot refuses to place live orders.
 
 **Run it for free** on an always-on machine you own, such as a Raspberry Pi.
-Use `systemd` or `tmux`, or `run --once` from `cron`. Paper trading and IEX
-data stay inside Alpaca's free tier.
+Use the service files in [`deploy/`](deploy/README.md), `tmux`, or `run --once`
+from `cron`. Paper trading and IEX data stay inside Alpaca's free tier.
 
 ### Configuration
 
@@ -596,16 +616,9 @@ Seeded standings are backfilled, not live-earned. `season standings` and the
 Use `--isolation process` for anything long-running. The default `thread`
 runner cannot kill an over-budget contestant, so a slow one leaks a thread
 every tick. A restart heals up to 30 missed bars. Re-run `season seed` for a
-longer gap. A systemd unit:
-
-```ini
-[Service]
-ExecStart=/path/to/.venv/bin/tradebot arena season run 1 --db /var/lib/tradebot/season.db
-WorkingDirectory=/path/to/tradebot
-EnvironmentFile=/etc/tradebot.env      # ALPACA_API_KEY / ALPACA_API_SECRET
-Restart=always
-RestartSec=60
-```
+longer gap. To run a season as a service, adapt
+`deploy/systemd/tradebot-web.service`: swap its `ExecStart` for
+`tradebot arena season run 1 --db /var/lib/tradebot/season.db`.
 
 ## Testing
 

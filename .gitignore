@@ -38,3 +38,6 @@ htmlcov/
 .idea/
 .vscode/
 .playwright-mcp/
+
+# Service logs (deploy/launchd)
+logs/
