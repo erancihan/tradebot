@@ -130,7 +130,7 @@ config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])
 ## Dev commands
 
 ```bash
-make install | install-web | test | demo | dryrun | arena | web   # web serves :8000
+make install | install-web | install-all | test | demo | dryrun | arena | web  # :8000
 cd frontend && npm run typecheck | test | build | watch:js           # after install-web
 ```
 CLI: `tradebot {backtest,run,status,demo,arena,data,universe}`, `tradebot-web
