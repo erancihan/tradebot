@@ -90,3 +90,14 @@ def test_env_secret_reads_the_web_token(monkeypatch):
     assert links.env_secret() == SECRET
     monkeypatch.delenv("TRADEBOT_WEB_TOKEN")
     assert links.env_secret() == links._PROCESS_SECRET
+
+
+def test_each_link_is_claimed_once_and_forgotten_after_it_expires():
+    used = links.UsedLinks()
+    assert used.claim(7, "approve", 1000, "ab", now=0)
+    assert not used.claim(7, "approve", 1000, "ab", now=1)          # replay
+    assert used.claim(7, "reject", 1000, "cd", now=1)               # another link
+    used.release(7, "reject", "cd")
+    assert used.claim(7, "reject", 1000, "cd", now=2)               # given back
+    assert used.claim(8, "approve", 5000, "ef", now=1001)           # prunes the rest
+    assert used.claim(7, "approve", 1000, "ab", now=1001)           # expired anyway

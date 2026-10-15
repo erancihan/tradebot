@@ -42,14 +42,19 @@ def actions_header(event: dict, public_url: str | None,
     URLs are double-quoted: a signed link carries ``=`` and ntfy's simple
     format splits on it otherwise. The text is latin-1 safe because a header
     must be; a public URL is plain ASCII by validation.
+
+    A live account's push gets no Approve button: the link rides through the
+    ntfy topic, so whoever reads the topic could use it. Skip is harmless.
     """
     batch_id = event.get("batch_id")
     if (event.get("type") != "pending_trades" or batch_id is None
             or not public_url or signer is None):
         return None
-    approve = batch_link(public_url, batch_id, "approve", signer)
+    actions = []
+    if event.get("mode") != "live":
+        approve = batch_link(public_url, batch_id, "approve", signer)
+        actions.append(f'http, Approve all, "{approve}", {_HTTP_OPTS}')
     reject = batch_link(public_url, batch_id, "reject", signer)
-    text = (f'http, Approve all, "{approve}", {_HTTP_OPTS}; '
-            f'http, Skip, "{reject}", {_HTTP_OPTS}; '
-            f'view, Open, "{public_url.rstrip("/")}/autopilot"')
-    return text.encode("latin-1", "replace").decode("latin-1")
+    actions.append(f'http, Skip, "{reject}", {_HTTP_OPTS}')
+    actions.append(f'view, Open, "{public_url.rstrip("/")}/autopilot"')
+    return "; ".join(actions).encode("latin-1", "replace").decode("latin-1")

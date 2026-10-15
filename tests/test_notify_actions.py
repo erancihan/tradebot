@@ -31,6 +31,13 @@ def test_the_actions_header_is_exact():
     EXPECTED.encode("latin-1")                      # a header must be latin-1
 
 
+def test_a_live_push_has_no_approve_button():
+    """The link rides through the topic: never an approve for real money."""
+    text = actions_header({**EVENT, "mode": "live"}, PUBLIC, _signer)
+    assert text == EXPECTED.split("; ", 1)[1]
+    assert "approve" not in text and text.startswith("http, Skip, ")
+
+
 @pytest.mark.parametrize("event, public, signer", [
     (EVENT, None, _signer),
     (EVENT, "", _signer),

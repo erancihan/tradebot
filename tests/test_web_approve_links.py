@@ -104,8 +104,35 @@ def test_approve_link_submits_exactly_that_batch(tmp_path, pushes):
     assert set(pilot.engine.broker.positions()) == {"SPY", "QQQ"}
     assert _pending(pilot) == [] and pilot.state().mode == "approve"   # mode untouched
 
-    again = client.post(links["Approve all"], headers=POST_HEADERS)  # idempotent
-    assert again.status_code == 200 and again.json()["approved"] == 0
+    again = client.post(links["Approve all"], headers=POST_HEADERS)  # single use
+    assert again.status_code == 409
+
+
+def test_a_replayed_link_is_refused_and_changes_nothing(tmp_path, pushes):
+    """The link rode through the ntfy topic: a second use is a 409, even when
+    the batch is still pending (a replayed Skip must not act twice either)."""
+    app, client, pilot, links = _setup(tmp_path, pushes)
+    first = client.post(links["Skip"], headers=POST_HEADERS)
+    assert first.status_code == 200 and first.json()["rejected"] == 2
+    pilot.tick()                                    # a fresh batch is pending
+    fresh = _pending(pilot)
+    assert client.post(links["Skip"], headers=POST_HEADERS).status_code == 409
+    assert _pending(pilot) == fresh
+
+
+def test_a_live_account_is_never_approved_by_link(tmp_path, pushes, monkeypatch):
+    app, client, pilot, links = _setup(tmp_path, pushes)
+    lines = _pending(pilot)
+    batch = lines[0]["batch_id"]
+    # Lines as a live engine would have stored them, so only the guard stops it.
+    monkeypatch.setattr(pilot.storage, "pending_lines_in_batch", lambda b, m: lines)
+    monkeypatch.setattr(pilot, "approve", lambda ids: pytest.fail("approved a live batch"))
+    pilot.account = "live"                         # as a live CLI engine would be
+    try:
+        assert autopilot_service.act_on_batch(app, batch, "approve") == 0
+    finally:
+        pilot.account = "dry_run"
+    assert len(_pending(pilot)) == 2 and pilot.engine.broker.positions() == {}
 
 
 def test_skip_link_rejects(tmp_path, pushes):

@@ -142,9 +142,12 @@ def act_on_batch(app, batch_id: int, verb: str) -> int:
 
     Only lines of that batch in this account's scope are touched, through the
     same ``Autopilot.approve``/``reject`` the page uses (one lock, one submit
-    path). The mode never changes. Idempotent: a repeat finds nothing pending.
+    path). The mode never changes, and a live account is never approved by link
+    (it rode through the ntfy topic). A batch already acted on yields 0.
     """
     pilot = get(app)
+    if verb == "approve" and pilot.account == "live":
+        return 0
     ids = [ln["id"] for ln in pilot.storage.pending_lines_in_batch(batch_id, pilot.account)]
     if not ids:
         return 0

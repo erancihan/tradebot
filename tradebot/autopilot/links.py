@@ -18,6 +18,7 @@ import hashlib
 import hmac
 import os
 import secrets
+import threading
 import time
 from typing import Callable
 
@@ -78,3 +79,33 @@ def link_signer(secret: bytes, poll_seconds: float,
         return f"exp={exp}&sig={signature(secret, batch_id, verb, exp)}"
 
     return sign
+
+
+class UsedLinks:
+    """Single use: each signed link acts once per process.
+
+    The push travels through the ntfy topic, so a link is replayable by
+    anyone who saw it; a replay is refused instead of quietly re-running.
+    Entries are dropped once their link has expired anyway, so the set stays
+    the size of the links currently alive.
+    """
+
+    def __init__(self) -> None:
+        self._used: dict[tuple[int, str, str], int] = {}
+        self._lock = threading.Lock()
+
+    def claim(self, batch_id: int, verb: str, exp: int, sig: str,
+              now: float | None = None) -> bool:
+        """True the first time; False for a replay."""
+        key, now = (int(batch_id), verb, str(sig)), time.time() if now is None else now
+        with self._lock:
+            self._used = {k: e for k, e in self._used.items() if e >= now}
+            if key in self._used:
+                return False
+            self._used[key] = int(exp)
+            return True
+
+    def release(self, batch_id: int, verb: str, sig: str) -> None:
+        """Give a link back when it could not act (e.g. no engine yet)."""
+        with self._lock:
+            self._used.pop((int(batch_id), verb, str(sig)), None)
