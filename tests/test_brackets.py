@@ -181,6 +181,39 @@ def test_closing_a_position_cancels_its_bracket():
     assert broker.check_brackets() == []                # nothing rests on a flat book
 
 
+def test_a_bracket_never_fires_on_the_bar_it_entered_on():
+    """The entry bar's high/low include prices from before the fill."""
+    bars = MovingBars([{"open": 100.0, "high": 110.0, "low": 90.0, "close": 100.0}])
+    broker = _long_with_stop(bars, stop=95.0, target=105.0)
+
+    assert broker.check_brackets() == []                # same bar: no new information
+    assert broker.position("SPY").qty == 10
+    bars.push(open=100.0, high=106.0, low=99.0, close=105.0)
+    assert [f.price for f in broker.check_brackets()] == [105.0]
+
+
+def test_a_parked_replay_books_no_phantom_bracket_trades():
+    """The web dry-run parks ReplayData at its newest bar and never advances it.
+
+    Every pass used to re-test the entry bar's own range, exit at the target,
+    re-enter at the close and book a fake profit, so equity drifted with no new
+    data at all.
+    """
+    from tradebot.data.replay import ReplayData
+
+    idx = pd.date_range("2024-01-01", periods=3, freq="1D", tz="UTC")
+    df = pd.DataFrame({"open": [100.0] * 3, "high": [103.0] * 3, "low": [97.0] * 3,
+                       "close": [100.0] * 3, "volume": [1e6] * 3}, index=idx)
+    data = ReplayData({"SPY": df}, warmup=3)
+    broker = DryRunBroker(data, initial_cash=10_000, slippage_bps=0)
+    engine = _engine(data, broker, take_profit_pct=0.002)
+    for _ in range(5):
+        engine.rebalance()
+
+    assert broker.portfolio.trades == []
+    assert broker.account().equity == pytest.approx(10_000)
+
+
 # --- engine seam ---------------------------------------------------------------
 
 def _engine(bars: MovingBars, broker: DryRunBroker, **risk_kwargs) -> Engine:

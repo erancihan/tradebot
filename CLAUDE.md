@@ -185,7 +185,7 @@ build on every push and PR, with no credentials.
   when their histories start on different days.
 - **One list for suggestions and the autopilot:** the watchlist when not empty,
   else `settings.symbols` (`symbols_service.with_active_symbols`, a copy). A
-  watchlist edit reaches a running autopilot only after a restart or a Settings save.
+  watchlist edit stops a running autopilot (`autopilot_service.reset`), as a Settings save does.
   Symbols match `^[A-Z.\-]{1,10}$` after upper-casing.
 - **Contributions are not returns.** With `cash_flows`, metrics run on the
   flow-free growth index (`backtest/flows.py`). `None` keeps the old path, and
@@ -231,18 +231,18 @@ build on every push and PR, with no credentials.
 **Live execution and autopilot**
 - **A bracket protects between passes, it does not veto a signal:** the next
   pass re-enters. `DryRunBroker` fills stop before target, gap-through at the
-  open. `check_brackets` is duck-typed, not on the ABC. Streaming only speeds
-  bar arrival: the `Engine` keeps polling on purpose.
-- **A notifier never breaks a trade:** every send is wrapped and remote
-  notifiers swallow errors. `deliver() -> bool` exists only for the test-alert
-  button, so a mistyped topic reads "not delivered".
+  open, and only on a bar *after* the entry bar (a parked replay would book a
+  phantom exit each pass). Streaming only speeds bar arrival; the `Engine` polls.
+- **A notifier never breaks a trade:** sends are wrapped, remote notifiers swallow
+  errors. `deliver() -> bool` is only for the test-alert button ("not delivered").
 - **A pending batch expires, never executes late:** the next pass, an approval
   older than one `poll_seconds`, and switching off all expire it.
-- **A daily-loss halt turns the autopilot off.** The loss session re-anchors
-  only when the calendar day changes (`Engine.reset_session`).
+- **A daily-loss halt turns the autopilot off.** The anchor is persisted per
+  scope (`autopilot/session.py`), so a restart or Settings save never re-anchors mid-day.
 - **One lock, one connection:** the loop thread and web taps share the engine
-  and SQLite (`check_same_thread=False`) under the Autopilot `RLock`. A mode
-  switch sets the wake event.
+  and SQLite (`check_same_thread=False`, WAL, `busy_timeout=5000`) under the
+  Autopilot `RLock`. A line is `submitted` once the broker accepts it; later
+  bookkeeping only logs. A mode switch wakes the loop.
 - **The web autopilot is paper or dry-run, never live** (`autopilot_build`).
   The dry-run's virtual account does not survive a restart, the order log does.
   `tradebot run --autopilot` builds exactly as `run`. A replay gets a simulated clock.
@@ -255,9 +255,9 @@ build on every push and PR, with no credentials.
   A save merges the editable keys into the file on disk (mode, db_path, costs,
   universe kept), validates by building every component, writes atomically, then
   `autopilot_service.reset` stops the loop and drops the runner (stored mode kept).
-- **Alert destinations are masked both ways** (`settings_secrets`): a blank or
-  masked value keeps the stored one only while it still points at the same host
-  or ntfy server. Settings responses are `Cache-Control: no-store`.
+- **Alert destinations are masked both ways** (`settings_secrets`): a masked or
+  omitted value keeps the stored one only while it still points at the same host
+  or ntfy server; `""` deletes it. Settings responses are `Cache-Control: no-store`.
 - **Alpine state is a Proxy:** `structuredClone` throws on it (copy with JSON),
   and ECharts instances must live in a closure, not in Alpine state.
 - **Pydantic coercion:** `JobRequest.params` stays `dict | None` (float coercion breaks ints).

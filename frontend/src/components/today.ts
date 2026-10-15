@@ -36,6 +36,7 @@ export function today() {
     createdAt: "",
     ago: "",
     newSymbol: "",
+    notice: "",
 
     init() {
       this.createdAt = el(this).dataset.createdAt ?? "";
@@ -78,8 +79,9 @@ export function today() {
     // True when the server accepted the edit; its refusal shows as the error.
     async editWatchlist(change: WatchlistChange): Promise<boolean> {
       this.error = "";
+      this.notice = "";
       try {
-        await changeWatchlist(change);
+        this.notice = (await changeWatchlist(change)).notice ?? "";
         const panes = refs(this);
         panes.watchlist.innerHTML = await getPartial("/partials/watchlist");
         panes.list.innerHTML = await getPartial("/partials/proposal");

@@ -23,8 +23,26 @@ import logging
 import urllib.error
 import urllib.request
 from typing import Protocol
+from urllib.parse import urlsplit
 
 log = logging.getLogger("tradebot.notify")
+
+
+def masked_url(url: str) -> str:
+    """``scheme://host[:port]/…last4`` for logs: a webhook path and an ntfy
+    topic are bearer secrets, and ``user:pass@`` never belongs in a log."""
+    try:
+        parts = urlsplit(url)
+        scheme, port = parts.scheme, parts.port
+        host = f"{parts.hostname or ''}{f':{port}' if port else ''}"
+    except ValueError:
+        scheme = host = ""
+    return f"{scheme}://{host}/\u2026{url[-4:]}"
+
+
+def _failure(url: str, exc: Exception) -> str:
+    """The error text with the URL masked (a ValueError can quote it whole)."""
+    return str(exc).replace(url, masked_url(url))
 
 
 class Notifier(Protocol):
@@ -73,13 +91,15 @@ class WebhookNotifier:
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 if resp.status >= 400:
-                    log.warning("Webhook %s returned HTTP %s", self.url, resp.status)
+                    log.warning("Webhook %s returned HTTP %s",
+                                masked_url(self.url), resp.status)
                 return resp.status < 400
         except (urllib.error.URLError, OSError, ValueError) as exc:
             # One line, no traceback: an unattended bot with a dead endpoint
             # emits one of these per order, and a stack trace per event would
             # bury the trading log that actually matters.
-            log.warning("Webhook delivery to %s failed: %s", self.url, exc)
+            log.warning("Webhook delivery to %s failed: %s", masked_url(self.url),
+                        _failure(self.url, exc))
             return False
 
 
@@ -126,7 +146,8 @@ class NtfyNotifier:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 return resp.status < 400
         except (urllib.error.URLError, OSError, ValueError) as exc:
-            log.warning("ntfy delivery to %s failed: %s", self.url, exc)
+            log.warning("ntfy delivery to %s failed: %s", masked_url(self.url),
+                        _failure(self.url, exc))
             return False
 
 

@@ -132,9 +132,14 @@ class Engine:
         """Submit stored pending lines (an approval); see ``engine.pending``."""
         return pending.submit_stored(self, line_ids)
 
-    def reset_session(self) -> None:
-        """Start a new daily-loss session: the next pass re-anchors its equity."""
-        self._session_start_equity = None
+    def reset_session(self, start_equity: float | None = None) -> None:
+        """Start a daily-loss session: from a persisted same-day anchor, or
+        (``None``) at the equity the next pass sees."""
+        self._session_start_equity = start_equity
+
+    @property
+    def session_start_equity(self) -> float | None:
+        return self._session_start_equity
 
     def propose(self, equity: float, cash: float = 0.0,
                 now: datetime | None = None) -> Proposal:

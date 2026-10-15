@@ -47,7 +47,10 @@ def get(app) -> Autopilot:
             try:
                 pilot = autopilot_build.build(state.settings, trading_db=state.trading_db,
                                               cache_dir=state.cache_dir)
-            except RuntimeError as exc:
+            # ValueError: a stored config a component rejects (e.g. a
+            # hand-edited negative brief). Reported, never a 500 or a server
+            # that fails to start.
+            except (RuntimeError, ValueError) as exc:
                 raise AutopilotUnavailable(str(exc)) from exc
             state.autopilot = pilot
         return pilot

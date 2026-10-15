@@ -89,7 +89,7 @@
           <input type="number" inputmode="numeric" min="10" step="1"
                  x-model.number="form.poll_seconds" name="poll_seconds" class="{{ input }}">
         {% endcall %}
-        {% call field("Morning brief, minutes before open", "Empty = no brief.") %}
+        {% call field("Morning brief, minutes before open", "Empty or 0 = no brief.") %}
           <input type="number" inputmode="numeric" min="0" max="720" step="1"
                  x-model="form.brief" name="brief_minutes_before_open" class="{{ input }}">
         {% endcall %}
@@ -102,14 +102,14 @@
         old settings; start it again from Autopilot.</p>
     {% endcall %}
     {% call section("Alerts") %}
-      {% call field("ntfy topic", "Phone push through the ntfy app. Shown masked: leave it to keep it, type a new one to replace it.") %}
+      {% call field("ntfy topic", "Phone push through the ntfy app. Shown masked: leave it to keep it, type a new one to replace it, clear it to remove it.") %}
         <input type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
                x-model="form.ntfyTopic" name="ntfy_topic" class="{{ input }} font-mono">
       {% endcall %}
       {% call field("ntfy server", "Empty = https://ntfy.sh. Changing it means typing the topic again.") %}
         <input type="url" autocomplete="off" x-model="form.ntfyServer" name="ntfy_server" class="{{ input }}">
       {% endcall %}
-      {% call field("Webhook URL", "Shown masked, like the topic. To remove a destination, edit the config file.") %}
+      {% call field("Webhook URL", "Shown masked, like the topic. Clear it to remove it.") %}
         <input type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
                x-model="form.webhookUrl" name="webhook_url" class="{{ input }} font-mono">
       {% endcall %}

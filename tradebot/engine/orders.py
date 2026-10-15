@@ -63,9 +63,23 @@ def current_positions(engine, frames: dict[str, object]) -> dict[str, float]:
     return out
 
 
-def submit_line(engine, line) -> RebalanceAction:
+def _after_send(action: RebalanceAction, step) -> None:
+    """Bookkeeping for an order the broker already has: logged, never raised."""
+    try:
+        step()
+    except Exception:  # noqa: BLE001 - the order is out; a log write must not undo that
+        log.exception("%s: order %s was sent but its bookkeeping failed",
+                      action.symbol, action.submitted_id)
+
+
+def submit_line(engine, line, on_submitted=None) -> RebalanceAction:
     """Submit one proposal line's delta. The advisor already applied the band
-    and the rounding, so the quantity here is final."""
+    and the rounding, so the quantity here is final.
+
+    ``on_submitted`` runs as soon as the broker accepts the order, before any
+    bookkeeping. Once the broker has it, nothing after may raise: a failure
+    there must not make the caller believe the order was never sent.
+    """
     symbol, target, delta, price = line.symbol, line.target, line.order_qty, line.price
     current = line.current_qty
     action = RebalanceAction(
@@ -93,8 +107,11 @@ def submit_line(engine, line) -> RebalanceAction:
         symbol, target, order.side.value, abs(delta), price, action.submitted_id,
         f" bracket stop={stop:.2f}" if stop else "",
     )
+    if on_submitted is not None:
+        _after_send(action, on_submitted)
     if engine.storage:
-        engine.storage.record_order(order, action.submitted_id, engine.mode)
+        _after_send(action, lambda: engine.storage.record_order(
+            order, action.submitted_id, engine.mode))
     engine._notify({
         "type": "order", "symbol": symbol, "side": order.side.value,
         "qty": abs(delta), "price": price, "target": target,

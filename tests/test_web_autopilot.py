@@ -183,3 +183,39 @@ def test_an_off_autopilot_is_not_built_at_startup(tmp_path):
     with local_client(app) as client:
         assert client.get("/autopilot").status_code == 200
     assert autopilot_service.current(app) is None
+
+
+# --- a stored config can never stop the server -----------------------------------
+
+def _app_with_brief(tmp_path, minutes):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("mode: paper\nsymbols: [SPY, QQQ]\n"
+                   "strategy:\n  name: buy_and_hold\n  params: {}\n"
+                   f"autopilot:\n  brief_minutes_before_open: {minutes}\n")
+    return create_app(trading_db=str(tmp_path / "t.db"), arena_db=str(tmp_path / "a.db"),
+                      cache_dir=str(tmp_path / "cache"), settings_path=str(cfg))
+
+
+def test_a_zero_minute_brief_means_no_brief(tmp_path):
+    """The Settings form accepts 0; it must read as "off", not crash the build."""
+    _seed_cache(tmp_path)
+    app = _app_with_brief(tmp_path, 0)
+    client = local_client(app)
+    with patch.object(Autopilot, "start", lambda self: False):
+        resp = client.post("/api/autopilot", headers=POST_HEADERS, json={"mode": "approve"})
+    assert resp.status_code == 200
+    assert autopilot_service.get(app).brief is None
+
+
+def test_a_config_the_autopilot_rejects_does_not_stop_the_server(tmp_path):
+    """A hand-edited negative brief raises ValueError in the build: the server
+    still starts and the command answers with a notice, never a 500."""
+    _seed_cache(tmp_path)
+    with Storage(tmp_path / "t.db") as st:
+        st.set_autopilot_values("dry_run", {"mode": "auto"})
+    app = _app_with_brief(tmp_path, -5)
+    with local_client(app) as client:                         # runs the lifespan
+        assert autopilot_service.current(app) is None
+        resp = client.post("/api/autopilot", headers=POST_HEADERS, json={"mode": "auto"})
+    assert resp.status_code == 200
+    assert "brief_minutes_before_open" in resp.json()["notice"]

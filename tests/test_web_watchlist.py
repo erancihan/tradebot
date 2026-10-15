@@ -95,3 +95,28 @@ def test_storage_watchlist_roundtrip(tmp_path):
         st.add_to_watchlist(["SPY"])
         st.remove_from_watchlist(["QQQ", "NOPE"])
         assert st.watchlist() == ["SPY"]
+
+
+def test_a_watchlist_edit_stops_a_running_autopilot(tmp_path, offline):
+    """The runner copied the symbol list when it was built: an edit stops it
+    (like a Settings save) instead of letting it trade the old list."""
+    from tradebot.web.services import autopilot_service
+
+    _seed_cache(tmp_path, symbols=("SPY", "QQQ", "XLK"))
+    client = _client(tmp_path, _config(tmp_path))
+    app = client.app
+    on = client.post("/api/autopilot", headers=POST_HEADERS, json={"mode": "auto"})
+    assert on.json()["state"]["running"] is True
+    pilot = autopilot_service.current(app)
+
+    r = _post(client, {"add": ["XLK"]})
+    assert r.status_code == 200
+    assert "tap a mode" in r.json()["notice"]
+    assert autopilot_service.current(app) is None          # rebuilt on the next command
+    pilot._thread.join(5)
+    assert not pilot.running
+
+
+def test_a_watchlist_edit_without_a_loop_has_no_notice(tmp_path):
+    r = _post(_client(tmp_path, _config(tmp_path)), {"add": ["XLK"]})
+    assert "notice" not in r.json()

@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from tradebot.autopilot import Autopilot
+from tradebot.autopilot import HALT_ERROR, Autopilot
 from tradebot.broker import DryRunBroker
 from tradebot.cli import main
 from tradebot.config import Settings
@@ -376,3 +376,95 @@ def test_the_autopilot_takes_its_calendar_from_the_settings(tmp_path):
     pilot.engine.settings.market = "bist"
     again = Autopilot(pilot.engine, pilot.storage, poll_seconds=300)
     assert again.calendar.name == "bist"
+
+
+def test_a_failed_order_record_never_lets_an_approval_order_twice(tmp_path, monkeypatch):
+    """The order reached the broker but recording it failed (database locked):
+    the line must already read ``submitted``, so a second tap cannot resend it."""
+    import sqlite3
+
+    pilot, broker, _, _, pending = _approve_pass(tmp_path)
+
+    def locked(*a, **k):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(pilot.storage, "record_order", locked)
+    chosen = pending[0]
+    assert pilot.approve([chosen["id"]]) == 1
+    assert _statuses(pilot)[chosen["id"]] == "submitted"
+    assert pilot.approve([chosen["id"]]) == 0
+    assert broker._order_seq == 1
+
+
+def test_storage_tolerates_concurrent_writers(tmp_path):
+    """The web and the autopilot write the same file: WAL lets readers run
+    beside a writer, and a busy writer waits instead of failing at once."""
+    with Storage(tmp_path / "t.db") as st:
+        assert st._conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+        assert st._conn.execute("PRAGMA busy_timeout").fetchone()[0] == 5000
+
+
+# --- the daily-loss anchor survives a rebuild ------------------------------------
+
+def _restarted(tmp_path, *, now, equity):
+    """A second runner on the same database (a restart, or a Settings save
+    that rebuilt the engine) whose account now stands at ``equity``."""
+    risk = RiskConfig(max_position_pct=0.4, max_gross_exposure=0.9, max_daily_loss_pct=0.03)
+    pilot, broker, _, _ = build(tmp_path, now=now, risk=risk)
+    broker.portfolio.cash = equity
+    return pilot
+
+
+def test_a_restart_keeps_the_days_loss_anchor(tmp_path):
+    first, _, _, _ = build(tmp_path)
+    first.set_mode("auto")
+    first.tick()
+    assert float(first.storage.autopilot_values("dry_run")["session_start_equity"]) == 10_000
+
+    pilot = _restarted(tmp_path, now=OPEN_NOW + timedelta(hours=1), equity=9_500)
+    state = pilot.tick()                       # down 5% on the day: the breaker trips
+    assert state.mode == "off" and state.last_error == HALT_ERROR
+
+
+def test_a_new_day_re_anchors_after_a_restart(tmp_path):
+    first, _, _, _ = build(tmp_path)
+    first.set_mode("auto")
+    first.tick()
+
+    pilot = _restarted(tmp_path, now=OPEN_NOW + timedelta(days=1), equity=9_500)
+    assert pilot.tick().mode == "auto"         # yesterday's anchor no longer applies
+    assert float(pilot.storage.autopilot_values("dry_run")["session_start_equity"]) == 9_500
+
+
+def test_concurrent_starts_run_one_loop(tmp_path, monkeypatch):
+    """Two mode taps at once must not both see "no thread" and start two loops."""
+    import time
+
+    import tradebot.autopilot.runner as runner
+
+    class SlowStart(threading.Thread):       # widens the check-then-start window
+        def start(self):
+            time.sleep(0.05)
+            super().start()
+
+    monkeypatch.setattr(runner.threading, "Thread", SlowStart)
+    shared = Storage(tmp_path / "t.db", check_same_thread=False)
+    pilot, _, _, _ = build(tmp_path, now=WEEKEND, storage=shared)
+    pilot._sleep = pilot._nap                 # a real nap, so the loop stays up
+    pilot.set_mode("auto")
+    gate = threading.Barrier(2)
+    started: list[bool] = []
+
+    def tap():
+        gate.wait()
+        started.append(pilot.start())
+
+    taps = [threading.Thread(target=tap) for _ in range(2)]
+    for t in taps:
+        t.start()
+    for t in taps:
+        t.join(5)
+    try:
+        assert sorted(started) == [False, True]
+    finally:
+        pilot.stop()
