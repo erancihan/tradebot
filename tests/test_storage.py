@@ -1,5 +1,7 @@
 import sqlite3
 
+import pytest
+
 from tradebot.broker.dryrun import DryRunBroker
 from tradebot.config import Settings
 from tradebot.data.replay import ReplayData
@@ -165,3 +167,58 @@ def test_an_approved_line_logs_the_price_it_was_parked_at(tmp_path):
         pending = storage.pending_lines("dry_run")
         engine.submit_lines([ln["id"] for ln in pending])
     assert pending and _logged_prices(db) == {ln["symbol"]: ln["price"] for ln in pending}
+
+
+class _RacedConnection:
+    """A connection whose column check is answered just before another opener
+    adds the column: both saw it missing, so this one's ALTER collides."""
+
+    def __init__(self, db: str) -> None:
+        self.real = sqlite3.connect(db)
+        self.db = db
+        self.raced = False
+
+    def execute(self, sql: str, *args):
+        if sql.startswith("PRAGMA table_info(orders)") and not self.raced:
+            stale = self.real.execute(sql, *args).fetchall()
+            self.raced = True
+            other = sqlite3.connect(self.db)          # the concurrent Storage() open
+            other.execute("ALTER TABLE orders ADD COLUMN price REAL")
+            other.commit()
+            other.close()
+            return iter(stale)
+        return self.real.execute(sql, *args)
+
+    def commit(self) -> None:
+        self.real.commit()
+
+
+def test_two_openers_migrating_at_once_both_succeed(tmp_path):
+    from tradebot.storage.schema import migrate
+
+    db = str(tmp_path / "old.db")
+    con = sqlite3.connect(db)
+    con.execute(_OLD_ORDERS)
+    con.commit()
+    con.close()
+    raced = _RacedConnection(db)
+    migrate(raced)                                    # the loser of the race
+    assert raced.raced
+    cols = [r[1] for r in raced.real.execute("PRAGMA table_info(orders)")]
+    assert cols.count("price") == 1
+    raced.real.close()
+
+
+def test_a_migration_error_that_is_not_the_race_still_raises(tmp_path, monkeypatch):
+    from tradebot.storage import schema
+
+    monkeypatch.setattr(schema, "_ADDED_COLUMNS", (("orders", "price", "REAL NOT NULL"),))
+    db = str(tmp_path / "old.db")
+    con = sqlite3.connect(db)
+    con.execute(_OLD_ORDERS)
+    con.execute("INSERT INTO orders (ts, symbol, side, qty, type, mode)"
+                " VALUES ('t', 'SPY', 'buy', 1, 'market', 'paper')")
+    con.commit()
+    with pytest.raises(sqlite3.OperationalError):
+        schema.migrate(con)
+    con.close()

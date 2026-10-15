@@ -8,6 +8,8 @@ rename a column here.
 
 from __future__ import annotations
 
+import sqlite3
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS orders (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,10 +94,22 @@ _ADDED_COLUMNS = (
 )
 
 
+def _columns(conn, table: str) -> set[str]:
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
 def migrate(conn) -> None:
-    """Add any column in ``_ADDED_COLUMNS`` that an older database lacks."""
+    """Add any column in ``_ADDED_COLUMNS`` that an older database lacks.
+
+    Two processes opening one old database can both see a column missing;
+    the second ALTER then fails. That loser re-checks and carries on when
+    the column is there now; any other failure still raises."""
     for table, column, decl in _ADDED_COLUMNS:
-        have = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
-        if column not in have:
+        if column in _columns(conn, table):
+            continue
+        try:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+        except sqlite3.OperationalError:
+            if column not in _columns(conn, table):
+                raise
     conn.commit()
