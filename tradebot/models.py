@@ -108,11 +108,18 @@ class Fill:
     timestamp: datetime = field(default_factory=utcnow)
 
 
+#: The one asset class the bot trades.
+EQUITY = "us_equity"
+
+
 @dataclass
 class Position:
     symbol: str
     qty: float = 0.0
     avg_price: float = 0.0
+    #: Alpaca's asset class ("us_equity", "crypto", "us_option"): only an
+    #: equity can be an off-list holding the autopilot closes.
+    asset_class: str = EQUITY
 
     @property
     def is_flat(self) -> bool:

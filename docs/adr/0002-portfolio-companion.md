@@ -152,8 +152,10 @@ One new core concept, the proposal, feeds three flows.
   closing line after the list's lines: `sell` (or `buy` for a short) to zero,
   reason "not on your list: sell to flat". `advisor.propose` takes these as
   `unlisted` (`symbol -> (signed qty, last price or None)`) and stays pure.
-- The engine reads them from `broker.positions()` minus the list and prices them
-  with one short fetch through its own data source. The Today refresh reads them
+- The engine reads them from `broker.positions()` minus the list, equities only
+  (`Position.asset_class`, Alpaca's; a crypto or option position is never an
+  off-list holding), and prices them with one short fetch through its own data
+  source. The Today refresh reads them
   from the paper broker, or offline from the order log, priced at the last cached
   close. Without a price the line is skipped ("not on your list; no price to size
   it"), never guessed. Approve mode asks for the line like any other.
