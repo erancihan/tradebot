@@ -15,6 +15,7 @@ from tradebot.config import Settings
 from tradebot.data import ReplayData
 from tradebot.data.synthetic import synthetic_ohlcv
 from tradebot.engine import Engine
+from tradebot.models import Order, Side
 from tradebot.risk import RiskConfig, RiskManager
 from tradebot.selection import MomentumSelector
 from tradebot.storage import Storage
@@ -263,4 +264,80 @@ def test_propose_reason_says_within_band_when_the_drift_is_small():
                                                    rebalance_band_pct=0.05)))
     (line,) = proposal.lines
     assert line.desired_qty == 10.0 and line.order_qty == 0
-    assert line.action == "hold" and line.reason.endswith("within band, hold.")
+    assert line.action == "hold" and line.reason.endswith("within the 5% no-trade band, hold.")
+
+
+# --- the list is the mandate: held names off the list are closed -----------------
+
+def _bh(symbols=("SPY",), **kw):
+    frames = {s: _linear(100, 0.0) for s in symbols}
+    return propose(symbols=list(symbols), frames=frames, equity=10_000.0,
+                   strategy=build_strategy("buy_and_hold"),
+                   risk=RiskManager(RiskConfig()), **kw)
+
+
+def test_an_unlisted_long_gets_a_sell_to_flat_line_after_the_list():
+    proposal = _bh(("SPY", "QQQ"), positions={"IWM": 5.0},
+                   unlisted={"IWM": (5.0, 210.0)})
+    assert [ln.symbol for ln in proposal.lines] == ["SPY", "QQQ", "IWM"]
+    iwm = proposal.lines[-1]
+    assert (iwm.action, iwm.target, iwm.desired_qty, iwm.order_qty) == ("sell", 0, 0.0, -5.0)
+    assert iwm.price == 210.0 and iwm.notional == 1050.0 and not iwm.skipped
+    assert iwm.reason == "not on your list: sell to flat"
+
+
+def test_an_unlisted_short_gets_a_buy_to_flat_line():
+    (_, line) = _bh(positions={}, unlisted={"TSLA": (-3.0, 50.0)}).lines
+    assert (line.action, line.order_qty, line.desired_qty) == ("buy", 3.0, 0.0)
+    assert line.reason == "not on your list: buy to flat"
+
+
+def test_an_unlisted_holding_without_a_price_is_skipped_never_guessed():
+    (_, line) = _bh(positions={}, unlisted={"IWM": (5.0, None)}).lines
+    assert line.skipped and line.order_qty == 0 and line.action == "hold"
+    assert line.current_qty == 5.0 and line.reason == "not on your list; no price to size it"
+
+
+def test_unlisted_none_or_on_the_list_changes_nothing():
+    plain = _bh(("SPY",), positions={"SPY": 2.0})
+    same = _bh(("SPY",), positions={"SPY": 2.0}, unlisted={"SPY": (2.0, 100.0),
+                                                           "FLAT": (0.0, 9.0)})
+    assert [ln.to_dict() for ln in plain.lines] == [ln.to_dict() for ln in same.lines]
+
+
+def test_a_one_share_drift_within_a_one_percent_band_holds_and_says_so():
+    frames = {"SPY": _linear(500, 0.0)}
+    risk = RiskManager(RiskConfig(max_position_pct=0.5, rebalance_band_pct=0.01))
+    (line,) = propose(symbols=["SPY"], frames=frames, equity=100_000.0,
+                      positions={"SPY": 101.0}, strategy=build_strategy("buy_and_hold"),
+                      risk=risk).lines
+    assert line.desired_qty == 100.0 and line.order_qty == 0 and line.action == "hold"
+    assert "within the 1% no-trade band" in line.reason
+
+
+def _held_iwm_engine(tmp_path):
+    frames = {s: synthetic_ohlcv(periods=60, seed=i) for i, s in enumerate(("SPY", "QQQ", "IWM"))}
+    data = ReplayData(frames, warmup=40)
+    broker = DryRunBroker(data, initial_cash=10_000, slippage_bps=0)
+    broker.submit(Order(symbol="IWM", qty=5, side=Side.BUY))
+    engine = Engine(Settings(mode="paper", symbols=["SPY", "QQQ"]), broker, data,
+                    build_strategy("buy_and_hold"), RiskManager(RiskConfig()),
+                    storage=Storage(tmp_path / "t.db"), mode_label="dry_run",
+                    enforce_live_ack=False)
+    return engine, broker
+
+
+def test_the_engine_sells_a_held_name_off_the_list(tmp_path):
+    engine, broker = _held_iwm_engine(tmp_path)
+    actions = {a.symbol: a for a in engine.rebalance()}
+    assert actions["IWM"].order_qty == -5.0 and actions["IWM"].submitted_id
+    assert broker.position("IWM").is_flat
+
+
+def test_approve_mode_parks_the_off_list_sell_as_pending(tmp_path):
+    engine, broker = _held_iwm_engine(tmp_path)
+    outcome = engine.step(submit=False)
+    assert outcome.batch_id is not None and broker.position("IWM").qty == 5
+    pending = {ln["symbol"]: ln for ln in engine.storage.pending_lines("dry_run")}
+    assert pending["IWM"]["order_qty"] == -5.0
+    assert pending["IWM"]["reason"] == "not on your list: sell to flat"
