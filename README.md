@@ -799,6 +799,7 @@ Frontend dev loop:
 ```bash
 cd frontend
 npm run typecheck     # strict tsc
+npm test              # behaviour tests (tests/*.test.ts) in Node, fetch stubbed
 npm run watch:js      # rebuild bundle on change (also: watch:css)
 ```
 

@@ -131,14 +131,14 @@ config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])
 
 ```bash
 make install | install-web | test | demo | dryrun | arena | web   # web serves :8000
-cd frontend && npm run typecheck | build | watch:js                  # after install-web
+cd frontend && npm run typecheck | test | build | watch:js           # after install-web
 ```
 CLI: `tradebot {backtest,run,status,demo,arena,data,universe}`, `tradebot-web
 [--config PATH]` (default `./config.yaml` when present, else SPY/QQQ defaults.
 A Settings save creates `./config.yaml`). `run --dry-run` / `--replay` forward-test.
 Arena: `arena {list,run,validate,history,show,league,season,gate,journal}`.
 Season: `arena season {create,seed,list,standings,run}`.
-CI (`.github/workflows/ci.yml`) runs offline pytest, `tsc --noEmit` and a
+CI (`.github/workflows/ci.yml`) runs offline pytest, `tsc --noEmit`, `npm test` and a
 build on every push and PR, with no credentials.
 
 ## Conventions

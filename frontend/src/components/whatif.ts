@@ -193,24 +193,29 @@ export function whatIf() {
         await this.poll(job_id);
       } catch (err) {
         this.state = "error";
-        this.error = String(err);
+        this.error = err instanceof Error ? err.message : String(err);
       }
     },
 
+    // Polls until the job settles. Every poll is awaited inside `submit`'s
+    // try, so a failing request ends in "error" instead of leaving the
+    // button disabled on a run that will never finish.
     async poll(jobId: string) {
-      const job: JobView = await getJob(jobId);
-      if (job.state === "done") {
-        this.state = "done";
-        this.summary = job.summary ?? {};
-        this.provenance = job.provenance ?? null;
-        if (job.equity) await this.render(job.equity, job.benchmark ?? null);
-      } else if (job.state === "error") {
-        this.state = "error";
-        this.error = job.error ?? "job failed";
-      } else {
-        setTimeout(() => {
-          void this.poll(jobId);
-        }, POLL_MS);
+      for (;;) {
+        const job: JobView = await getJob(jobId);
+        if (job.state === "done") {
+          this.state = "done";
+          this.summary = job.summary ?? {};
+          this.provenance = job.provenance ?? null;
+          if (job.equity) await this.render(job.equity, job.benchmark ?? null);
+          return;
+        }
+        if (job.state === "error") {
+          this.state = "error";
+          this.error = job.error ?? "job failed";
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, POLL_MS));
       }
     },
 

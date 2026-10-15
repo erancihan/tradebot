@@ -27,8 +27,9 @@ make web            # build frontend + serve the dashboard (needs [web])
 ```
 CLI: `tradebot {backtest,run,status,demo,arena,data,universe}`, `tradebot-web`.
 
-Frontend (`frontend/`): `npm run typecheck` (strict, CI gate), `npm run build`
-(output to the gitignored `tradebot/web/static/`), `npm run watch:js`.
+Frontend (`frontend/`): `npm run typecheck` (strict, CI gate), `npm test`
+(Node behaviour tests in `frontend/tests/*.test.ts`, `fetch` stubbed), `npm run
+build` (output to the gitignored `tradebot/web/static/`), `npm run watch:js`.
 
 ## Code rules
 - Functions and methods: at most 60 lines.
@@ -43,7 +44,7 @@ Frontend (`frontend/`): `npm run typecheck` (strict, CI gate), `npm run build`
 
 ## Before you commit
 - `make test` green, `tests/test_code_shape.py` included. `npm run typecheck`
-  green for frontend changes.
+  and `npm test` green for frontend changes.
 - An offline, credential-free path and offline tests remain.
 - Invariants hold (see CLAUDE.md): paper-first gate, no look-ahead, risk
   centralised in `RiskManager`, import isolation (lazy Alpaca, the core never

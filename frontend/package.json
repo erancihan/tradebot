@@ -10,7 +10,8 @@
     "build": "npm run build:css && npm run build:js",
     "watch:css": "tailwindcss -i src/styles/app.css -o ../tradebot/web/static/css/app.css --watch",
     "watch:js": "node esbuild.mjs --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node test.mjs"
   },
   "dependencies": {
     "alpinejs": "^3.14.1",
