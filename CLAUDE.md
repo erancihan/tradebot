@@ -33,7 +33,7 @@ tradebot/
                  supertrend, meta.py (follow_leader, ensemble_vote)
   indicators.py  risk.py (RiskManager + RiskConfig)  allocation.py  overlays.py
                  walkforward.py  portfolio.py  portfolio_pnl.py (round trips from fills)  models.py
-  selection/     base, ranked (momentum, low_vol), regime (regime_switch), registry
+  selection/     base, ranked (momentum, low_vol), regime (regime_switch), __init__ (SELECTORS)
   universe/      screen (LiquidityScreen), alpaca, discover    consortium/  voice, consensus, panel
   backtest/      result, runner (Backtester), steps (per-bar helpers shared by the
                  backtester and arena/simulation.py), flows (cash flows, growth index)
@@ -41,8 +41,8 @@ tradebot/
   config.py      Settings (YAML), credentials.py (env only), config_io.py (EDITABLE_KEYS,
                  settings_to_dict, editable, write_settings: atomic, refuses secrets)
   notify.py      Notifier: Log, Null, Webhook, Ntfy, Multi, build_notifier; notify_actions (ntfy buttons)
-  broker/        base (ABC), alpaca (lazy SDK), dryrun + brackets (BracketsMixin)
-  data/          synthetic + factor_panel, cache + coverage, replay, csv, alpaca_data, stream
+  broker/        base (ABC), alpaca_broker (lazy SDK), dryrun + brackets (BracketsMixin)
+  data/          synthetic (+ load_csv) + factor_panel, cache + coverage, replay, alpaca_data, stream
   market/        base (MarketCalendar, TableCalendar), us, bist, registry (CALENDARS)
   advisor/       propose (bars + account -> Proposal), explain, types, unlisted (off-list holdings)
   engine/        core (Engine.step -> PassOutcome), signals, orders, pending, session (daily-loss anchor),
