@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
+import yaml
 
 pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
@@ -10,7 +13,8 @@ pytest.importorskip("httpx")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from tradebot.web.app import create_app  # noqa: E402
-from tradebot.web.guard import POST_HEADERS  # noqa: E402, F401
+from tradebot.web.guard import POST_HEADERS  # noqa: E402
+from tradebot.web.services import autopilot_service  # noqa: E402
 
 from .web_client import local_client  # noqa: E402
 
@@ -70,3 +74,140 @@ def test_settings_page_renders_the_sections_and_never_a_key(tmp_path, monkeypatc
 def test_settings_is_in_the_more_sheet_and_the_top_nav(tmp_path):
     body = _client(tmp_path, _config(tmp_path)).get("/today").text
     assert body.count('href="/settings"') == 2
+
+
+# --- saving -------------------------------------------------------------------
+
+def _doc(client) -> dict:
+    return client.get("/api/settings").json()["settings"]
+
+
+def _post(client, doc):
+    return client.post("/api/settings", headers=POST_HEADERS, json=doc)
+
+
+def test_save_writes_the_file_and_reloads_the_server_settings(tmp_path):
+    path = _config(tmp_path, "db_path: custom.db\n")
+    app = create_app(trading_db=str(tmp_path / "t.db"), arena_db=str(tmp_path / "a.db"),
+                     cache_dir=str(tmp_path / "cache"), settings_path=path)
+    client = local_client(app)
+    doc = _doc(client)
+    doc["symbols"] = ["vti", "BND"]
+    doc["strategy"] = {"name": "buy_and_hold", "params": {}}
+    resp = _post(client, doc)
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["cache-control"] == "no-store"
+    assert resp.json()["settings"]["symbols"] == ["VTI", "BND"]
+    assert app.state.settings.symbols == ["VTI", "BND"]
+    assert app.state.settings.strategy_name == "buy_and_hold"
+    raw = yaml.safe_load(open(path))
+    assert raw["symbols"] == ["VTI", "BND"]
+    assert raw["db_path"] == "custom.db" and raw["mode"] == "paper"   # untouched keys stay
+
+
+def test_save_creates_the_config_when_there_is_none(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    client = _client(tmp_path)
+    doc = _doc(client)
+    doc["symbols"] = ["XLV"]
+    assert _post(client, doc).status_code == 200
+    raw = yaml.safe_load((tmp_path / "config.yaml").read_text())
+    assert raw["mode"] == "paper" and raw["symbols"] == ["XLV"]
+    assert client.get("/api/settings").json()["config_exists"] is True
+
+
+def test_save_rejects_a_bad_strategy_name_with_a_readable_message(tmp_path):
+    path = _config(tmp_path)
+    before = open(path).read()
+    client = _client(tmp_path, path)
+    doc = _doc(client)
+    doc["strategy"] = {"name": "sma_crosover", "params": {}}
+    resp = _post(client, doc)
+    assert resp.status_code == 400
+    assert resp.json()["detail"].startswith("strategy: Unknown strategy 'sma_crosover'")
+    assert open(path).read() == before
+
+
+@pytest.mark.parametrize("change, words", [
+    ({"symbols": []}, "at least one symbol"),
+    ({"symbols": ["S P Y"]}, "not a symbol"),
+    ({"risk": {"max_position_pct": 5}}, "max_position_pct must be in [0, 1]"),
+    ({"market": "nyse"}, "market must be one of"),
+    ({"poll_seconds": 1}, "at least 10"),
+    ({"api_key": "x"}, "not an editable setting: api_key"),
+])
+def test_save_rejects_documents_that_would_not_run(tmp_path, change, words):
+    client = _client(tmp_path, _config(tmp_path))
+    resp = _post(client, {**_doc(client), **change})
+    assert resp.status_code == 400 and words in resp.json()["detail"]
+
+
+def test_mode_cannot_be_set_to_live_from_the_web(tmp_path):
+    path = _config(tmp_path)
+    client = _client(tmp_path, path)
+    resp = _post(client, {**_doc(client), "mode": "live"})
+    assert resp.status_code == 422
+    assert "mode: paper" in open(path).read()
+
+
+def test_save_needs_the_same_origin_header(tmp_path):
+    client = _client(tmp_path, _config(tmp_path))
+    assert client.post("/api/settings", json=_doc(client)).status_code == 403
+
+
+def test_save_reloads_the_server_settings_and_resets_the_autopilot(tmp_path):
+    app = create_app(trading_db=str(tmp_path / "t.db"), arena_db=str(tmp_path / "a.db"),
+                     cache_dir=str(tmp_path / "cache"), settings_path=_config(tmp_path))
+    client = local_client(app)
+
+    class FakePilot:
+        running = True
+        stopped = False
+
+        def stop(self):
+            self.stopped = True
+
+    pilot = FakePilot()
+    app.state.autopilot = pilot
+    doc = _doc(client)
+    doc["poll_seconds"] = 600
+    data = _post(client, doc).json()
+    assert pilot.stopped and autopilot_service.current(app) is None
+    assert "autopilot loop was stopped" in data["notice"]
+    assert app.state.settings.poll_seconds == 600
+    with patch.object(autopilot_service.autopilot_build, "build", lambda s, **k: s):
+        assert autopilot_service.get(app).poll_seconds == 600    # rebuilt from the new file
+
+
+# --- alert destinations are masked --------------------------------------------
+
+_ALERTS = ("notify:\n  webhook_url: https://hooks.example.com/services/T0/B0/abcdSECRETwxyz\n"
+           "  ntfy_topic: tradebot-very-private-topic\n")
+
+
+def test_alert_destinations_are_masked_in_the_view(tmp_path):
+    client = _client(tmp_path, _config(tmp_path, _ALERTS))
+    resp = client.get("/api/settings")
+    assert resp.headers["cache-control"] == "no-store"
+    data = resp.json()
+    assert data["settings"]["notify"]["webhook_url"] == "https://hooks.example.com/\u2026wxyz"
+    assert data["settings"]["notify"]["ntfy_topic"] == "tr\u2026ic"
+    assert data["webhook_configured"] is True and data["ntfy_configured"] is True
+    page = client.get("/settings")
+    assert page.headers["cache-control"] == "no-store"
+    assert "abcdSECRET" not in page.text and "very-private" not in page.text
+
+
+def test_a_blank_or_masked_alert_keeps_the_stored_secret_on_save(tmp_path):
+    path = _config(tmp_path, _ALERTS)
+    client = _client(tmp_path, path)
+    doc = _doc(client)                       # carries the masked webhook back
+    doc["notify"]["ntfy_topic"] = ""         # blank: keep
+    assert _post(client, doc).status_code == 200
+    raw = yaml.safe_load(open(path))["notify"]
+    assert raw["webhook_url"].endswith("abcdSECRETwxyz")
+    assert raw["ntfy_topic"] == "tradebot-very-private-topic"
+
+    doc["notify"]["ntfy_topic"] = "a-new-topic"     # a plain value replaces it
+    assert _post(client, doc).status_code == 200
+    assert yaml.safe_load(open(path))["notify"]["ntfy_topic"] == "a-new-topic"

@@ -68,9 +68,11 @@ def autopilot_page(request: Request):
 @router.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request):
     """Phone-first: everything config.yaml holds that the owner should choose."""
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request, "pages/settings.html",
         {"view": settings_service.view(request.app), "active": "settings"})
+    response.headers["Cache-Control"] = "no-store"     # carries masked alert targets
+    return response
 
 
 @router.get("/run", response_class=HTMLResponse)

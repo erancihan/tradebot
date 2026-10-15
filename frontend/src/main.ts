@@ -13,6 +13,7 @@ import { jobRunner } from "./components/jobRunner";
 import { moreSheet } from "./components/moreSheet";
 import { partialLoader } from "./components/partialLoader";
 import { seasonChart } from "./components/seasonChart";
+import { settings } from "./components/settings";
 import { today } from "./components/today";
 import { whatIf } from "./components/whatif";
 import { startSse } from "./sse";
@@ -35,6 +36,7 @@ Alpine.data("whatIf", whatIf);
 Alpine.data("jobRunner", jobRunner);
 Alpine.data("moreSheet", moreSheet);
 Alpine.data("partialLoader", partialLoader);
+Alpine.data("settings", settings);
 
 window.Alpine = Alpine;
 Alpine.start();

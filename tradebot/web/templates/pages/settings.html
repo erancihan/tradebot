@@ -1,45 +1,98 @@
 {% extends "base.html" %}
 {% block title %}Settings · tradebot{% endblock %}
 {% block content %}
+{#- One form over config.yaml's editable keys. The fields are bound by
+    settings.ts after it loads /api/settings; the server renders the frame
+    (what cannot be edited) and the read-only rows. -#}
 {% set s = view.settings %}
+{% set input = "min-h-[48px] w-full rounded-lg border border-slate-700 bg-slate-950 px-3 text-base text-slate-100" %}
 {% macro section(title) -%}
-  <section class="space-y-2 rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+  <section class="space-y-3 rounded-lg border border-slate-800 bg-slate-900/40 p-3">
     <h2 class="text-sm font-semibold text-slate-200">{{ title }}</h2>
-    <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">{{ caller() }}</dl>
+    {{ caller() }}
   </section>
 {%- endmacro %}
 {% macro row(label, value) -%}
   <dt class="text-slate-500">{{ label }}</dt>
   <dd class="break-words text-slate-200">{{ value if value is not none and value != '' else '—' }}</dd>
 {%- endmacro %}
-<div class="mx-auto max-w-xl space-y-4" data-settings>
+{% macro field(label, hint="") -%}
+  <label class="block space-y-1">
+    <span class="text-xs text-slate-400">{{ label }}</span>
+    {{ caller() }}
+    {% if hint %}<span class="block text-xs text-slate-500">{{ hint }}</span>{% endif %}
+  </label>
+{%- endmacro %}
+<div class="mx-auto max-w-xl space-y-4" data-settings x-data="settings">
   <h1 class="text-lg font-semibold text-slate-100">Settings</h1>
 
   {% include "components/settings_status.html" %}
 
-  {% call section("Symbols") %}{{ row("Config symbols", s.symbols | join(", ")) }}{{ row("Timeframe", s.timeframe) }}{% endcall %}
-  {% call section("Strategy") %}
-    {{ row("Name", s.strategy.name) }}
-    {% for k, v in s.strategy.params.items() %}{{ row(k, v) }}{% endfor %}
-  {% endcall %}
-  {% call section("Portfolio") %}
-    {{ row("Selector", s.portfolio.selector.name if s.portfolio.selector else "none") }}
-    {{ row("Allocation", s.portfolio.allocation or "none") }}
-    {{ row("Overlays", s.portfolio.overlays | map(attribute="name") | join(", ") or "none") }}
-  {% endcall %}
-  {% call section("Risk") %}
-    {% for k, v in s.risk.items() %}{{ row(k, v) }}{% endfor %}
-  {% endcall %}
-  {% call section("Autopilot") %}
-    {{ row("Poll seconds", s.poll_seconds) }}
-    {{ row("Brief, minutes before open", s.autopilot.brief_minutes_before_open) }}
-    {{ row("Starting cash", s.initial_cash) }}
-  {% endcall %}
-  {% call section("Alerts") %}
-    {{ row("ntfy topic", s.notify.ntfy_topic) }}
-    {{ row("ntfy server", s.notify.ntfy_server) }}
-    {{ row("Webhook", s.notify.webhook_url) }}
-  {% endcall %}
-  {% call section("Market") %}{{ row("Calendar", s.market) }}{% endcall %}
+  <p x-show="loading" class="text-sm text-slate-500">Loading…</p>
+
+  <template x-if="form">
+  <form class="space-y-4" @submit.prevent="save()">
+    {% call section("Symbols") %}
+      {% call field("Symbols to scan", "Separated by commas or spaces. A Today watchlist, when set, takes over.") %}
+        <textarea x-model="form.symbols" rows="2" autocapitalize="characters" autocomplete="off"
+                  class="{{ input }} py-2 font-mono uppercase" name="symbols"></textarea>
+      {% endcall %}
+      {% call field("Bar size") %}
+        <select x-model="form.timeframe" class="{{ input }}" name="timeframe">
+          <template x-for="tf in choices.timeframes" :key="tf">
+            <option :value="tf" x-text="tf" :selected="tf === form.timeframe"></option>
+          </template>
+        </select>
+      {% endcall %}
+    {% endcall %}
+
+    {% call section("Strategy") %}
+      <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+        {{ row("Name", s.strategy.name) }}
+        {% for k, v in s.strategy.params.items() %}{{ row(k, v) }}{% endfor %}
+      </dl>
+    {% endcall %}
+    {% call section("Portfolio") %}
+      <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+        {{ row("Selector", s.portfolio.selector.name if s.portfolio.selector else "none") }}
+        {{ row("Allocation", s.portfolio.allocation or "none") }}
+        {{ row("Overlays", s.portfolio.overlays | map(attribute="name") | join(", ") or "none") }}
+      </dl>
+    {% endcall %}
+    {% call section("Risk") %}
+      <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+        {% for k, v in s.risk.items() %}{{ row(k, v) }}{% endfor %}
+      </dl>
+    {% endcall %}
+    {% call section("Autopilot") %}
+      <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+        {{ row("Poll seconds", s.poll_seconds) }}
+        {{ row("Brief, minutes before open", s.autopilot.brief_minutes_before_open) }}
+        {{ row("Starting cash", s.initial_cash) }}
+      </dl>
+    {% endcall %}
+    {% call section("Alerts") %}
+      <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+        {{ row("ntfy topic", s.notify.ntfy_topic) }}
+        {{ row("ntfy server", s.notify.ntfy_server) }}
+        {{ row("Webhook", s.notify.webhook_url) }}
+      </dl>
+    {% endcall %}
+    {% call section("Market") %}
+      <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">{{ row("Calendar", s.market) }}</dl>
+    {% endcall %}
+
+    <div x-show="error" x-cloak x-text="error" data-error
+         class="rounded-lg border border-rose-800 bg-rose-950/40 p-3 text-sm text-rose-300 break-words"></div>
+    <div x-show="notice" x-cloak x-text="notice" data-notice
+         class="rounded-lg border border-emerald-800 bg-emerald-950/40 p-3 text-sm text-emerald-300 break-words"></div>
+    <button type="submit" :disabled="saving" data-save
+            class="min-h-[48px] w-full rounded-lg bg-emerald-600 text-base font-semibold text-white hover:bg-emerald-500 disabled:opacity-50">
+      <span x-show="!saving">Save</span><span x-show="saving" x-cloak>Saving…</span>
+    </button>
+  </form>
+  </template>
+  <p x-show="!loading && !form && error" x-cloak x-text="error"
+     class="rounded-lg border border-rose-800 bg-rose-950/40 p-3 text-sm text-rose-300 break-words"></p>
 </div>
 {% endblock %}

@@ -14,6 +14,8 @@ import type {
   OrderRow,
   ProposalEnvelope,
   SeasonDetail,
+  SettingsDoc,
+  SettingsView,
   StrategySpec,
   WatchlistChange,
   WatchlistView,
@@ -129,4 +131,12 @@ export function sendTestAlert(): Promise<NotifyTestResult> {
 
 export function changeWatchlist(body: WatchlistChange): Promise<WatchlistView> {
   return postJson<WatchlistView>("/api/watchlist", body);
+}
+
+export function getSettings(): Promise<SettingsView> {
+  return getJson<SettingsView>("/api/settings");
+}
+
+export function saveSettings(body: SettingsDoc): Promise<SettingsView> {
+  return postJson<SettingsView>("/api/settings", body);
 }
