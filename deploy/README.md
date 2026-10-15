@@ -15,11 +15,15 @@ cd /PATH/TO/tradebot
 make install-all && make web-build
 ```
 
-Each flow below copies the config into place, then runs `tradebot-web --check`
-before it enables the service. `--check` loads and validates the config, opens the database, prints the line
-the service logs at start, and exits 0. Exit 1 says what is wrong. The line
-names the config file, the database, the allowed hosts, whether the token and
-the Alpaca keys are set (never their values) and the autopilot's stored mode.
+Each flow below copies the config into place (on Linux it also hands the
+directories to `YOUR_USER`), then runs `tradebot-web --check` as the user the
+service runs as, never with `sudo`, before it enables the service. `--check`
+creates the databases it opens: run with `sudo` it leaves them owned by root,
+and the service cannot write them. `--check` loads and validates the config,
+opens the database, prints the line the service logs at start, and exits 0.
+Exit 1 says what is wrong. The line names the config file, the database, the
+allowed hosts, whether the token and the Alpaca keys are set (never their
+values) and the autopilot's stored mode.
 
 ## Linux (systemd)
 
@@ -27,9 +31,10 @@ the Alpaca keys are set (never their values) and the autopilot's stored mode.
 sudo mkdir -p /etc/tradebot /var/lib/tradebot /PATH/TO/tradebot/data
 sudo cp config.example.yaml /etc/tradebot/config.yaml
 sudo install -m 600 /dev/null /etc/tradebot/env   # then add the three lines below
-sudo chown -R YOUR_USER /etc/tradebot /var/lib/tradebot
+sudo chown -R YOUR_USER /etc/tradebot /var/lib/tradebot /PATH/TO/tradebot/data
 sudo cp deploy/systemd/tradebot-web.service /etc/systemd/system/
 sudo nano /etc/systemd/system/tradebot-web.service   # replace the placeholders
+# as YOUR_USER, not with sudo:
 .venv/bin/tradebot-web --check --config /etc/tradebot/config.yaml \
     --trading-db /var/lib/tradebot/tradebot.db --allow-host YOUR_HOST
 sudo systemctl daemon-reload && sudo systemctl enable --now tradebot-web
