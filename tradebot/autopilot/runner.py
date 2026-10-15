@@ -114,22 +114,26 @@ class Autopilot(ApprovalsMixin, BackgroundMixin, BriefMixin, SessionMixin):
         day = schedule.session_day(now, self.calendar.timezone)
         if day != self._session:            # a new trading day: a new loss budget
             self._begin_session(day)
-        self._expire_pending()              # the last batch is stale: replaced
+        if mode != "approve":
+            self._expire_pending()          # nobody approves under `auto`
         try:
-            outcome = self.engine.step(submit=(mode == "auto"), now=now)
+            # Unrecorded: `_park` carries an unchanged batch over instead.
+            outcome = self.engine.step(submit=(mode == "auto"), now=now, record=False)
         except Exception as exc:  # noqa: BLE001 - the loop must outlive a bad pass
+            self._expire_pending()          # no fresh sizing: the batch is stale
             self._save_session(day)
             log.exception("Autopilot pass failed")
             self._set(last_pass_at=now, last_error=f"{type(exc).__name__}: {exc}")
             return
         self._save_session(day)
         if outcome.market_closed:
+            self._expire_pending()
             return
         self._set(last_pass_at=now, last_error=None)
         if outcome.halted:
             self._halt()
         elif mode == "approve":
-            self._announce_pending(outcome.batch_id)
+            outcome.batch_id = self._park(outcome.proposal, now)
 
     def _halt(self) -> None:
         store_mode(self.storage, self.scope, "off", self.clock())

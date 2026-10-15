@@ -22,7 +22,7 @@ def _parts(query: str) -> tuple[int, str]:
 def test_a_signed_link_verifies_for_its_batch_and_verb():
     sign = link_signer(SECRET, "paper", poll_seconds=300, clock=lambda: 1_000_000)
     exp, sig = _parts(sign(7, "approve"))
-    assert exp == 1_000_000 + 600
+    assert exp == 1_000_000 + 1800
     assert verify(SECRET, "paper", 7, "approve", exp, sig, now=1_000_000)
     assert len(sig) == 64 and int(sig, 16) >= 0
 
@@ -53,9 +53,10 @@ def test_another_secret_does_not_verify():
     assert not verify(link_secret(None), "paper", 7, "approve", exp, sig, now=0)
 
 
-def test_ttl_is_twice_the_poll_never_under_ten_minutes():
-    assert ttl_seconds(10) == MIN_TTL_SECONDS == 600
+def test_ttl_is_twice_the_poll_never_under_thirty_minutes():
+    assert ttl_seconds(10) == ttl_seconds(300) == MIN_TTL_SECONDS == 1800
     assert ttl_seconds(900) == 1800
+    assert ttl_seconds(1200) == 2400
 
 
 def test_the_signer_refuses_an_unknown_verb():

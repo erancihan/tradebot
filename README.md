@@ -113,9 +113,12 @@ Like any watchlist edit, it stops a running autopilot. The last run survives a r
 - **Off.** Nothing runs.
 - **Approve first.** Every `poll_seconds` inside market hours the bot computes
   the Today proposal and lists its trades under **Waiting for approval**. Tap
-  **Approve** or **Reject** per trade, or **Approve all**. A batch is sized at
-  the prices of its pass. It expires when the next pass replaces it, or after
-  one poll interval. It never executes late.
+  **Approve** or **Reject** per trade, or **Approve all**. While the passes
+  keep proposing the same trades, the batch stays: each pass re-sizes it at its
+  own prices, and a rejected trade stays rejected. A pass that proposes
+  different trades replaces it. An approval more than one poll interval after
+  the last pass expires the batch. It never executes late. The phone gets one
+  push per batch, then a reminder every 2 x `poll_seconds` (at least 30 minutes).
 - **Automatic.** Every pass submits its trades.
 
 The status card shows the mode, the loop, the account, the last and next pass,
@@ -189,13 +192,13 @@ batch's pending trades, **Skip** rejects them, **Open** opens Autopilot. The
 server must be reachable from the phone: the same setup as
 [Reach it over the network](#8-reach-it-over-the-network), including
 `--allow-host` for that host. Approve and Skip are signed links, each good for
-one batch and one action, for twice the poll interval (at least 10 minutes).
+one batch and one action, for twice the poll interval (at least 30 minutes).
 They work without the login cookie. The signing key comes from
 `TRADEBOT_WEB_TOKEN`; without a token it is random per server process, so a
-restart kills old links (the batch expires at the next pass anyway). Each link
+restart kills old links (the next reminder push brings fresh ones). Each link
 works once per server process: a second tap is refused (409); after a restart
 a used link can act again until it expires, on lines still pending. A tap after
-the next pass replaced the batch does nothing. A link is signed for one account
+a pass replaced the batch with different trades does nothing. A link is signed for one account
 and only the **paper** account's push carries Approve and Skip: a dry-run,
 replay or live push carries just Open. A hand-edited `public_url` that is not a
 plain http(s) address gives a push without buttons and a warning in the log.
@@ -250,8 +253,9 @@ directory (launchd: the plist's `WorkingDirectory`).
 A restart keeps the config, the databases, the watchlist and the autopilot
 mode. A loop left on **Approve first** or **Automatic** resumes by itself at
 start, so a crash or reboot does not quietly stop the bot. Set it to **Off**
-before a restart you want to look at first. Trades waiting for approval do not
-survive: the first pass after the restart expires them and proposes afresh.
+before a restart you want to look at first. Trades waiting for approval wait
+on: the first pass after the restart re-sizes them if it proposes the same
+trades, and replaces them if not.
 A dry-run's virtual account starts over, while the paper account lives at
 Alpaca. Approve links in phone alerts outlive a restart only with
 `TRADEBOT_WEB_TOKEN` set (they are signed with it).

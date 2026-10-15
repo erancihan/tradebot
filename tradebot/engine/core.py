@@ -104,10 +104,12 @@ class Engine:
         is False: the proposal is parked as pending instead, see ``step``)."""
         return self.step(submit=submit, now=now).actions
 
-    def step(self, submit: bool = True, now: datetime | None = None) -> PassOutcome:
+    def step(self, submit: bool = True, now: datetime | None = None, *,
+             record: bool = True) -> PassOutcome:
         """One full pass: book bracket exits, read the account, build the
         proposal (``advisor.propose``), then submit its lines, or with
-        ``submit=False`` store them as pending for approval."""
+        ``submit=False`` store them as pending for approval (``record=False``:
+        return them unstored; the autopilot may carry its batch over)."""
         if not self.broker.is_market_open():
             log.info("Market closed; skipping rebalance.")
             return PassOutcome(market_closed=True)
@@ -131,8 +133,8 @@ class Engine:
             # Post-overlay: what the book actually targets.
             self.storage.record_weights(proposal.weights or {}, self.mode)
         if not submit:
-            return PassOutcome(proposal=proposal,
-                               batch_id=pending.record_pending(self, proposal))
+            batch = pending.record_pending(self, proposal) if record else None
+            return PassOutcome(proposal=proposal, batch_id=batch)
         return PassOutcome(actions=self._submit_all(proposal, now), proposal=proposal)
 
     def submit_lines(self, line_ids: list[int],

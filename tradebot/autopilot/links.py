@@ -4,13 +4,14 @@ A link is a capability token: ``HMAC-SHA256(secret,
 "{account}:{batch}:{verb}:{exp}")`` grants exactly one verb on exactly one
 batch of one account (the engine's mode label) until ``exp`` (unix seconds). It
 is the only credential the link endpoints check, so it is short-lived: twice
-the poll interval (a pending batch expires at the next pass anyway), never
-less than ten minutes so a slow tap still lands.
+the poll interval, never less than thirty minutes. The same number spaces the
+reminder pushes for a batch that waits unchanged (``approvals``), so a push's
+buttons keep working until the next push arrives with fresh ones.
 
 The secret is derived from ``TRADEBOT_WEB_TOKEN`` when one is set, so the web
 server and a headless ``tradebot run --autopilot`` sign alike and links survive
 a restart. Without a token it is random per process: links die with a restart,
-which is fine because a restart's next pass expires the batch too.
+and the next reminder push carries fresh ones.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ from typing import Callable
 TOKEN_ENV = "TRADEBOT_WEB_TOKEN"
 VERBS = ("approve", "reject")
 #: Never shorter than this, whatever the poll interval.
-MIN_TTL_SECONDS = 600
+MIN_TTL_SECONDS = 1800
 #: What ``signature`` emits; anything else is refused before comparing
 #: (``compare_digest`` raises on a non-ASCII str).
 _SIG = re.compile(r"[0-9a-f]{64}", re.ASCII)
@@ -67,6 +68,7 @@ def verify(secret: bytes, account: str, batch_id: int, verb: str, exp: int, sig:
 
 
 def ttl_seconds(poll_seconds: float) -> int:
+    """A link's lifetime, and the reminder interval of an unchanged batch."""
     return max(int(2 * poll_seconds), MIN_TTL_SECONDS)
 
 

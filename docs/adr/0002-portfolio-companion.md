@@ -66,7 +66,7 @@ One new core concept, the proposal, feeds three flows.
 ## Addendum 2026-10-15: approve from the phone notification
 - With `notify.public_url` set, a pending batch's ntfy push carries Approve all,
   Skip and Open. Approve and Skip POST signed links: capability tokens scoped to
-  one batch and one verb, valid for 2 x `poll_seconds` (at least 10 minutes).
+  one batch and one verb, valid for 2 x `poll_seconds` (at least 30 minutes).
 - They are the only URL-borne credential in the app. That is acceptable because
   a link can only approve or reject lines already pending in its own batch,
   through `Autopilot.act_on_batch` (account-checked, under the lock; it calls the page's approve/reject), never changes the mode, and
@@ -82,3 +82,14 @@ One new core concept, the proposal, feeds three flows.
   names by 6-1 momentum over the Alpaca most-active pool (with keys) or the cache.
 - The watchlist stays the owner's decision: a name reaches suggestions or the
   autopilot only after the owner taps Add, which stops a running autopilot.
+
+## Addendum 2026-10-15: quiet re-proposals
+- In approve-first mode a pass whose trades are the same `(symbol, action)` set
+  as the waiting batch (its pending and rejected lines) carries that batch over:
+  the pending lines take the new pass's sizing, prices and time, rejected lines
+  stay rejected, and the batch id stays, so the push's links keep working.
+- A changed proposal, an approval older than one `poll_seconds`, a daily-loss
+  halt and switching off expire the batch, as before.
+- A batch is pushed once when recorded, then again as a reminder every
+  `links.ttl_seconds(poll)` = max(2 x `poll_seconds`, 30 minutes). The same
+  number is the link lifetime, so a push's buttons work until the next push.
