@@ -141,10 +141,10 @@ async def _bounded_body(request: Request) -> bytes:
     declared = request.headers.get("content-length")
     if declared is None or not declared.isdigit() or int(declared) > MAX_LOGIN_BODY:
         raise _Refused(413, "login body too large")
-    chunks, total = [], 0
+    chunks, total, limit = [], 0, int(declared)
     async for chunk in request.stream():
         total += len(chunk)
-        if total > MAX_LOGIN_BODY:          # the declared length lied
+        if total > limit:                   # the declared length lied
             raise _Refused(413, "login body too large")
         chunks.append(chunk)
     return b"".join(chunks)

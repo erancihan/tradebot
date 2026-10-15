@@ -362,6 +362,18 @@ build on every push and PR, with no credentials.
   same-origin guard (`POST /login`, a plain form, is its only exemption;
   the token is never accepted in a URL). Build test clients with `tests/web_client.local_client`
   (Host `localhost`): `testserver` is deliberately not on the allowlist.
+- **Chart axes drop the clock on daily data.** `equityChart.ts axisLabels`
+  shows dates only when no two points share a date (daily bars carry a
+  04:00/05:00 UTC session stamp that is noise); intraday series keep the time.
+  Order pins use the same labels, so a pin always lands on an axis category.
+- **The login body is bounded twice:** `Content-Length` must be present and at
+  most 4096, and the streamed body may not exceed what it declared (a chunked
+  body without a length gets 413). `test_web_guard.py` drives the raw ASGI app
+  for these, because an HTTP client corrects a lying length.
+- **What-if presets are real when anything daily is cached,** familiar index
+  funds first, and only symbols that share at least 90 days with the rest
+  (`whatif_presets.MIN_SHARED_DAYS`), so a preset never fails on first tap.
+  An empty cache falls back to labelled synthetic presets.
 - **A green local suite is not a green CI.** Check the actual CI run before
   you claim a gate passed.
 

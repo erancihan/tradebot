@@ -681,7 +681,8 @@ day of each month, and runs equal-weight buy and hold over the same symbols
 with the same cash as the benchmark. The result card leads with the money
 gain (final value minus everything put in), then the comparison with buy and
 hold; growth and worst drop leave contributions out. Presets come from what
-is cached (synthetic, and labelled so, when the cache is empty), the date
+is cached (familiar index funds first, only symbols that share a window;
+synthetic, and labelled so, when the cache is empty), the date
 pickers are bounded by cache coverage, and an uncached range shows the exact
 `tradebot data pull` command. API: `POST /api/whatif` (polled through
 `/api/jobs/{id}`) and `GET /api/whatif/presets`.

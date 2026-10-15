@@ -188,3 +188,16 @@ def test_whatif_page_renders_presets(tmp_path):
     assert "applyPreset(0)" in text
     assert "data-presets='" in text                     # the same list, for the TS side
     assert ":min=\"minDate()\"" in text and "data-pull-hint" in text
+
+
+def test_presets_skip_a_cached_symbol_that_shares_no_window(tmp_path):
+    from tradebot.data.cache import BarCache
+    from tradebot.data.synthetic import synthetic_ohlcv
+
+    _seed_cache(tmp_path, symbols=("SPY", "QQQ"))        # 2022-01-03 onward, 300 bars
+    late = synthetic_ohlcv(periods=120, seed=3, freq="B", start="2025-01-02")
+    BarCache(tmp_path / "cache").store("XLK", "1day", late)
+    first = _client(tmp_path).get("/api/whatif/presets").json()[0]["request"]
+    assert first["source"] == "real"
+    assert first["symbols"] == ["SPY", "QQQ"]            # XLK alone in 2025: left out
+    assert first["start"] == "2022-01-03"
