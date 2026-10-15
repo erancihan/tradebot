@@ -175,14 +175,14 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   The performance card compares with equal-weight buy and hold of today's active list from cached daily
   closes (`services/benchmark.py`, bought at the last close completed before the first snapshot; `benchmark_card.py`:
   alpha from the snapshot at the benchmark's last close), no fetch; absent (noted) without bars or mixed accounts.
-  **Trades** are round trips by average cost (`portfolio_pnl.book`) from filled orders only (`filled_orders`: `filled_qty > 0`, any status); hand trades never count, open ones show no P&L.
+  **Trades** are round trips by average cost (`portfolio_pnl.book`) from filled orders only (`filled_orders`: `filled_qty > 0`, any status); hand trades never count, open ones show no P&L. `orders.intent` (entry | exit, NULL on old rows = opens as before): an exit with no trip to close is an `UnmatchedExit` ("Sold without a recorded buy"), never a short, never in the summary.
 - **The Today refresh** gives the selector the whole cached history and the strategy the last `required_history + 30` bars, so engine and web can differ when their histories start on different days.
 - **One list everywhere:** the watchlist when not empty, else `settings.symbols` (`storage/watchlist.resolve_active`;
   web `with_active_symbols`, a copy; `tradebot run` too, printing `symbols=watchlist(N)`). A watchlist edit stops a running
   autopilot (`autopilot_service.reset`), as a Settings save does. Symbols match `models.SYMBOL_RE` after upper-casing.
 - **The autopilot manages exactly the list:** a held equity off the list gets a sell-to-flat line (`unlisted` in
   `advisor.propose`; `engine/unlisted.py`, web `unlisted_service`; no price = skipped; exits submit first; only
-  `Position.asset_class == "us_equity"`, so crypto and options are left alone). Never live;
+  `models.is_equity`: crypto and options are left alone by the engine, Today and the breaker's flatten). Never live;
   `manage_unlisted: false` turns it off. The 1% band is the product's (`Settings`, `risk.product_risk`, so a `tradebot
   backtest` of a Settings file uses it); the arena, what-if and the research record keep `RiskConfig()`'s 0.
 - **Discover** ranks by the `MomentumSelector` score over the cached or Alpaca pool, excludes
@@ -248,7 +248,7 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   restart a used link acts again until `exp`). They skip the cookie gate, not the guard. **The ntfy topic grants approval.**
 - **The daily-loss breaker is per session day and flattens** (`engine/session.py`):
   each pass rolls the anchor when `now`'s exchange date changes (a replay's `now` is
-  its newest bar); a breach closes every position and stays out that day. The
+  its newest bar); a breach closes every equity position and stays out that day. The
   autopilot also turns off; its anchor persists per scope (`autopilot/session.py`).
 - **One lock, one connection:** the loop thread and web taps share the engine and SQLite
   (`check_same_thread=False`, WAL, `busy_timeout=5000`) under the Autopilot `RLock`. A line

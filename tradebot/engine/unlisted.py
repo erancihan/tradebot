@@ -11,7 +11,7 @@ import logging
 import math
 
 from ..advisor.unlisted import off_list
-from ..models import EQUITY
+from ..models import is_equity
 
 log = logging.getLogger("tradebot.engine")
 
@@ -42,7 +42,7 @@ def read_unlisted(engine) -> dict[str, tuple[float, float | None]] | None:
     try:
         # A crypto or option position is never an off-list equity to close.
         held = {s: float(p.qty) for s, p in engine.broker.positions().items()
-                if getattr(p, "asset_class", EQUITY) == EQUITY}
+                if is_equity(p)}
     except Exception:  # noqa: BLE001 - an off-list read never kills the pass
         log.exception("Positions read failed; off-list holdings wait for the next pass")
         return {}

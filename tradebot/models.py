@@ -106,6 +106,9 @@ class Fill:
     price: float
     commission: float = 0.0
     timestamp: datetime = field(default_factory=utcnow)
+    #: Why the order was sent ("entry" opens or grows exposure, "exit"
+    #: reduces or closes it); None when unknown (an old order-log row).
+    intent: str | None = None
 
 
 #: The one asset class the bot trades.
@@ -132,6 +135,13 @@ class Position:
         return (price - self.avg_price) * self.qty
 
 
+def is_equity(position) -> bool:
+    """Whether a broker position is an equity, the only class the bot trades.
+    A crypto or option position is never the bot's to size, close or flatten;
+    a position object without the field (an old fake) counts as an equity."""
+    return getattr(position, "asset_class", EQUITY) == EQUITY
+
+
 @dataclass
 class Trade:
     """A realised round-trip leg (a reduction/close of a position), or, from
@@ -143,8 +153,8 @@ class Trade:
     exit_price: float
     pnl: float
     timestamp: datetime = field(default_factory=utcnow)    # the closing fill
-    #: When the position opened and which way it pointed; None/"long" for a
-    #: backtest leg, which never records them.
+    #: When the position opened (None for a backtest leg, which never records
+    #: it) and which way the closed position pointed.
     entry_ts: datetime | None = None
     side: str = "long"
 

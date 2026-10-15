@@ -298,7 +298,10 @@ Alpaca. Approve links in phone alerts outlive a restart only with
   newest first, with a summary line (closed, wins, realised P&L, profit factor), and each open
   position as "open since <date> at avg <price>" with no P&L. Trips are built by average cost
   from the bot's filled orders in that account only (hand trades are not included; a partial
-  fill counts the shares that filled); `/api/history/trades?mode=` serves the same as JSON.
+  fill counts the shares that filled). When the bot sells something it has no recorded buy for
+  (a holding you bought by hand and took off the list, or a buy older than the fill log), the
+  sale is listed under **Sold without a recorded buy** and never counted as a trade or in the
+  totals; `/api/history/trades?mode=` serves the same as JSON.
   Below it one timeline mixes the
   orders the bot sent (symbol, side, shares, and the amount at the price the
   trade was sized at) with each proposal batch (its trades by status: suggested,

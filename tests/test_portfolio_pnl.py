@@ -7,14 +7,15 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from tradebot.models import Fill
-from tradebot.portfolio_pnl import (book, fills_from_orders, open_trades, round_trips,
-                                    summary)
+from tradebot.portfolio_pnl import (UnmatchedExit, book, fills_from_orders, open_trades,
+                                    round_trips, summary, unmatched_exits)
 
 T0 = datetime(2026, 10, 15, 14, 30, tzinfo=timezone.utc)
 
 
-def _f(symbol: str, qty: float, price: float, day: int) -> Fill:
-    return Fill(symbol=symbol, qty=qty, price=price, timestamp=T0 + timedelta(days=day))
+def _f(symbol: str, qty: float, price: float, day: int, intent: str | None = None) -> Fill:
+    return Fill(symbol=symbol, qty=qty, price=price, timestamp=T0 + timedelta(days=day),
+                intent=intent)
 
 
 def test_a_long_round_trip():
@@ -36,7 +37,7 @@ def test_scaling_in_at_two_prices_then_one_exit_uses_the_average_cost():
 
 def test_a_partial_exit_realises_part_and_keeps_the_rest_open():
     fills = [_f("SPY", 10, 100.0, 0), _f("SPY", 10, 120.0, 1), _f("SPY", -5, 130.0, 2)]
-    closed, still = book(fills)
+    closed, still, _ = book(fills)
     assert closed == []
     [held] = still
     assert held.side == "long" and held.qty == 15 and held.avg_price == pytest.approx(110.0)
@@ -45,7 +46,7 @@ def test_a_partial_exit_realises_part_and_keeps_the_rest_open():
 
 
 def test_crossing_zero_closes_the_trip_and_opens_a_short_with_the_rest():
-    closed, still = book([_f("IWM", 10, 50.0, 0), _f("IWM", -15, 55.0, 1)])
+    closed, still, _ = book([_f("IWM", 10, 50.0, 0), _f("IWM", -15, 55.0, 1)])
     [trade] = closed
     assert trade.side == "long" and trade.qty == 10 and trade.pnl == pytest.approx(50.0)
     [short] = still
@@ -87,7 +88,7 @@ def test_without_a_loss_the_profit_factor_is_none():
 
 
 def test_no_fills_no_trades():
-    assert book([]) == ([], [])
+    assert book([]) == ([], [], [])
     s = summary([])
     assert s["closed"] == 0 and s["realised"] == 0 and s["win_rate"] is None
     assert s["best"] is None and s["profit_factor"] is None
@@ -97,8 +98,46 @@ def test_order_rows_become_signed_fills_at_the_fill_price():
     rows = [{"symbol": "SPY", "side": "sell", "filled_qty": 5.0, "fill_price": 101.5,
              "filled_at": T0.isoformat(), "ts": "ignored"},
             {"symbol": "SPY", "side": "buy", "filled_qty": 2.0, "fill_price": 99.0,
-             "filled_at": None, "ts": T0.isoformat()}]
+             "filled_at": None, "ts": T0.isoformat(), "intent": "entry"}]
     fills = fills_from_orders(rows)
     assert [(f.qty, f.price, f.timestamp) for f in fills] == [(-5.0, 101.5, T0),
                                                              (2.0, 99.0, T0)]
     assert all(f.commission == 0.0 for f in fills)
+    assert [f.intent for f in fills] == [None, "entry"]      # an old row has none
+
+
+def test_an_exit_with_no_recorded_buy_is_unmatched_not_a_short():
+    """The bot sold a hand-bought holding (the off-list mandate), or a buy
+    older than the fill log: no phantom short, no made-up P&L."""
+    sell = _f("IWM", -10, 100.0, 0, intent="exit")
+    closed, still, unmatched = book([sell])
+    assert closed == [] and still == []
+    assert unmatched == [UnmatchedExit("IWM", T0, 10.0, 100.0)]
+    later = [sell, _f("IWM", 10, 90.0, 1, intent="entry")]
+    closed, still, _ = book(later)
+    assert closed == []                                   # never a +100 "trade"
+    [held] = still
+    assert held.side == "long" and held.qty == 10 and held.avg_price == 90.0
+    assert summary(round_trips(later))["closed"] == 0
+    assert unmatched_exits(later) == [UnmatchedExit("IWM", T0, 10.0, 100.0)]
+
+
+def test_an_exit_larger_than_the_trip_closes_it_and_leaves_the_rest_unmatched():
+    fills = [_f("SPY", 10, 100.0, 0, intent="entry"), _f("SPY", -15, 110.0, 1, intent="exit")]
+    closed, still, unmatched = book(fills)
+    [trade] = closed
+    assert trade.side == "long" and trade.qty == 10 and trade.pnl == pytest.approx(100.0)
+    assert still == []                                    # not a 5-share short
+    assert unmatched == [UnmatchedExit("SPY", T0 + timedelta(days=1), 5.0, 110.0)]
+
+
+def test_an_exit_the_same_way_as_the_trip_is_unmatched():
+    fills = [_f("SPY", 10, 100.0, 0, intent="entry"), _f("SPY", 4, 101.0, 1, intent="exit")]
+    _, still, unmatched = book(fills)
+    assert still[0].qty == 10 and [u.qty for u in unmatched] == [4.0]
+
+
+def test_a_sell_without_an_intent_still_opens_a_short():
+    """An old row (no intent recorded): strategies can short, so it opens."""
+    _, still, unmatched = book([_f("TSLA", -4, 200.0, 0)])
+    assert still[0].side == "short" and unmatched == []

@@ -43,6 +43,21 @@
       {% endfor %}
     </ul>
   {% endif %}
+  {% if t.unmatched %}
+    <div class="space-y-1" data-unmatched-exits>
+      <h3 class="text-xs font-semibold text-slate-300">Sold without a recorded buy</h3>
+      <p class="text-xs text-slate-500">Not a trade, never in the totals: a hand-bought holding, or a buy older than the fill log.</p>
+      <ul class="divide-y divide-slate-800">
+        {% for u in t.unmatched %}
+          <li class="min-h-[40px] py-2 text-sm break-words" data-unmatched="{{ u.symbol }}">
+            <span class="font-mono font-semibold text-slate-100">{{ u.symbol }}</span>
+            <span class="text-slate-400">{{ '%g' | format(u.qty) }} sh at {{ price(u.price) }}</span>
+            <span class="text-xs text-slate-500">· {{ u.ts[:10] }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
   <p class="text-xs text-slate-500" data-trades-provenance>
     From the bot's filled orders in this account ({{ t.provenance.mode }}), by average cost;
     hand trades are not included and a partial fill counts the shares that filled.

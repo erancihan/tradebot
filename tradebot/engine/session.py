@@ -18,7 +18,7 @@ import logging
 from datetime import date, datetime
 
 from ..market import get_calendar
-from ..models import Order, Side, utcnow
+from ..models import Order, Side, is_equity, utcnow
 
 log = logging.getLogger("tradebot.engine")
 
@@ -53,7 +53,8 @@ def halt_on_daily_loss(engine, equity: float, day: date,
 
 
 def flatten(engine, now: datetime | None = None) -> list[str]:
-    """Cancel resting orders and close every open position at market.
+    """Cancel resting orders and close every open equity position at market.
+    A crypto or option position in the account is a hand trade: never sold.
 
     One symbol failing never stops the others from closing; each close is
     logged and recorded like any other order.
@@ -70,7 +71,7 @@ def flatten(engine, now: datetime | None = None) -> list[str]:
     closed: list[str] = []
     for symbol, pos in held.items():
         qty = float(pos.qty)
-        if qty == 0:
+        if qty == 0 or not is_equity(pos):
             continue
         order = Order(symbol=symbol, qty=abs(qty), side=Side.from_delta(-qty),
                       created_at=now or utcnow())
@@ -83,7 +84,7 @@ def flatten(engine, now: datetime | None = None) -> list[str]:
         closed.append(symbol)
         if engine.storage:
             try:
-                engine.storage.record_order(order, order_id, engine.mode)
+                engine.storage.record_order(order, order_id, engine.mode, intent="exit")
             except Exception:  # noqa: BLE001 - the order is out; never undo that
                 log.exception("%s: close %s sent but not recorded", symbol, order_id)
     return closed

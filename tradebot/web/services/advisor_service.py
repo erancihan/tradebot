@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 from ...config import AlpacaCredentials
 from ...data.cache import BarCache, build_default_fetcher
+from ...models import is_equity
 from ..repository import TradingRepository
 from . import symbols_service, unlisted_service
 from .jobs.frames import _pull_hint
@@ -172,7 +173,9 @@ def _account(settings, trading_db: str, creds):
         broker = _paper_broker(creds)
         sync_fills(broker, trading_db)
         acct = broker.account()
-        positions = {s: float(p.qty) for s, p in broker.positions().items()}
+        # Equities only, as the engine reads them (``engine/unlisted``).
+        positions = {s: float(p.qty) for s, p in broker.positions().items()
+                     if is_equity(p)}
         return float(acct.equity), float(acct.cash), positions, "alpaca"
     repo = TradingRepository(trading_db)
     positions = repo.positions_from_orders(settings.mode)

@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS orders (
     status          TEXT,           -- the broker's last word (OrderStatus); NULL = not asked yet
     filled_qty      REAL,           -- shares filled so far, per the broker
     fill_price      REAL,           -- average fill price; NULL until something filled
-    filled_at       TEXT
+    filled_at       TEXT,
+    intent          TEXT            -- entry | exit (opens/adds or reduces); NULL = before it
 );
 CREATE TABLE IF NOT EXISTS equity_snapshots (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,6 +108,7 @@ _ADDED_COLUMNS = (
     ("orders", "filled_qty", "REAL"),
     ("orders", "fill_price", "REAL"),
     ("orders", "filled_at", "TEXT"),
+    ("orders", "intent", "TEXT"),
 )
 
 

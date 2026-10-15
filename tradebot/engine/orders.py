@@ -109,7 +109,8 @@ def submit_line(engine, line, on_submitted=None,
     # attaching a stop to it would rest an exit against a position that is
     # on its way out.
     stop = target_price = None
-    if opens_exposure(current, delta):
+    entry = opens_exposure(current, delta)
+    if entry:
         stop, target_price = engine.risk.bracket_prices(delta, price)
 
     order = Order(symbol=symbol, qty=abs(delta), side=Side.from_delta(delta),
@@ -124,7 +125,8 @@ def submit_line(engine, line, on_submitted=None,
         _after_send(action, on_submitted)
     if engine.storage:
         _after_send(action, lambda: engine.storage.record_order(
-            order, action.submitted_id, engine.mode, price=price))
+            order, action.submitted_id, engine.mode, price=price,
+            intent="entry" if entry else "exit"))
     engine._notify({
         "type": "order", "symbol": symbol, "side": order.side.value,
         "qty": abs(delta), "price": price, "target": target,

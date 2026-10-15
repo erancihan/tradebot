@@ -35,10 +35,10 @@ def effective_qty(row: dict) -> float:
 #: Orders of one mode with a known fill, oldest fill first: what History's
 #: round trips are built from. Any status counts once shares moved (a cancel
 #: after a partial fill too, as in :func:`effective_qty`); the web reader
-#: (``web/repository/history.py``) runs the same query read-only.
+#: (``web/repository/history.py``) runs the same query read-only. ``SELECT *``
+#: so a log from before ``intent`` (the web never migrates) still reads.
 FILLED_ORDERS_SQL = (
-    "SELECT id, ts, symbol, side, qty, status, filled_qty, fill_price, filled_at"
-    " FROM orders WHERE mode = ? AND filled_qty > 0 AND fill_price IS NOT NULL"
+    "SELECT * FROM orders WHERE mode = ? AND filled_qty > 0 AND fill_price IS NOT NULL"
     " ORDER BY COALESCE(filled_at, ts), ts, id")
 
 
@@ -51,12 +51,14 @@ class OrdersMixin:
     """Order/equity writes over ``self._conn``."""
 
     def record_order(self, order: Order, broker_order_id: str | None, mode: str,
-                     price: float | None = None) -> None:
+                     price: float | None = None, intent: str | None = None) -> None:
         """Log one submitted order. ``price`` is the price its proposal line was
-        sized at, kept so History can show the notional; None when unknown."""
+        sized at, kept so History can show the notional; None when unknown.
+        ``intent`` is why it was sent: "entry" (opens or grows exposure) or
+        "exit" (reduces or closes it); None when the caller cannot say."""
         self._conn.execute(
-            "INSERT INTO orders (ts, symbol, side, qty, type, broker_order_id, mode, price)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO orders (ts, symbol, side, qty, type, broker_order_id, mode, price,"
+            " intent) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 order.created_at.isoformat(),
                 order.symbol,
@@ -66,6 +68,7 @@ class OrdersMixin:
                 broker_order_id,
                 mode,
                 None if price is None else float(price),
+                intent,
             ),
         )
         self._conn.commit()

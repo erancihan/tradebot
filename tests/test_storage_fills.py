@@ -66,3 +66,40 @@ def test_a_log_from_before_the_fill_columns_has_no_fills(tmp_path):
     con.close()
     assert TradingRepository(str(tmp_path / "old.db")).filled_orders("paper") == []
     assert TradingRepository(str(tmp_path / "missing.db")).filled_orders("paper") == []
+
+
+# --- orders.intent: why each order was sent --------------------------------------
+
+_PRE_INTENT = _OLD_ORDERS.replace(
+    "mode TEXT NOT NULL)", "mode TEXT NOT NULL, price REAL, status TEXT, filled_qty REAL,"
+    " fill_price REAL, filled_at TEXT)")
+
+
+def _pre_intent_db(path) -> None:
+    con = sqlite3.connect(path)
+    con.execute(_PRE_INTENT)
+    con.execute("INSERT INTO orders (ts, symbol, side, qty, type, mode, status, filled_qty,"
+                " fill_price, filled_at) VALUES (?, 'SPY', 'sell', 3, 'market', 'paper',"
+                " 'filled', 3, 100.0, ?)", (T0.isoformat(), T0.isoformat()))
+    con.commit()
+    con.close()
+
+
+def test_the_web_reads_a_log_from_before_the_intent_column_without_migrating(tmp_path):
+    _pre_intent_db(tmp_path / "old.db")
+    [row] = TradingRepository(str(tmp_path / "old.db")).filled_orders("paper")
+    assert row["symbol"] == "SPY" and row.get("intent") is None
+    con = sqlite3.connect(tmp_path / "old.db")
+    assert "intent" not in {r[1] for r in con.execute("PRAGMA table_info(orders)")}
+    con.close()
+
+
+def test_migrate_adds_intent_and_record_order_stores_it(tmp_path):
+    _pre_intent_db(tmp_path / "old.db")
+    with Storage(tmp_path / "old.db") as st:
+        st.record_order(Order(symbol="QQQ", qty=2, side=Side.SELL, created_at=T0),
+                        "o-q", "paper", intent="exit")
+        oid = st._conn.execute("SELECT max(id) FROM orders").fetchone()[0]
+        st.set_order_fill(oid, OrderStatus("filled", 2, 50.0, T0 + timedelta(hours=1)))
+        rows = st.filled_orders("paper")
+    assert [(r["symbol"], r["intent"]) for r in rows] == [("SPY", None), ("QQQ", "exit")]

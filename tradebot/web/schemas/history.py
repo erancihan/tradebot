@@ -39,6 +39,15 @@ class OpenTradeRow(BaseModel):
     realised: float                       # from partial exits; no unrealised
 
 
+class UnmatchedExitRow(BaseModel):
+    """A bot exit with no recorded trip to close: never a trade."""
+
+    symbol: str
+    qty: float
+    price: float
+    ts: str
+
+
 class TradesProvenance(BaseModel):
     mode: str
     source: str                           # "order log fills"
@@ -49,4 +58,5 @@ class TradesView(BaseModel):
     summary: TradeSummary
     trades: list[ClosedTrade]             # newest close first
     open: list[OpenTradeRow]
+    unmatched: list[UnmatchedExitRow] = []    # newest first; not in the summary
     provenance: TradesProvenance

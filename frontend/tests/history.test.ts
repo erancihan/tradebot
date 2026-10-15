@@ -10,6 +10,9 @@ const pages: Record<string, { html: string; next: string }> = {
   "/partials/history?mode=paper": { html: "<li>fresh</li>", next: "/partials/history?before_order=9" },
   "/partials/history/performance?mode=paper": { html: "<p>perf</p>", next: "" },
   "/partials/history/trades?mode=paper": { html: "<p>trades</p>", next: "" },
+  // No performance partial for this account: that request fails (500).
+  "/partials/history?mode=live": { html: "<li>live</li>", next: "" },
+  "/partials/history/trades?mode=live": { html: "<p>live trades</p>", next: "" },
 };
 const asked: string[] = [];
 stubFetch((url) => {
@@ -65,3 +68,15 @@ check(performance.innerHTML === "<p>perf</p>", "the performance card follows the
 check(trades.innerHTML === "<p>trades</p>", "the trades card follows the same account");
 check(list.innerHTML === "<li>fresh</li>", `newest page swapped in: ${list.innerHTML}`);
 check(fresh.next === "/partials/history?before_order=9", `cursor from the poll: ${fresh.next}`);
+
+// One failed partial never stops the other card or the chart refreshing.
+const perfBox = { innerHTML: "<p>old perf</p>" };
+const tradesBox = { innerHTML: "<p>old trades</p>" };
+const partly = Object.assign(history(), { $refs: { list, performance: perfBox, trades: tradesBox } });
+partly.mode = "live";
+const origError = console.error;
+console.error = () => {};
+await partly.poll();
+console.error = origError;
+check(perfBox.innerHTML === "<p>old perf</p>", "a failed performance card keeps its last content");
+check(tradesBox.innerHTML === "<p>live trades</p>", `the trades card still updates: ${tradesBox.innerHTML}`);
