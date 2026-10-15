@@ -102,13 +102,15 @@ def autopilot(request: Request):
 
 
 @router.get("/history", response_class=HTMLResponse)
-def history(request: Request, before_order: int | None = None,
-            before_batch: int | None = None,
+def history(request: Request, order_ts: str | None = None, order_id: int | None = None,
+            batch_ts: str | None = None, batch_id: int | None = None,
             repo: TradingRepository = Depends(get_trading_repo)):
     """One page of History's timeline. The next page's URL rides in the
     ``X-History-Next`` header (empty on the last page), so the fragment stays
     the same markup the page includes."""
     mode = history_service.active_mode(repo, request.app.state.settings)
+    before_order = history_service.parse_cursor(order_ts, order_id)
+    before_batch = history_service.parse_cursor(batch_ts, batch_id)
     page = history_service.events_page(repo, mode, before_order, before_batch)
     first = before_order is None and before_batch is None
     response = templates.TemplateResponse(

@@ -158,7 +158,39 @@ def test_events_page_cursor_only_moves_past_shown_rows(tmp_path):
     first = history_service.events_page(repo, "paper", limit=2)
     assert [e["symbol"] for e in first["events"]] == ["O2", "O1"]
     # No batch was shown, so the batch cursor stays unset and the batch comes next.
-    assert first["next"] == "/partials/history?before_order=2"
-    second = history_service.events_page(repo, "paper", before_order=2, limit=2)
+    o1 = first["events"][-1]
+    assert first["next"] == history_service.next_url({"order": (o1["ts"], o1["id"])})
+    assert "batch" not in first["next"]
+    second = history_service.events_page(repo, "paper", before_order=(o1["ts"], o1["id"]),
+                                         limit=2)
     assert [e["kind"] for e in second["events"]] == ["order", "proposal"]
     assert second["next"] is None
+
+
+def _walk(client, url: str) -> list[str]:
+    """Every event key the pages serve, following ``X-History-Next`` from ``url``."""
+    seen: list[str] = []
+    while url:
+        resp = client.get(url)
+        assert resp.status_code == 200
+        seen += re.findall(r'data-(?:symbol|batch)="(\w+)"', resp.text)
+        url = resp.headers["X-History-Next"]
+    return seen
+
+
+def test_show_more_pages_on_time_when_ids_and_times_disagree(tmp_path, monkeypatch):
+    """Two replay runs restart the clock: ids rise while times go d1 d2 d3 d1 d2 d3.
+    Paging on ids alone skipped rows; the (ts, id) keyset shows each exactly once."""
+    monkeypatch.setattr(history_service, "PAGE_SIZE", 2)
+    days = [T0 + timedelta(days=d) for d in (0, 1, 2, 0, 1, 2)]
+    with Storage(tmp_path / "t.db") as st:
+        _snapshot(st, T0, 10_000.0, "paper")
+        for i, day in enumerate(days):
+            st.record_proposal(dummy_proposal(created_at=day, lines=[_line()]), "paper")
+            _order(st, f"O{i}", 1, day + timedelta(hours=1), price=1.0)
+    seen = _walk(_client(tmp_path), "/partials/history")
+    batches = [k for k in seen if k.isdigit()]
+    orders = [k for k in seen if k.startswith("O")]
+    assert sorted(batches) == ["1", "2", "3", "4", "5", "6"]
+    assert sorted(orders) == [f"O{i}" for i in range(6)]
+    assert len(seen) == 12

@@ -143,14 +143,15 @@ class TradingRepository:
     def latest_equity_for(self, mode: str) -> dict | None:
         return _proposals.latest_equity(self.db_path, mode)
 
-    def orders_page(self, mode: str, before_id: int | None = None,
+    def orders_page(self, mode: str, before: tuple[str, int] | None = None,
                     limit: int = 20) -> list[dict]:
-        """One page of the order log for History (``repository/history.py``)."""
-        return _history.orders_page(self.db_path, mode, before_id, limit)
+        """One page of the order log for History (``repository/history.py``),
+        keyed on the last shown ``(ts, id)``."""
+        return _history.orders_page(self.db_path, mode, before, limit)
 
-    def proposal_batches_page(self, mode: str, before_id: int | None = None,
+    def proposal_batches_page(self, mode: str, before: tuple[str, int] | None = None,
                               limit: int = 20) -> list[dict]:
-        return _history.proposal_batches_page(self.db_path, mode, before_id, limit)
+        return _history.proposal_batches_page(self.db_path, mode, before, limit)
 
     def watchlist(self) -> list[str]:
         """The Today page's watchlist (``storage/watchlist.py``), oldest first."""

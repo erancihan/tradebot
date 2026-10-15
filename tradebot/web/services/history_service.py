@@ -2,8 +2,8 @@
 
 Two kinds of event share one timeline: an order the bot submitted and a
 proposal batch (what the advisor suggested, and what became of each line).
-Both tables are paged on their own ids and merged by time, so the cursor is a
-pair of ids; see ``events_page``.
+Each table is paged on its own ``(time, id)`` keyset and the two are merged
+by time, so the cursor is one ``(ts, id)`` pair per table; see ``events_page``.
 """
 
 from __future__ import annotations
@@ -54,14 +54,21 @@ def _batch_event(head: dict) -> dict:
             "counts": {s: n for s, n in counts.items() if n}}
 
 
-def events_page(repo, mode: str, before_order: int | None = None,
-                before_batch: int | None = None, limit: int = PAGE_SIZE) -> dict:
+Cursor = tuple[str, int]
+#: The query parameters that carry each table's cursor.
+_KEYS = {"order": ("order_ts", "order_id"), "proposal": ("batch_ts", "batch_id")}
+
+
+def events_page(repo, mode: str, before_order: Cursor | None = None,
+                before_batch: Cursor | None = None, limit: int | None = None) -> dict:
     """One page of the merged timeline and the cursor for the next, or None.
 
-    Each table gives ``limit + 1`` rows past its cursor; whatever is left
-    over after taking the newest ``limit`` proves a next page exists. A
-    cursor only moves past rows actually shown, so nothing is skipped.
+    Each table gives ``limit + 1`` rows past its ``(ts, id)`` cursor, newest
+    first; whatever is left over after taking the newest ``limit`` proves a
+    next page exists. The rows shown from a table are a prefix of that table's
+    order, so its next cursor is its last shown row and nothing is skipped.
     """
+    limit = PAGE_SIZE if limit is None else limit
     orders = [_order_event(r) for r in repo.orders_page(mode, before_order, limit + 1)]
     batches = [_batch_event(h)
                for h in repo.proposal_batches_page(mode, before_batch, limit + 1)]
@@ -70,17 +77,25 @@ def events_page(repo, mode: str, before_order: int | None = None,
     shown = merged[:limit]
     if len(merged) <= limit:
         return {"events": shown, "next": None}
-    cursor = {"before_order": before_order, "before_batch": before_batch}
-    for event in shown:
-        key = "before_order" if event["kind"] == "order" else "before_batch"
-        cursor[key] = event["id"] if cursor[key] is None else min(cursor[key], event["id"])
+    cursor = {"order": before_order, "proposal": before_batch}
+    for event in shown:                        # newest first: the last one wins
+        cursor[event["kind"]] = (event["ts"], event["id"])
     return {"events": shown, "next": next_url(cursor)}
 
 
 def next_url(cursor: dict) -> str:
-    """The partial that serves the page after ``cursor``."""
-    query = {k: v for k, v in cursor.items() if v is not None}
+    """The partial that serves the page after ``cursor`` (kind -> (ts, id))."""
+    query: dict = {}
+    for kind, pair in cursor.items():
+        if pair is not None:
+            ts_key, id_key = _KEYS[kind]
+            query[ts_key], query[id_key] = pair
     return "/partials/history" + (f"?{urlencode(query)}" if query else "")
+
+
+def parse_cursor(ts: str | None, row_id: int | None) -> Cursor | None:
+    """A table's cursor from its two query parameters; half a pair is none."""
+    return None if ts is None or row_id is None else (ts, int(row_id))
 
 
 def view(repo, settings) -> dict:
