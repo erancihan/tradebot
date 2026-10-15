@@ -216,3 +216,19 @@ def test_a_logged_in_post_still_needs_the_same_origin_header(tmp_path):
     client = _logged_in(tmp_path)
     assert client.post("/api/jobs", json=JOB).status_code == 403
     assert client.post("/api/jobs", json=JOB, headers=POST_HEADERS).status_code == 200
+
+
+def test_an_oversized_login_body_is_refused_before_it_is_read(tmp_path):
+    client = _locked(tmp_path)
+    big = "token=" + "x" * 5000
+    r = client.post("/login", content=big,
+                    headers={"content-type": "application/x-www-form-urlencoded"})
+    assert r.status_code == 413
+    assert "set-cookie" not in r.headers
+
+
+def test_a_login_that_is_not_a_form_is_refused(tmp_path):
+    client = _locked(tmp_path)
+    r = client.post("/login", json={"token": TOKEN})
+    assert r.status_code == 415
+    assert "set-cookie" not in r.headers

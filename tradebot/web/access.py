@@ -93,7 +93,14 @@ class AccessToken:
     async def _login(self, request: Request) -> Response:
         if request.method != "POST":
             return _login_page()
-        if not _same(await _posted_token(request), self.token):
+        try:
+            posted = await _posted_token(request)
+        except _Refused as refusal:
+            # Raw ASGI middleware has no exception handler above it, so the
+            # refusal becomes a response here instead of a 500.
+            return Response(refusal.detail, status_code=refusal.status_code,
+                            headers=_LOGIN_HEADERS)
+        if not _same(posted, self.token):
             return _login_page(_WRONG_TOKEN, status_code=403)
         response = RedirectResponse("/", status_code=303, headers=_LOGIN_HEADERS)
         response.set_cookie(COOKIE_NAME, self.session, max_age=COOKIE_MAX_AGE,
@@ -107,11 +114,40 @@ def _login_page(error: str = "", status_code: int = 200) -> Response:
                         status_code=status_code, headers=_LOGIN_HEADERS)
 
 
+class _Refused(Exception):
+    def __init__(self, status_code: int, detail: str) -> None:
+        super().__init__(detail)
+        self.status_code, self.detail = status_code, detail
+
+
+#: A login form is a few dozen bytes. The read happens before any auth, so
+#: it is bounded: an attacker must not be able to make the server buffer an
+#: arbitrarily large body.
+MAX_LOGIN_BODY = 4096
+
+
 async def _posted_token(request: Request) -> str:
     # Parsed by hand: Starlette's request.form() needs python-multipart, and
     # one urlencoded field does not justify a dependency.
-    fields = parse_qs((await request.body()).decode("utf-8", "replace"))
+    fields = parse_qs((await _bounded_body(request)).decode("utf-8", "replace"))
     return fields.get("token", [""])[0]
+
+
+async def _bounded_body(request: Request) -> bytes:
+    """Read the form body, refusing anything that is not a small urlencoded form."""
+    content_type = request.headers.get("content-type", "").split(";")[0].strip()
+    if content_type != "application/x-www-form-urlencoded":
+        raise _Refused(415, "login expects a urlencoded form")
+    declared = request.headers.get("content-length")
+    if declared is None or not declared.isdigit() or int(declared) > MAX_LOGIN_BODY:
+        raise _Refused(413, "login body too large")
+    chunks, total = [], 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > MAX_LOGIN_BODY:          # the declared length lied
+            raise _Refused(413, "login body too large")
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _is_open(path: str) -> bool:
