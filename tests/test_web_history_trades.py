@@ -19,10 +19,11 @@ T0 = datetime(2026, 10, 15, 14, 30, tzinfo=timezone.utc)
 
 
 def _fill(st: Storage, symbol: str, side: Side, qty: float, price: float, day: int,
-          mode: str = "paper", status: str = "filled", filled: float | None = None) -> None:
+          mode: str = "paper", status: str = "filled", filled: float | None = None,
+          intent: str | None = None) -> None:
     ts = T0 + timedelta(days=day)
     st.record_order(Order(symbol=symbol, qty=qty, side=side, created_at=ts),
-                    f"b-{symbol}-{day}-{mode}", mode, price=price)
+                    f"b-{symbol}-{day}-{mode}", mode, price=price, intent=intent)
     oid = st._conn.execute("SELECT max(id) FROM orders").fetchone()[0]
     st.set_order_fill(oid, OrderStatus(status, qty if filled is None else filled, price, ts))
 
@@ -87,6 +88,7 @@ def test_the_trades_partial_renders_the_empty_state(tmp_path):
     body = _client(tmp_path).get("/partials/history/trades?mode=paper").text
     assert "No closed trades yet. A trade closes when a name goes back to flat." in body
     assert "data-trade=" not in body and "0 filled orders" in body
+    assert "Sold without a recorded buy" not in body and "data-unmatched" not in body
 
 
 def test_the_trades_partial_follows_the_pinned_account(tmp_path):
@@ -94,3 +96,24 @@ def test_the_trades_partial_follows_the_pinned_account(tmp_path):
     body = _client(tmp_path).get("/partials/history/trades?mode=dry_run").text
     assert 'data-trade="DIA"' in body and 'data-trade="SPY"' not in body
     assert "(dry_run)" in body
+
+
+def test_a_sale_of_a_hand_bought_holding_is_listed_apart_never_a_trade(tmp_path):
+    """The off-list mandate sold IWM the bot never bought: no phantom short,
+    and the later buy opens a long instead of "closing" it with made-up P&L."""
+    with Storage(tmp_path / "t.db") as st:
+        _snapshot(st, T0, 10_000.0, "paper")
+        _fill(st, "IWM", Side.SELL, 10, 100.0, 0, intent="exit")
+        _fill(st, "IWM", Side.BUY, 10, 90.0, 1, intent="entry")
+    client = _client(tmp_path)
+    body = client.get("/api/history/trades?mode=paper").json()
+    assert body["trades"] == [] and body["summary"]["closed"] == 0
+    assert [(o["symbol"], o["side"], o["qty"]) for o in body["open"]] == [("IWM", "long", 10)]
+    [u] = body["unmatched"]
+    assert (u["symbol"], u["qty"], u["price"]) == ("IWM", 10, 100.0)
+    assert u["ts"].startswith("2026-10-15")
+    page = client.get("/partials/history/trades?mode=paper").text
+    assert "Sold without a recorded buy" in page
+    assert "a hand-bought holding, or a buy older than the fill log" in page
+    row = page.split('data-unmatched="IWM"')[1].split("</li>")[0]
+    assert "10 sh at 100.00" in row and "2026-10-15" in row

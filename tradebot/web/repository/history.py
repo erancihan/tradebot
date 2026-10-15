@@ -14,7 +14,7 @@ from ._db import _read
 
 Cursor = tuple[str, int]
 #: Order columns added after the table first shipped (``storage/schema.py``).
-_LATE_COLUMNS = ("price", "status", "filled_qty", "fill_price", "filled_at")
+_LATE_COLUMNS = ("price", "status", "filled_qty", "fill_price", "filled_at", "intent")
 
 
 def _page_clause(mode: str, ts_col: str, before: Cursor | None) -> tuple[str, tuple]:
@@ -62,5 +62,9 @@ def proposal_batches_page(db_path: str, mode: str, before: Cursor | None,
 
 def filled_orders(db_path: str, mode: str) -> list[dict]:
     """The storage query, read-only: a log from before the fill columns has
-    no such column, and ``_read`` then answers with no rows."""
-    return _read(db_path, FILLED_ORDERS_SQL, (mode,))
+    no such column, and ``_read`` then answers with no rows; one from before
+    ``intent`` reads with it None (an old row: ``portfolio_pnl`` opens it)."""
+    rows = _read(db_path, FILLED_ORDERS_SQL, (mode,))
+    for row in rows:
+        row.setdefault("intent", None)
+    return rows

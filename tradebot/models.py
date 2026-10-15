@@ -106,6 +106,9 @@ class Fill:
     price: float
     commission: float = 0.0
     timestamp: datetime = field(default_factory=utcnow)
+    #: Why the order was sent ("entry" opens or grows exposure, "exit"
+    #: reduces or closes it); None when unknown (an old order-log row).
+    intent: str | None = None
 
 
 #: The one asset class the bot trades.

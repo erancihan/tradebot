@@ -278,3 +278,28 @@ def test_is_equity_reads_the_asset_class():
     assert is_equity(Position("SPY", 1.0))
     assert not is_equity(Position("BTCUSD", 1.0, asset_class="crypto"))
     assert is_equity(type("P", (), {"qty": 1.0})())      # no class: an equity
+
+
+def test_orders_record_why_they_were_sent(tmp_path):
+    """``orders.intent``: an entry opens or grows exposure, anything else
+    (a reduction, an off-list close, a daily-loss flatten) is an exit."""
+    from types import SimpleNamespace
+
+    from tradebot.engine.orders import submit_line
+    from tradebot.engine.session import flatten
+
+    broker = _Flattenable()
+    with Storage(tmp_path / "t.db") as st:
+        engine = SimpleNamespace(broker=broker, storage=st, mode="paper",
+                                 risk=RiskManager(RiskConfig()), _notify=lambda e: None)
+        def line(cur, delta):
+            return SimpleNamespace(symbol="SPY", target=1, order_qty=delta, price=100.0,
+                                   current_qty=cur, desired_qty=cur + delta)
+        submit_line(engine, line(0.0, 5.0))           # opens
+        submit_line(engine, line(5.0, -2.0))          # reduces
+        submit_line(engine, line(3.0, -6.0))          # flips: opens a short
+        flatten(engine)
+        got = [tuple(r) for r in st._conn.execute(
+            "SELECT side, qty, intent FROM orders ORDER BY id")]
+    assert got == [("buy", 5.0, "entry"), ("sell", 2.0, "exit"), ("sell", 6.0, "entry"),
+                   ("sell", 4.0, "exit")]

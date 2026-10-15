@@ -84,7 +84,7 @@ def flatten(engine, now: datetime | None = None) -> list[str]:
         closed.append(symbol)
         if engine.storage:
             try:
-                engine.storage.record_order(order, order_id, engine.mode)
+                engine.storage.record_order(order, order_id, engine.mode, intent="exit")
             except Exception:  # noqa: BLE001 - the order is out; never undo that
                 log.exception("%s: close %s sent but not recorded", symbol, order_id)
     return closed

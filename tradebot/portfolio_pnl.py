@@ -6,6 +6,11 @@ for a short) and leaves the average unchanged. A trip closes when the position
 returns to flat; a fill that crosses zero closes the trip and opens the next
 one with the remainder at the fill's price. What is still open has no P&L
 here: the ledger holds no prices, only the realised part so far.
+
+An ``exit`` fill (``Fill.intent``) never opens a position. The part of it
+with no open trip to close (a hand-bought holding the bot sold, or a buy
+older than the fill log) is an :class:`UnmatchedExit`: listed, never a trade,
+never in the summary. A fill without an intent (an old row) opens as before.
 """
 
 from __future__ import annotations
@@ -28,6 +33,16 @@ class OpenTrade:
     avg_price: float
     entry_ts: datetime
     realised: float = 0.0     # from partial exits so far
+
+
+@dataclass(frozen=True)
+class UnmatchedExit:
+    """Shares the bot sold (or covered) with no recorded trip to close."""
+
+    symbol: str
+    ts: datetime
+    qty: float                # absolute shares
+    price: float
 
 
 @dataclass
@@ -79,28 +94,40 @@ def _open(fill: Fill, qty: float) -> _Trip:
     return trip
 
 
-def book(fills: list[Fill]) -> tuple[list[Trade], list[OpenTrade]]:
-    """Closed trips in closing order, and what is still open (by symbol).
-    ``fills`` come in time order, as ``filled_orders`` reads them."""
+def _unmatched(fill: Fill, qty: float) -> UnmatchedExit:
+    return UnmatchedExit(fill.symbol, fill.timestamp, abs(qty), fill.price)
+
+
+def book(fills: list[Fill]) -> tuple[list[Trade], list[OpenTrade], list[UnmatchedExit]]:
+    """Closed trips in closing order, what is still open (by symbol), and the
+    exits with nothing to close (in fill order). ``fills`` come in time
+    order, as ``filled_orders`` reads them."""
     trips: dict[str, _Trip] = {}
     closed: list[Trade] = []
+    unmatched: list[UnmatchedExit] = []
     for fill in fills:
         qty, trip = float(fill.qty), trips.get(fill.symbol)
+        exit_ = fill.intent == "exit"
         if abs(qty) < _EPS:
             continue
-        if trip is None:
-            trips[fill.symbol] = _open(fill, qty)
-            continue
-        if (trip.qty > 0) == (qty > 0):
-            trip.add(qty, fill.price)
+        if trip is None or (trip.qty > 0) == (qty > 0):
+            if exit_:                              # nothing of ours to close
+                unmatched.append(_unmatched(fill, qty))
+            elif trip is None:
+                trips[fill.symbol] = _open(fill, qty)
+            else:
+                trip.add(qty, fill.price)
             continue
         left = trip.reduce(qty, fill.price)
         if abs(trip.qty) < _EPS:
             closed.append(trip.trade(fill.timestamp))
             del trips[fill.symbol]
-            if abs(left) > _EPS:                   # crossed zero: the rest opens anew
-                trips[fill.symbol] = _open(fill, left)
-    return closed, [trips[s].still_open() for s in sorted(trips)]
+            if abs(left) > _EPS:                   # crossed zero
+                if exit_:                          # an exit never opens the rest
+                    unmatched.append(_unmatched(fill, left))
+                else:
+                    trips[fill.symbol] = _open(fill, left)
+    return closed, [trips[s].still_open() for s in sorted(trips)], unmatched
 
 
 def round_trips(fills: list[Fill]) -> list[Trade]:
@@ -110,6 +137,11 @@ def round_trips(fills: list[Fill]) -> list[Trade]:
 
 def open_trades(fills: list[Fill]) -> list[OpenTrade]:
     return book(fills)[1]
+
+
+def unmatched_exits(fills: list[Fill]) -> list[UnmatchedExit]:
+    """Exits with no recorded trip to close, oldest first."""
+    return book(fills)[2]
 
 
 def summary(trades: list[Trade]) -> dict:
@@ -133,12 +165,15 @@ def summary(trades: list[Trade]) -> dict:
 
 def fills_from_orders(rows: list[dict]) -> list[Fill]:
     """Order-log rows with a known fill (``storage.orders.filled_orders``) as
-    signed fills at the broker's average price. Alpaca charges no commission."""
+    signed fills at the broker's average price, with the intent recorded at
+    order time (None on a row older than the column). Alpaca charges no
+    commission."""
     fills = []
     for row in rows:
         qty = float(row["filled_qty"])
         stamp = row.get("filled_at") or row["ts"]
         fills.append(Fill(symbol=row["symbol"], qty=qty if row["side"] == "buy" else -qty,
                           price=float(row["fill_price"]),
-                          timestamp=datetime.fromisoformat(stamp)))
+                          timestamp=datetime.fromisoformat(stamp),
+                          intent=row.get("intent")))
     return fills
