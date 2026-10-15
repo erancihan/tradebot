@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from urllib.parse import urlencode
 
+from ...config import VALID_MODES
 from ...storage.proposals import LINE_STATUSES
 
 PAGE_SIZE = 20
@@ -17,9 +18,19 @@ PAGE_SIZE = 20
 EQUITY_WINDOW = 2000
 
 
-def active_mode(repo, settings) -> str:
-    """The account History shows: the newest snapshot's mode (as the dashboard
-    does), else the configured mode, so a Today refresh before any pass shows."""
+#: Accounts an order log can hold: the settings' modes and the dry-run label.
+KNOWN_MODES = (*VALID_MODES, "dry_run")
+
+
+def active_mode(repo, settings, requested: str | None = None) -> str:
+    """The account History shows: the one the page loaded with (``requested``,
+    carried by Show more and the poll, so a newer snapshot elsewhere cannot
+    switch accounts mid-scroll), else the newest snapshot's mode (as the
+    dashboard does), else the configured mode. An unknown mode is a ValueError."""
+    if requested is not None:
+        if requested not in KNOWN_MODES:
+            raise ValueError(f"unknown account {requested!r}")
+        return requested
     return repo.default_mode() or settings.mode
 
 
@@ -80,17 +91,17 @@ def events_page(repo, mode: str, before_order: Cursor | None = None,
     cursor = {"order": before_order, "proposal": before_batch}
     for event in shown:                        # newest first: the last one wins
         cursor[event["kind"]] = (event["ts"], event["id"])
-    return {"events": shown, "next": next_url(cursor)}
+    return {"events": shown, "next": next_url(cursor, mode)}
 
 
-def next_url(cursor: dict) -> str:
-    """The partial that serves the page after ``cursor`` (kind -> (ts, id))."""
-    query: dict = {}
+def next_url(cursor: dict, mode: str) -> str:
+    """The partial that serves ``mode``'s page after ``cursor`` (kind -> (ts, id))."""
+    query: dict = {"mode": mode}
     for kind, pair in cursor.items():
         if pair is not None:
             ts_key, id_key = _KEYS[kind]
             query[ts_key], query[id_key] = pair
-    return "/partials/history" + (f"?{urlencode(query)}" if query else "")
+    return f"/partials/history?{urlencode(query)}"
 
 
 def parse_cursor(ts: str | None, row_id: int | None) -> Cursor | None:

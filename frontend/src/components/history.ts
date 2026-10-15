@@ -58,13 +58,15 @@ export function history() {
     async poll() {
       if (this.pages > 1 || this.busy) return;
       try {
-        const page = await getHistoryPage(FIRST_PAGE);
+        // The page's account, never whichever is newest now (see the route).
+        const query = this.mode ? `?mode=${encodeURIComponent(this.mode)}` : "";
+        const page = await getHistoryPage(FIRST_PAGE + query);
         // A "Show more" that finished while this was in flight wins.
         if (this.pages > 1) return;
         refs(this).list.innerHTML = page.html;
         this.next = page.next;
         const card = refs(this).performance;
-        if (card) card.innerHTML = await getPartial("/partials/history/performance");
+        if (card) card.innerHTML = await getPartial(`/partials/history/performance${query}`);
         await this.drawChart();
       } catch (err) {
         console.error(err);

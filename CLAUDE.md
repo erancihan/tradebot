@@ -178,9 +178,9 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   `settings.mode`, every order assumed filled), equity and cash from the newest
   snapshot, else `initial_cash`. Holdings use the same sum at the last cached
   close (unpriced = skipped, never guessed), or the paper broker with credentials.
-- **History** shows `default_mode()`, else `settings.mode`; orders and batches page on a
-  `(ts, id)` keyset each (`X-History-Next`; replays reuse times), holds counted apart. `orders.price` is the sizing price (NULL on a
-  flatten or old row); `schema.migrate` adds a later column on open, the read-only web never.
+- **History** shows `default_mode()`, else `settings.mode`, pinned by `?mode=` in its URLs; orders
+  and batches page on a `(ts, id)` keyset each (`X-History-Next`). `orders.price` is the sizing
+  price (NULL on a flatten or old row); `schema.migrate` adds a later column on open, the web never.
 - **The Today refresh** gives the selector the whole cached history and the
   strategy the last `required_history + 30` bars, so engine and web can differ
   when their histories start on different days.
