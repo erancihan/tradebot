@@ -9,13 +9,13 @@
 
   <div class="space-y-3 rounded-lg border border-slate-800 bg-slate-900/50 p-4">
     <div class="text-xs uppercase tracking-wide text-slate-500">Which plan would have done best</div>
-    <table class="w-full text-sm">
+    <table class="w-full text-sm tabular-nums">
       <thead>
         <tr class="text-xs text-slate-500">
           <th class="py-1 text-left font-normal">Plan</th>
-          <th class="py-1 text-right font-normal">Final value</th>
-          <th class="py-1 text-right font-normal">Made</th>
-          <th class="py-1 text-right font-normal">Worst drop</th>
+          <th class="py-1 pl-3 text-right font-normal">Final value</th>
+          <th class="py-1 pl-3 text-right font-normal">Made</th>
+          <th class="py-1 pl-3 text-right font-normal">Worst drop</th>
         </tr>
       </thead>
       <tbody>
@@ -26,10 +26,10 @@
               <span x-text="rowLabel(row)"></span>
               <span x-show="isPlanRow(row)" class="block text-xs font-normal text-emerald-400">your plan</span>
             </td>
-            <td class="py-1.5 text-right text-slate-100" x-text="rowMoney(row.final_value)"></td>
-            <td class="py-1.5 text-right" :class="row.gain >= 0 ? 'text-emerald-400' : 'text-rose-400'"
+            <td class="py-1.5 pl-3 text-right text-slate-100" x-text="rowMoney(row.final_value)"></td>
+            <td class="py-1.5 pl-3 text-right" :class="row.gain >= 0 ? 'text-emerald-400' : 'text-rose-400'"
                 x-text="rowMoney(row.gain)"></td>
-            <td class="py-1.5 text-right text-slate-300" x-text="rowPct(row.max_drawdown)"></td>
+            <td class="py-1.5 pl-3 text-right text-slate-300" x-text="rowPct(row.max_drawdown)"></td>
           </tr>
         </template>
       </tbody>

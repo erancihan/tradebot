@@ -27,12 +27,13 @@
         <div class="text-base font-semibold {{ 'text-emerald-400' if ahead else 'text-rose-400' }}" data-alpha>
           {{ '+' if ahead else '−' }}{{ (bench.alpha | abs) | pct }}
         </div>
+        {#- Two short lines on a phone: what is held, then the two returns it compares. #}
         <div class="text-xs text-slate-500 break-words" data-benchmark-basis>
-          equal-weight buy and hold of {{ bench.shown | join(', ') }}
-          {%- if bench.more %} +{{ bench.more }} more{% endif %} since {{ bench.since }}
-          (today's list, held from the start: {{ '+' if bench.pct >= 0 else '−' }}{{ (bench.pct | abs) | pct }};
-          the account {{ '+' if bench.equity_pct >= 0 else '−' }}{{ (bench.equity_pct | abs) | pct }}
-          through {{ bench.until }}), cached daily closes
+          <p>Equal-weight {{ bench.shown | join(', ') }}
+            {%- if bench.more %} +{{ bench.more }} more{% endif %} since {{ bench.since }}</p>
+          <p>today's list {{ '+' if bench.pct >= 0 else '−' }}{{ (bench.pct | abs) | pct }}
+            · account {{ '+' if bench.equity_pct >= 0 else '−' }}{{ (bench.equity_pct | abs) | pct }}
+            · cached closes</p>
         </div>
       </div>
     {% endif %}

@@ -82,10 +82,13 @@ def test_the_card_shows_alpha_against_holding_the_list(tmp_path):
         alpha = body.split("data-alpha>")[1].split("</div>")[0].strip()
         assert alpha == "+3.00%"                           # +5% against +2%
         assert "text-emerald-400\" data-alpha" in body
-        assert "equal-weight buy and hold of SPY, QQQ since 2026-10-01" in body
-        assert "today's list, held from the start" in body
+        assert "Equal-weight SPY, QQQ since 2026-10-01" in body
         assert "through 2026-10-02" in body
-        assert "cached daily closes" in body and "data-no-benchmark" not in body
+        assert "cached closes" in body and "data-no-benchmark" not in body
+        basis = " ".join(body.split("data-benchmark-basis>")[1].split("</div>")[0].split())
+        # Two short lines on a phone: what is held, then both returns.
+        assert basis.count("<p>") == 2
+        assert "today's list +2.00% · account +5.00%" in basis
 
 
 def test_the_card_names_the_pull_command_without_bars(tmp_path):
@@ -105,4 +108,4 @@ def test_a_long_list_is_shortened_never_truncated(tmp_path):
     with Storage(tmp_path / "t.db") as st:
         st.add_to_watchlist(names)
     body = _client(tmp_path).get("/partials/history/performance?mode=paper").text
-    assert "of AAA, BBB, CCC, DDD, EEE, FFF +2 more since" in body
+    assert "Equal-weight AAA, BBB, CCC, DDD, EEE, FFF +2 more since" in body

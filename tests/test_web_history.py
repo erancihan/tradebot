@@ -275,6 +275,19 @@ def test_an_order_shows_what_the_broker_filled_and_the_slippage(tmp_path):
     assert "truncate" not in item("SPY")                 # phone width wraps, never cuts
 
 
+def test_on_a_phone_the_fill_line_gets_the_full_width_and_plans_are_tappable(tmp_path):
+    # The time rides on the size line, so the fill line under it is not
+    # squeezed between the badge column and a timestamp column.
+    _seed(tmp_path)
+    body = _client(tmp_path).get("/history").text
+    order = body.split('data-symbol="SPY"')[1].split("</li>")[0]
+    size_row = order.split("data-fill")[0]
+    assert "data-order-size" in size_row and "<time" in size_row
+    assert "<time" not in order.split("data-fill")[1]
+    summary = re.search(r"<summary[^>]*>", body).group(0)
+    assert "min-h-[44px]" in summary                     # a plan opens with a thumb
+
+
 def test_an_order_nobody_has_asked_about_reads_submitted(tmp_path):
     with Storage(tmp_path / "t.db") as st:
         _snapshot(st, T0, 10_000.0, "paper")

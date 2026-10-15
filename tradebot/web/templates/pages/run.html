@@ -13,7 +13,7 @@
         class="grid gap-4 rounded-lg border border-slate-800 bg-slate-900/40 p-4 sm:grid-cols-2 lg:grid-cols-3">
     <label class="text-sm">
       <span class="mb-1 block text-slate-400">Kind</span>
-      <select x-model="form.kind" class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5">
+      <select x-model="form.kind" class="min-h-[40px] w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5">
         <option value="backtest">Backtest</option>
         <option value="dryrun">Dry-run (forward-test)</option>
       </select>
@@ -22,7 +22,7 @@
     <label class="text-sm">
       <span class="mb-1 block text-slate-400">Data source</span>
       <select x-model="form.source" @change="syncSymbol()"
-              class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5">
+              class="min-h-[40px] w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5">
         <option value="synthetic">Synthetic (seeded)</option>
         <option value="real">Cached real bars</option>
       </select>
@@ -31,7 +31,7 @@
     <label class="text-sm">
       <span class="mb-1 block text-slate-400">Strategy</span>
       <select x-model="form.strategy" @change="syncParams()"
-              class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5">
+              class="min-h-[40px] w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5">
         <template x-for="s in strategies" :key="s.name">
           <option :value="s.name" x-text="s.name" :selected="s.name === form.strategy"></option>
         </template>
@@ -41,27 +41,27 @@
     <label class="text-sm">
       <span class="mb-1 block text-slate-400">Initial cash</span>
       <input type="number" min="100" step="100" x-model.number="form.initial_cash"
-             class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
+             class="min-h-[40px] w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
     </label>
 
     <!-- Synthetic knobs: how much invented history, and which draw of it -->
     <label class="text-sm" x-show="form.source === 'synthetic'">
       <span class="mb-1 block text-slate-400">Bars (periods)</span>
       <input type="number" min="30" max="5000" x-model.number="form.periods"
-             class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
+             class="min-h-[40px] w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
     </label>
 
     <label class="text-sm" x-show="form.source === 'synthetic'">
       <span class="mb-1 block text-slate-400">Seed</span>
       <input type="number" x-model.number="form.seed"
-             class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
+             class="min-h-[40px] w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
     </label>
 
     <!-- Real knobs: which cached symbol, over which cached window -->
     <label class="text-sm" x-show="form.source === 'real'" x-cloak>
       <span class="mb-1 block text-slate-400">Symbol (cached)</span>
       <select x-model="form.symbol" @change="syncSymbol()"
-              class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5">
+              class="min-h-[40px] w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5">
         <template x-for="e in cache" :key="e.symbol + e.timeframe">
           <option :value="e.symbol"
                   x-text="`${e.symbol} · ${e.timeframe} · ${e.bars} bars`"></option>
@@ -72,13 +72,13 @@
     <label class="text-sm" x-show="form.source === 'real'" x-cloak>
       <span class="mb-1 block text-slate-400">Start</span>
       <input type="date" x-model="form.start"
-             class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
+             class="min-h-[40px] w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
     </label>
 
     <label class="text-sm" x-show="form.source === 'real'" x-cloak>
       <span class="mb-1 block text-slate-400">End</span>
       <input type="date" x-model="form.end"
-             class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
+             class="min-h-[40px] w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
     </label>
 
     <!-- Strategy params, straight from the registry's constructor signature -->
@@ -91,19 +91,19 @@
         </template>
         <template x-if="p.type === 'str'">
           <input type="text" x-model="params[p.name]"
-                 class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
+                 class="min-h-[40px] w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
         </template>
         <template x-if="p.type === 'int' || p.type === 'float'">
           <input type="number" :step="p.type === 'float' ? '0.1' : '1'"
                  x-model.number="params[p.name]"
-                 class="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
+                 class="min-h-[40px] w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5" />
         </template>
       </label>
     </template>
 
     <div class="flex items-end">
       <button type="submit" :disabled="state === 'running'"
-              class="rounded bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50">
+              class="min-h-[40px] rounded bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50">
         <span x-show="state !== 'running'">Run</span>
         <span x-show="state === 'running'">Running…</span>
       </button>

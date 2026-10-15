@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from unittest.mock import patch
 
 import pytest
@@ -69,6 +71,15 @@ def test_settings_page_renders_the_sections_and_never_a_key(tmp_path, monkeypatc
         assert f">{title}<" in body
     assert "present" in body and "s3cr3t-value" not in body
     assert "not editable here" in body
+
+
+def test_risk_and_autopilot_fields_are_full_width_on_a_phone(tmp_path):
+    # Two columns at 390px wrapped the long labels unevenly and pushed the
+    # inputs out of line; one column below sm, two from sm up.
+    body = _client(tmp_path, _config(tmp_path)).get("/settings").text
+    grids = re.findall(r'<div class="([^"]*)" data-field-grid>', body)
+    assert len(grids) == 2
+    assert all("grid-cols-1" in g and "sm:grid-cols-2" in g for g in grids)
 
 
 def test_settings_is_in_the_more_sheet_and_the_top_nav(tmp_path):
@@ -418,3 +429,13 @@ def test_a_public_url_with_a_path_is_accepted(tmp_path):
     doc = _doc(client)
     doc["notify"]["public_url"] = "https://example.net/tradebot"
     assert _post(client, doc).status_code == 200
+
+
+def test_today_links_are_thumb_sized_and_footnotes_readable(tmp_path):
+    # The setup card's Settings link and the History link were 20px tall;
+    # slate-600 footnotes on slate-950 read at about 2.6:1.
+    body = _client(tmp_path, _config(tmp_path)).get("/today").text
+    card = body.split("data-setup-card")[1].split("</section>")[0]
+    assert 'href="/settings" class="inline-flex min-h-[40px]' in card
+    assert 'class="flex min-h-[44px] items-center text-sm text-emerald-400' in body
+    assert '<p class="text-xs text-slate-600"' not in body

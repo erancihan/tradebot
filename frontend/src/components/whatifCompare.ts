@@ -10,6 +10,7 @@ import * as echarts from "echarts";
 import { submitWhatIfCompare, waitForJob } from "../api/client";
 import { nextTick, refs } from "../alpine";
 import { multiCurveOption, type NamedCurve } from "../charts/compareChart";
+import { fitToBox } from "../charts/fit";
 import type { CompareRow, JobView, Provenance, WhatIfCompare, WhatIfRequest } from "../types";
 
 type Chart = ReturnType<typeof echarts.init>;
@@ -80,7 +81,11 @@ export function compareState() {
         const job = await waitForJob(job_id);
         if (!settleCompare(this, job) || !this.compare) return;
         await nextTick(this);
-        if (!chart) chart = echarts.init(refs(this).compareChart);
+        if (!chart) {
+          const box = refs(this).compareChart;
+          chart = echarts.init(box);
+          fitToBox(box, () => chart);
+        }
         chart.setOption(multiCurveOption(compareCurves(this.compare)), true);
         chart.resize();
       } catch (err) {
