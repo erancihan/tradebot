@@ -53,7 +53,8 @@ tradebot/
                  pending (PassOutcome, record_pending, submit_stored)
   autopilot/     state (Mode off|approve|auto, AutopilotState, load/store), schedule
                  (next_pass, wait_seconds, session_day), runner (Autopilot: tick,
-                 run_forever, start/stop thread; injected clock/sleep/is_open),
+                 run_forever, start/stop thread; injected clock/sleep and a MarketCalendar,
+                 default from `Settings.market`),
                  approvals (approve, reject, expiry, pending_trades notification)
   storage/       SQLite tradebot.db: schema, orders, bars, weights, proposals (batch header
                  + lines with a status), autopilot (autopilot_state scope/key/value)

@@ -15,7 +15,7 @@ import threading
 from datetime import datetime
 from typing import Callable
 
-from ..arena import market
+from ..market import MarketCalendar, get_calendar
 from ..models import utcnow
 from . import schedule
 from .approvals import ApprovalsMixin
@@ -30,13 +30,20 @@ class Autopilot(ApprovalsMixin):
     def __init__(self, engine, storage, *, poll_seconds: float,
                  clock: Callable[[], datetime] = utcnow,
                  sleep: Callable[[float], object] | None = None,
-                 is_open: schedule.IsOpen = market.is_market_open,
-                 next_open: schedule.NextOpen = market.next_open,
+                 calendar: MarketCalendar | None = None,
+                 is_open: schedule.IsOpen | None = None,
+                 next_open: schedule.NextOpen | None = None,
                  notifier=None) -> None:
         self.engine, self.storage = engine, storage
         self.scope = engine.mode
         self.poll_seconds = float(poll_seconds)
-        self.clock, self.is_open, self.next_open = clock, is_open, next_open
+        # The config's exchange unless one is injected; `is_open`/`next_open`
+        # still override it singly (a replay is "always open").
+        self.calendar = calendar or get_calendar(
+            getattr(engine.settings, "market", "us_equities"))
+        self.clock = clock
+        self.is_open = is_open or self.calendar.is_open
+        self.next_open = next_open or self.calendar.next_open
         self.notifier = notifier if notifier is not None else engine.notifier
         self._lock = threading.RLock()
         self._stop = threading.Event()
@@ -82,7 +89,7 @@ class Autopilot(ApprovalsMixin):
             return self.state()
 
     def _pass(self, mode: str, now: datetime) -> None:
-        day = schedule.session_day(now)
+        day = schedule.session_day(now, self.calendar.timezone)
         if day != self._session:            # a new trading day: a new loss budget
             self.engine.reset_session()
             self._session = day

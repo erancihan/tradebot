@@ -40,6 +40,7 @@ class _ReplayClock:
 
 def run_autopilot(settings, args: argparse.Namespace) -> int:
     from ..autopilot import Autopilot
+    from ..market import get_calendar
 
     built = _build(settings, args)
     if built is None:
@@ -49,12 +50,13 @@ def run_autopilot(settings, args: argparse.Namespace) -> int:
     if replay:
         clock = _ReplayClock(data, args.speed)
         extra = dict(clock=clock, sleep=clock.sleep, is_open=lambda now: True)
-    pilot = Autopilot(engine, engine.storage, poll_seconds=settings.poll_seconds, **extra)
+    pilot = Autopilot(engine, engine.storage, poll_seconds=settings.poll_seconds,
+                      calendar=get_calendar(settings.market), **extra)
     if replay:
         clock.pilot = pilot
     pilot.set_mode(args.mode)
     print(f"[AUTOPILOT] mode={args.mode} account={engine.mode} on {settings.symbols} "
-          f"with {engine.strategy.name}; every {settings.poll_seconds}s in market hours.")
+          f"with {engine.strategy.name}; every {settings.poll_seconds}s in {settings.market} hours.")
     try:
         ticks = pilot.run_forever(max_ticks=1 if args.once else args.iterations)
     except KeyboardInterrupt:

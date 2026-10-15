@@ -44,6 +44,12 @@ timeframe: 1day
 # How often the live loop rebalances, in seconds (300 = every 5 min).
 poll_seconds: 300
 
+# Exchange calendar the autopilot (and its morning brief) schedule against:
+#   us_equities (default) | bist (Borsa Istanbul, 10:00-18:00 Istanbul time)
+# Only Alpaca (US equities) can trade today, so `bist` changes WHEN the loop
+# wakes, never where orders go. Unknown names are rejected at load.
+market: us_equities
+
 # Starting capital for backtests (paper/live read equity from the broker).
 initial_cash: 10000
 
