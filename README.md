@@ -62,7 +62,7 @@ reads your paper account.
 1. Create a free Alpaca account, open **Paper Trading** and generate API keys.
 2. Run `cp .env.example .env` and paste your **paper** key and secret. The
    app reads the `.env` in the working directory (where you run it) and
-   nowhere else; variables already set win.
+   nowhere else, only the keys `.env.example` lists; variables already set win.
 3. Restart `make web`. `make install-all` already installed the Alpaca SDK;
    after `make install-web` alone, run `make install-live` first.
 

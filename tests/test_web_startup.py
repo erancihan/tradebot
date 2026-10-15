@@ -154,3 +154,29 @@ def test_a_dotenv_above_the_working_directory_is_not_searched(tmp_path, monkeypa
     import os
 
     assert "TRADEBOT_WEB_TOKEN" not in os.environ
+
+
+def test_only_the_allowlisted_keys_leave_the_dotenv(tmp_path, monkeypatch):
+    import os
+
+    from tradebot import credentials
+
+    pytest.importorskip("dotenv")
+    monkeypatch.chdir(tmp_path)
+    for name in credentials.DOTENV_KEYS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("TRADEBOT_DB", "set-wins.db")
+    monkeypatch.delenv("TRADEBOT_EVIL", raising=False)
+    path_before, pypath_before = os.environ.get("PATH"), os.environ.get("PYTHONPATH")
+    (tmp_path / ".env").write_text(
+        "PATH=/evil/bin\nPYTHONPATH=/evil/lib\nTRADEBOT_EVIL=1\n"
+        "TRADEBOT_DB=from-file.db\nTRADEBOT_CONFIG=/srv/config.yaml\n")
+    try:
+        _REAL_LOAD_DOTENV()
+        assert os.environ.get("PATH") == path_before
+        assert os.environ.get("PYTHONPATH") == pypath_before
+        assert "TRADEBOT_EVIL" not in os.environ
+        assert os.environ["TRADEBOT_DB"] == "set-wins.db"          # set variables win
+        assert os.environ["TRADEBOT_CONFIG"] == "/srv/config.yaml"
+    finally:
+        os.environ.pop("TRADEBOT_CONFIG", None)

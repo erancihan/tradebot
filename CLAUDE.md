@@ -259,7 +259,7 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
 
 **Web and CI**
 - **The web writes `config.yaml` without comments. Secrets stay in `.env`**, read only from the
-  working directory (`Path.cwd()`, never searched upward; launchd's `WorkingDirectory`). A save merges
+  working directory (`Path.cwd()`, never upward; launchd's `WorkingDirectory`), `DOTENV_KEYS` only. A save merges
   the editable keys into the file on disk (mode, db_path, costs, universe kept), validates by building
   every component, writes atomically, then `autopilot_service.reset` stops the loop (stored mode kept).
 - **Alert destinations are masked both ways** (`settings_secrets`): a masked or

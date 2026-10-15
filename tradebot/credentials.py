@@ -12,21 +12,35 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+#: The only keys a ``.env`` may set. The file sits in whatever directory the
+#: process starts in, so it is treated as untrusted: a stray ``PATH``,
+#: ``PYTHONPATH`` or ``LD_PRELOAD`` in it must never reach the environment.
+DOTENV_KEYS = ("ALPACA_API_KEY", "ALPACA_API_SECRET", "ALPACA_DATA_FEED",
+               "TRADEBOT_WEB_TOKEN", "TRADEBOT_ALLOWED_HOSTS", "TRADEBOT_LIVE_CONFIRM",
+               "TRADEBOT_DB", "TRADEBOT_ARENA_DB", "TRADEBOT_SEASON_DB", "TRADEBOT_CONFIG")
+
+
 def _maybe_load_dotenv() -> None:
-    """Fill unset variables from the ``.env`` in the working directory, only.
+    """Fill unset ``DOTENV_KEYS`` from the ``.env`` in the working directory, only.
 
     A bare ``load_dotenv()`` searches upward from the *calling module's*
     directory: under systemd a checkout's development ``.env`` silently filled
     variables the EnvironmentFile left unset, and a non-editable install under
     launchd found nothing. The working directory is what a service file sets.
+    Variables already set win; any other key in the file is ignored.
     """
     try:
-        from dotenv import load_dotenv
+        from dotenv import dotenv_values
     except ImportError:
         return
     path = Path.cwd() / ".env"
-    if path.is_file():
-        load_dotenv(dotenv_path=path, override=False)
+    if not path.is_file():
+        return
+    values = dotenv_values(path)
+    for key in DOTENV_KEYS:
+        value = values.get(key)
+        if value is not None and key not in os.environ:
+            os.environ[key] = value
 
 
 @dataclass
