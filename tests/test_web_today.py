@@ -270,3 +270,18 @@ def test_settings_come_from_an_explicit_path_then_cwd_then_defaults(tmp_path, mo
     other = tmp_path / "other.yaml"
     other.write_text("symbols: [GLD]\n")
     assert load_settings(str(other))[0].symbols == ["GLD"]
+
+
+def test_load_settings_reads_tradebot_config_and_the_flag_wins(tmp_path, monkeypatch):
+    from tradebot.web.app import load_settings
+
+    monkeypatch.chdir(tmp_path)
+    _config(tmp_path, ("XLE",))                              # ./config.yaml loses
+    env = tmp_path / "env.yaml"
+    env.write_text("symbols: [GLD]\n")
+    monkeypatch.setenv("TRADEBOT_CONFIG", str(env))
+    settings, source = load_settings(None)
+    assert source == str(env) and settings.symbols == ["GLD"]
+    flag = tmp_path / "flag.yaml"
+    flag.write_text("symbols: [TLT]\n")
+    assert load_settings(str(flag))[0].symbols == ["TLT"]

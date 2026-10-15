@@ -123,3 +123,43 @@ def test_today_ignores_a_crypto_position_as_the_engine_pass_does(tmp_path, monke
     client = _client(tmp_path, _config(tmp_path))
     assert _refresh(client)["state"] == "done"
     assert "BTCUSD" not in _lines(client)
+
+
+def _live_config(tmp_path) -> str:
+    path = tmp_path / "config.yaml"
+    path.write_text("mode: live\nsymbols: [SPY, QQQ]\n"
+                    "strategy:\n  name: sma_crossover\n  params: {fast: 5, slow: 20}\n")
+    return str(path)
+
+
+def test_today_on_a_live_config_never_sells_an_off_list_name(tmp_path, offline):
+    """One rule with the engine (``manages_unlisted_for``): live never sells
+    what it did not buy, whatever ``manage_unlisted`` says (on by default)."""
+    _seed_cache(tmp_path, ("SPY", "QQQ", "IWM"))
+    with Storage(tmp_path / "t.db") as st:
+        st.record_order(Order(symbol="IWM", qty=5, side=Side.BUY), None, "live")
+    client = _client(tmp_path, _live_config(tmp_path))
+    assert _refresh(client)["state"] == "done"
+    assert list(_lines(client)) == ["SPY", "QQQ"]
+
+
+_STAYS = ('data-remove-confirm="Remove QQQ? You hold 13 shares; they stay in the '
+          'account (the autopilot does not sell names off the list)."')
+
+
+@pytest.mark.parametrize("live", [False, True])
+def test_remove_confirmation_never_promises_a_sale_the_autopilot_will_not_make(
+        tmp_path, offline, live):
+    """With ``manage_unlisted: false``, or on live (never sells what it did not
+    buy), removing a held name leaves it in the account, and the question says so."""
+    mode = "live" if live else "paper"
+    with Storage(tmp_path / "t.db") as st:
+        st.record_order(Order(symbol="QQQ", qty=13, side=Side.BUY), None, mode)
+    path = (_live_config(tmp_path) if live
+            else _config(tmp_path, extra="manage_unlisted: false\n"))
+    client = _client(tmp_path, path)
+    client.post("/api/watchlist", json={"add": ["QQQ", "SPY"]}, headers=POST_HEADERS)
+    for url in ("/today", "/partials/watchlist"):
+        body = client.get(url).text
+        assert _STAYS in body, url
+        assert "sells them at its next pass" not in body, url

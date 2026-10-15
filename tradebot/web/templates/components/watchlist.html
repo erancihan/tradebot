@@ -1,8 +1,9 @@
 {#- Today: the watchlist chips. Served for first paint and swapped in after an
     add or remove. Each chip's button carries data-remove-symbol and the
     confirmation to ask (data-remove-confirm); one delegated click handler in
-    today.ts reads them. A held name warns that the autopilot closes it: the
-    list is the mandate. Expects `today` and `holdings`. -#}
+    today.ts reads them. A held name warns that the autopilot closes it (the
+    list is the mandate) when `today.manages_unlisted`, else that it stays.
+    Expects `today` and `holdings`. -#}
 {% set held = holdings.held if holdings is defined and holdings else {} %}
 {% if today.symbol_source == 'watchlist' %}
   <ul class="flex flex-wrap gap-2" data-watchlist>
@@ -12,10 +13,15 @@
         {% set qty = held.get(sym, 0) %}
         {% set one = (qty | abs) == 1 %}
         {% set shares = '%g share%s' | format(qty | abs, '' if one else 's') %}
-        {% if qty > 0 %}
-          {% set ask = 'Remove %s? You hold %s; the autopilot sells %s at its next pass.' | format(sym, shares, 'it' if one else 'them') %}
+        {% set them = 'it' if one else 'them' %}
+        {% if qty > 0 and not today.manages_unlisted %}
+          {% set ask = 'Remove %s? You hold %s; %s in the account (the autopilot does not sell names off the list).' | format(sym, shares, 'it stays' if one else 'they stay') %}
+        {% elif qty < 0 and not today.manages_unlisted %}
+          {% set ask = 'Remove %s? You are short %s; the short stays open (the autopilot does not buy back names off the list).' | format(sym, shares) %}
+        {% elif qty > 0 %}
+          {% set ask = 'Remove %s? You hold %s; the autopilot sells %s at its next pass.' | format(sym, shares, them) %}
         {% elif qty < 0 %}
-          {% set ask = 'Remove %s? You are short %s; the autopilot buys %s back at its next pass.' | format(sym, shares, 'it' if one else 'them') %}
+          {% set ask = 'Remove %s? You are short %s; the autopilot buys %s back at its next pass.' | format(sym, shares, them) %}
         {% else %}
           {% set ask = 'Remove %s?' | format(sym) %}
         {% endif %}

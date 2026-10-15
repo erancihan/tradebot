@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 from ...config import AlpacaCredentials
 from ...data.cache import BarCache, build_default_fetcher
+from ...engine.unlisted import manages_unlisted_for
 from ...models import is_equity
 from ..repository import TradingRepository
 from . import symbols_service, unlisted_service
@@ -46,6 +47,9 @@ def view(repo: TradingRepository, settings, settings_path: str | None) -> dict:
         "config_hint": None if settings_path else CONFIG_HINT,
         "symbols": active["symbols"],
         "symbol_source": active["source"],
+        # Whether a pass closes a held name once it leaves the list: what the
+        # watchlist's remove confirmation promises (never on live).
+        "manages_unlisted": manages_unlisted_for(settings.mode, settings),
         "proposal": _shape(stored) if stored else None,
     }
 
@@ -108,10 +112,12 @@ def build_inputs(settings, *, trading_db: str, cache_dir: str, lookback: int,
         "note": "raw/unadjusted daily bars; suggestions only, nothing was ordered",
     }
     # Held names off the list: the advisor closes them (the list is the mandate),
-    # unless the owner switched that off (the web never runs live).
-    unlisted = unlisted_service.unlisted(
-        positions, settings.symbols, cache_dir=cache_dir, timeframe=settings.timeframe,
-        fetcher=fetcher, now=now) if settings.manage_unlisted else None
+    # under the engine's own rule: never on live, else as ``manage_unlisted`` says.
+    unlisted = None
+    if manages_unlisted_for(settings.mode, settings):
+        unlisted = unlisted_service.unlisted(
+            positions, settings.symbols, cache_dir=cache_dir, timeframe=settings.timeframe,
+            fetcher=fetcher, now=now)
     return {"frames": frames, "selector_frames": history, "equity": equity,
             "cash": cash, "positions": positions, "provenance": provenance,
             "unlisted": unlisted}

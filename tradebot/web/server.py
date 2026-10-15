@@ -22,12 +22,16 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="tradebot-web", description="tradebot dashboard")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--trading-db", default=os.getenv("TRADEBOT_DB", "tradebot.db"))
+    parser.add_argument("--trading-db", default=None,
+                        help="trading database (default: $TRADEBOT_DB, else the "
+                             "config's db_path, the file `tradebot run` uses)")
     parser.add_argument("--arena-db", default=os.getenv("TRADEBOT_ARENA_DB", "arena.db"))
     parser.add_argument("--season-db", default=os.getenv("TRADEBOT_SEASON_DB", "season.db"))
-    parser.add_argument("--config", default=os.getenv("TRADEBOT_CONFIG"),
-                        help="settings YAML for the Today page "
-                             "(default: ./config.yaml if present, else SPY/QQQ defaults)")
+    # No env default here: ``config.resolve_settings`` reads TRADEBOT_CONFIG,
+    # so `tradebot` and `tradebot-web` resolve the file by one rule.
+    parser.add_argument("--config", default=None,
+                        help="settings YAML (default: $TRADEBOT_CONFIG, else "
+                             "./config.yaml if present, else SPY/QQQ defaults)")
     parser.add_argument("--allow-host", action="append", default=[], metavar="HOST",
                         help="extra Host header to serve, e.g. your LAN IP or hostname "
                              "(repeatable; '*' disables the check). Also read from "
@@ -86,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     print(f"Dashboard: http://{args.host}:{args.port}  "
-          f"(trading={args.trading_db}, arena={args.arena_db}, season={args.season_db}, "
+          f"(trading={app.state.trading_db}, arena={args.arena_db}, season={args.season_db}, "
           f"config={app.state.settings_path or 'defaults'}, "
           f"token={'required' if args.token else 'off'})")
     uvicorn.run(app, host=args.host, port=args.port)

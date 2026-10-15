@@ -17,6 +17,7 @@ from tradebot.data.synthetic import synthetic_ohlcv  # noqa: E402
 from tradebot.storage import Storage  # noqa: E402
 from tradebot.web import server  # noqa: E402
 from tradebot.web.app import create_app  # noqa: E402
+from tradebot.web.startup import startup_line  # noqa: E402
 from tradebot.web.services import autopilot_service  # noqa: E402
 
 # The real loader, saved at collection: the suite's session `_offline_guard`
@@ -100,6 +101,46 @@ def test_check_exits_1_on_a_config_it_could_not_serve(tmp_path, capsys, problem)
     code = server.main(["--check", "--config", path, "--trading-db", str(tmp_path / "t.db")])
     assert code == 1
     assert "--check failed" in capsys.readouterr().err
+
+
+def test_check_reads_tradebot_config_when_no_flag_is_given(tmp_path, capsys, monkeypatch):
+    env = tmp_path / "env.yaml"
+    env.write_text(CONFIG)
+    monkeypatch.setenv("TRADEBOT_CONFIG", str(env))
+    assert server.main(["--check", "--trading-db", str(tmp_path / "t.db")]) == 0
+    assert f"config={env}" in capsys.readouterr().out
+    monkeypatch.setenv("TRADEBOT_CONFIG", str(tmp_path / "missing.yaml"))
+    assert server.main(["--check", "--trading-db", str(tmp_path / "t.db")]) == 1
+
+
+def _db_config(tmp_path) -> tuple[str, str]:
+    db = str(tmp_path / "x.db")
+    return _config(tmp_path, CONFIG + f"db_path: {db}\n"), db
+
+
+def test_the_web_uses_the_configs_db_path_like_tradebot_run(tmp_path):
+    """No flag, no env: the web opens the file `tradebot run` writes."""
+    path, db = _db_config(tmp_path)
+    app = create_app(arena_db=str(tmp_path / "a.db"), settings_path=path)
+    assert app.state.trading_db == db
+    assert f"trading_db={db} " in startup_line(app)
+
+
+def test_tradebot_db_then_the_flag_win_over_db_path(tmp_path, monkeypatch):
+    path, _ = _db_config(tmp_path)
+    monkeypatch.setenv("TRADEBOT_DB", str(tmp_path / "env.db"))
+    app = create_app(arena_db=str(tmp_path / "a.db"), settings_path=path)
+    assert app.state.trading_db == str(tmp_path / "env.db")
+    app = create_app(trading_db=str(tmp_path / "flag.db"), arena_db=str(tmp_path / "a.db"),
+                     settings_path=path)
+    assert app.state.trading_db == str(tmp_path / "flag.db")
+
+
+def test_check_without_trading_db_reports_the_configs_db_path(tmp_path, capsys):
+    path, db = _db_config(tmp_path)
+    assert server.main(["--check", "--config", path,
+                        "--arena-db", str(tmp_path / "a.db")]) == 0
+    assert f"trading_db={db} " in capsys.readouterr().out
 
 
 def test_stopping_the_server_stops_a_running_autopilot_loop(tmp_path, monkeypatch):

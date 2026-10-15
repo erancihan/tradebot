@@ -48,8 +48,9 @@ the token and keys of your shell, not the service's. `/etc/tradebot` stays
 writable because the Settings page saves the config there. The rest of the
 file system is read-only to the service.
 
-The service's database is `--trading-db`; `tradebot-web` ignores the config's
-`db_path`. If you also run `tradebot run` on this machine, set
+The service's database is `--trading-db`, which wins over the config's
+`db_path` (without the flag or `TRADEBOT_DB`, `tradebot-web` uses `db_path`).
+If you also run `tradebot run` on this machine, set
 `db_path: /var/lib/tradebot/tradebot.db` in `/etc/tradebot/config.yaml` so both
 share the watchlist and the parked trades.
 
