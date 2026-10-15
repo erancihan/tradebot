@@ -897,13 +897,11 @@ The arena's research results, the gate verdicts and the standing decisions are
 in [`docs/research-record.md`](docs/research-record.md). No contestant passes
 the promotion gate yet.
 
-## Where this is going
+## Design decisions
 
-tradebot is turning into a phone-first portfolio companion. A Today page
-suggests trades with a reason for each. Autopilot runs the paper account, with
-an approve-first mode. A What-if page replays a past plan against buy and
-hold. The plan is in
-[`docs/plans/portfolio-companion/01-product.md`](docs/plans/portfolio-companion/01-product.md).
+The reasoning behind the companion flows (Today, Autopilot, What-if), the
+market calendars and the things deliberately left out is in
+[`docs/adr/0002-portfolio-companion.md`](docs/adr/0002-portfolio-companion.md).
 
 ## Disclaimer
 

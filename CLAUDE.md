@@ -11,9 +11,9 @@ with simulated fills, an arena that ranks algorithms, and a FastAPI dashboard.
 The goal is a phone-first portfolio companion with three flows. **Suggestions**
 say what to buy or sell today, with a reason. **Autopilot** runs the paper
 account, with an approve-first mode. **What-if** replays a past plan against
-buy and hold. Product: `docs/plans/portfolio-companion/01-product.md`.
-Architecture: `02-architecture.md`. Status and roadmap: `00-status.md`.
-Research results: `docs/research-record.md`.
+buy and hold. All three shipped on 2026-10-15; the decisions are in
+`docs/adr/0002-portfolio-companion.md`. Research results: `docs/research-record.md`.
+New work starts a new plan folder under `docs/plans/<slug>/` (see Docs policy).
 
 ## Agent skills
 

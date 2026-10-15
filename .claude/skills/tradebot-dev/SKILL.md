@@ -6,9 +6,9 @@ description: Use when starting work on the tradebot project (a paper-trading-fir
 # tradebot dev workflow
 
 The repo root is the project root. Read `CLAUDE.md` first. It holds the
-layout, invariants, code rules, gotchas and docs policy. The roadmap lives in
-`docs/plans/portfolio-companion/00-status.md`. This skill is the quick
-operational loop.
+layout, invariants, code rules, gotchas and docs policy. Shipped decisions live in `docs/adr/`;
+work in progress has a plan folder under `docs/plans/<slug>/`. This skill is
+the quick operational loop.
 
 ## Set up and verify (offline, no credentials)
 ```bash
