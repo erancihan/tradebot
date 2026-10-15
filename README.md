@@ -98,7 +98,8 @@ sells a name off the list.
   remove it. While it has symbols, Refresh and the autopilot scan those
   instead of the config's `symbols`. An edit stops a running autopilot.
   Removing a name you hold asks first: "Remove QQQ? You hold 13 shares; the
-  autopilot sells them at its next pass."
+  autopilot sells them at its next pass." With **Sell names that leave the
+  list** off, or on live, it says they stay in the account instead.
 
 Refresh reads bars through the local cache. It fetches missing bars only with
 server-side Alpaca keys. Without them, an uncached symbol gets the exact
