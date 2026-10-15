@@ -1,0 +1,55 @@
+{#- History timeline items, newest first: one <li> per order or proposal batch.
+    The page includes it for first paint; /partials/history serves the same
+    markup for "Show more" (appended) and the poll (swapped in). Expects
+    `history.events` and `history.first_page`. -#}
+{% for e in history.events %}
+  {% set when = e.ts[:16] | replace('T', ' ') %}
+  {% if e.kind == 'order' %}
+    <li class="flex items-center gap-3 px-3 py-3" data-event="order" data-symbol="{{ e.symbol }}">
+      <span class="rounded border px-2 py-0.5 text-xs font-semibold uppercase {{ 'border-emerald-700 bg-emerald-900/60 text-emerald-300' if e.side == 'buy' else 'border-rose-700 bg-rose-900/60 text-rose-300' }}">{{ e.side }}</span>
+      <span class="font-mono text-base font-semibold text-slate-100">{{ e.symbol }}</span>
+      <span class="min-w-0 flex-1 truncate text-sm text-slate-300" data-order-size>
+        {{ '%g' | format(e.qty) }} sh{% if e.notional is not none %} · {{ e.notional | money }}{% endif %}
+      </span>
+      <time class="shrink-0 text-xs text-slate-500" datetime="{{ e.ts }}">{{ when }}</time>
+    </li>
+  {% else %}
+    <li class="px-3 py-3" data-event="proposal" data-batch="{{ e.id }}">
+      <details>
+        <summary class="flex cursor-pointer list-none items-center gap-3">
+          <span class="rounded border border-slate-700 bg-slate-800 px-2 py-0.5 text-xs font-semibold uppercase text-slate-300">plan</span>
+          <span class="min-w-0 flex-1 truncate text-sm text-slate-300" data-summary>
+            {%- if e.trades %}{{ e.trades | length }} trade{{ '' if e.trades | length == 1 else 's' }}:
+              {% for status, n in e.counts.items() %}{{ n }} {{ status }}{{ ', ' if not loop.last }}{% endfor %}
+            {%- else %}No trades{% endif %}
+            {%- if e.holds %} · {{ e.holds }} hold{{ '' if e.holds == 1 else 's' }}{% endif -%}
+          </span>
+          <time class="shrink-0 text-xs text-slate-500" datetime="{{ e.ts }}">{{ when }}</time>
+        </summary>
+        {% if e.trades %}
+          <ul class="mt-2 space-y-2 border-l border-slate-800 pl-3">
+            {% for ln in e.trades %}
+              <li data-line="{{ ln.symbol }}">
+                <div class="flex items-center gap-2 text-sm">
+                  <span class="font-mono font-semibold text-slate-100">{{ ln.symbol }}</span>
+                  <span class="uppercase text-slate-400">{{ ln.action }}</span>
+                  <span class="text-slate-300">{{ '%g' | format(ln.order_qty | abs) }} sh · {{ ln.notional | money }}</span>
+                  <span class="ml-auto text-xs text-slate-500" data-status>{{ ln.status }}</span>
+                </div>
+                <p class="text-xs text-slate-400">{{ ln.reason }}</p>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="mt-2 text-xs text-slate-400">The advisor found nothing to trade.</p>
+        {% endif %}
+      </details>
+    </li>
+  {% endif %}
+{% else %}
+  {% if history.first_page %}
+    <li class="px-3 py-6 text-center text-sm text-slate-500" data-empty>
+      Nothing yet. Orders and the advisor's suggestions appear here as the bot works.
+    </li>
+  {% endif %}
+{% endfor %}

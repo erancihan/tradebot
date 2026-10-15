@@ -1,0 +1,28 @@
+{#- History: equity now against the first snapshot in the window. Expects
+    `history.performance` (services/history_service.performance). -#}
+{% set perf = history.performance %}
+{% if perf.present %}
+  {% set up = perf.change >= 0 %}
+  <div class="grid grid-cols-2 gap-2" data-performance>
+    <div>
+      <div class="text-xs uppercase tracking-wide text-slate-500">Equity now</div>
+      <div class="text-base font-semibold text-slate-100" data-equity-now>{{ perf.now | money }}</div>
+    </div>
+    <div>
+      <div class="text-xs uppercase tracking-wide text-slate-500">Change</div>
+      <div class="text-base font-semibold {{ 'text-emerald-400' if up else 'text-rose-400' }}" data-change>
+        {{ '+' if up else '−' }}{{ (perf.change | abs) | money }}
+        {%- if perf.pct is not none %} ({{ '+' if up else '−' }}{{ (perf.pct | abs) | pct }}){% endif %}
+      </div>
+    </div>
+  </div>
+  <p class="text-xs text-slate-500" data-window>
+    Since {{ perf.since[:16] | replace('T', ' ') }} UTC ({{ perf.start | money }})
+    · {{ perf.points }} snapshot{{ '' if perf.points == 1 else 's' }} · {{ perf.mode }}
+  </p>
+{% else %}
+  <p class="text-sm text-slate-400" data-no-snapshots>
+    No equity snapshots for {{ perf.mode }} yet. Each autopilot or <code>tradebot run</code>
+    pass records one, so this card fills in after the first pass.
+  </p>
+{% endif %}

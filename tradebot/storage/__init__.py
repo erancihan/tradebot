@@ -13,7 +13,7 @@ from .autopilot import AutopilotMixin
 from .bars import BarsMixin, _ts_iso
 from .orders import OrdersMixin
 from .proposals import ProposalsMixin
-from .schema import _SCHEMA
+from .schema import _SCHEMA, migrate
 from .watchlist import WatchlistMixin
 from .weights import WeightsMixin
 
@@ -38,6 +38,7 @@ class Storage(OrdersMixin, BarsMixin, WeightsMixin, ProposalsMixin, AutopilotMix
         with closing(self._conn.cursor()) as cur:
             cur.executescript(_SCHEMA)
         self._conn.commit()
+        migrate(self._conn)
 
     def close(self) -> None:
         self._conn.close()

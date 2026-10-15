@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}History · tradebot{% endblock %}
+{% block content %}
+<section class="mx-auto max-w-xl space-y-4" x-data="history"
+         data-mode="{{ history.mode }}" data-next="{{ history.next or '' }}">
+  <div class="flex items-baseline justify-between">
+    <h1 class="text-lg font-semibold text-slate-100">History</h1>
+    <span class="text-xs text-slate-500">account {{ history.mode }}</span>
+  </div>
+
+  <div class="space-y-2 rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+    <div x-ref="performance" class="space-y-2">
+      {% include "components/history_performance.html" %}
+    </div>
+    {% if history.performance.present %}
+      <div x-ref="chart" class="h-40 w-full" data-equity-chart></div>
+    {% endif %}
+  </div>
+
+  <ol x-ref="list" class="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900/40" data-timeline>
+    {% include "components/history_events.html" %}
+  </ol>
+
+  <div x-show="error" x-cloak
+       class="rounded-lg border border-rose-800 bg-rose-950/40 p-3 text-sm text-rose-300 break-words"
+       x-text="error"></div>
+
+  <button type="button" @click="more()" x-show="next" :disabled="busy" data-show-more
+          {% if not history.next %}x-cloak{% endif %}
+          class="min-h-[48px] w-full rounded-lg border border-slate-700 bg-slate-900 text-base font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-50">
+    <span x-show="!busy">Show more</span>
+    <span x-show="busy" x-cloak>Loading…</span>
+  </button>
+
+  <p class="text-xs text-slate-600">Orders are what the bot sent to the broker; a plan is
+    what the advisor suggested and what became of each line. Times are UTC.</p>
+</section>
+{% endblock %}

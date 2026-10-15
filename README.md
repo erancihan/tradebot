@@ -195,6 +195,13 @@ marked `Secure`). `--config other.yaml` serves a different settings file.
 
 ### More pages (under More on a phone)
 
+- **History** (`/history`): what the bot has done and decided, newest first,
+  for the account the dashboard shows. A card compares equity now with the
+  first snapshot, beside a small equity chart. Below it one timeline mixes the
+  orders the bot sent (symbol, side, shares, and the amount at the price the
+  trade was sized at) with each proposal batch (its trades by status: suggested,
+  pending, approved, rejected, submitted or expired). Tap a batch for each
+  line's reason. **Show more** loads older entries. Today links here too.
 - **Dashboard** (`/`): equity curve, account stats, orders, positions and the
   target allocations of the latest rebalance.
 - **Run** (`/run`): a backtest or dry-run on synthetic or cached real bars.

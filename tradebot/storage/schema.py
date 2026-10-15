@@ -1,4 +1,10 @@
-"""SQLite schema for the trading store (created on open, additive only)."""
+"""SQLite schema for the trading store (created on open, additive only).
+
+``CREATE TABLE IF NOT EXISTS`` never changes a table that already exists, so a
+column added later also gets an entry in ``_ADDED_COLUMNS``: ``migrate`` adds
+it to a database written before it existed. Additive only: never drop or
+rename a column here.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +17,8 @@ CREATE TABLE IF NOT EXISTS orders (
     qty             REAL NOT NULL,
     type            TEXT NOT NULL,
     broker_order_id TEXT,
-    mode            TEXT NOT NULL
+    mode            TEXT NOT NULL,
+    price           REAL            -- the price the line was sized at; NULL if unknown
 );
 CREATE TABLE IF NOT EXISTS equity_snapshots (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -78,3 +85,17 @@ CREATE TABLE IF NOT EXISTS watchlist (
     added_at  TEXT NOT NULL
 );
 """
+
+#: (table, column, declaration) added after the table first shipped.
+_ADDED_COLUMNS = (
+    ("orders", "price", "REAL"),
+)
+
+
+def migrate(conn) -> None:
+    """Add any column in ``_ADDED_COLUMNS`` that an older database lacks."""
+    for table, column, decl in _ADDED_COLUMNS:
+        have = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in have:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+    conn.commit()
