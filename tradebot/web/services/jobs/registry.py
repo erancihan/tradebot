@@ -65,6 +65,30 @@ class JobRegistry:
         self._pool.submit(self._run, job.id, kind, params)
         return job.id
 
+    def find_active(self, kind: str) -> str | None:
+        """The id of a pending or running job of ``kind``, if there is one."""
+        with self._lock:
+            return self._active(kind)
+
+    def submit_once(self, kind: str, params: dict) -> str:
+        """Single flight: reuse a pending or running ``kind`` job, else submit.
+
+        Check and insert happen under one lock, so two taps racing each other
+        still start one job.
+        """
+        with self._lock:
+            active = self._active(kind)
+            if active is not None:
+                return active
+            job = Job(id=uuid.uuid4().hex[:12], kind=kind)
+            self._jobs[job.id] = job
+        self._pool.submit(self._run, job.id, kind, params)
+        return job.id
+
+    def _active(self, kind: str) -> str | None:
+        return next((j.id for j in self._jobs.values()
+                     if j.kind == kind and j.state in ("pending", "running")), None)
+
     def get(self, job_id: str) -> Job | None:
         with self._lock:
             return self._jobs.get(job_id)

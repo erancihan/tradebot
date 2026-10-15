@@ -233,3 +233,29 @@ def test_a_search_where_some_fetches_fail_says_how_many(tmp_path, monkeypatch):
     body = client.get("/partials/discover").text
     assert "1 name could not be fetched" in body and "data-discover-failed" in body
     assert sorted(_rows(body)) == ["AAA", "BBB"]
+
+
+def test_a_second_search_while_one_runs_reuses_its_job(tmp_path, monkeypatch):
+    import threading
+
+    from tradebot.web.services.jobs import registry
+
+    release, started = threading.Event(), threading.Event()
+
+    def slow(params):
+        started.set()
+        release.wait(10)
+        return {"summary": {"rows": 0}, "provenance": {}}
+
+    monkeypatch.setitem(registry._RUNNERS, "discover", slow)
+    client = _client(tmp_path, _config(tmp_path))
+    first = client.post("/api/discover/run", headers=POST_HEADERS).json()["job_id"]
+    assert started.wait(5)
+    second = client.post("/api/discover/run", headers=POST_HEADERS).json()["job_id"]
+    assert second == first
+    assert client.app.state.jobs.find_active("discover") == first
+    release.set()
+    assert _wait(client, first)["state"] == "done"
+    third = client.post("/api/discover/run", headers=POST_HEADERS).json()["job_id"]
+    assert third != first                      # finished: a new tap is a new search
+    _wait(client, third)

@@ -19,9 +19,13 @@ def discover(repo: TradingRepository = Depends(get_trading_repo)):
 
 @router.post("/discover/run")
 def run(request: Request):
-    """Rank unwatched, unheld names as a polled job; the result is stored."""
+    """Rank unwatched, unheld names as a polled job; the result is stored.
+
+    Single flight: a second tap while one search runs gets the same job id,
+    not a second set of Alpaca calls racing to store a run.
+    """
     state = request.app.state
-    job_id = state.jobs.submit("discover", {
+    job_id = state.jobs.submit_once("discover", {
         "settings": state.settings, "trading_db": state.trading_db,
         "cache_dir": state.cache_dir,
     })
