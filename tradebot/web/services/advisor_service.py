@@ -143,17 +143,18 @@ def _frames(settings, cache_dir, lookback, fetcher, now):
     return frames, history
 
 
-def sync_fills(broker, trading_db: str) -> int:
+def sync_fills(broker, trading_db: str, *, now: datetime | None = None) -> int:
     """Learn the fills of the paper account's open orders (``engine/fills``).
 
     Part of the Today refresh job, never a page load. Only ``paper`` orders:
-    the web reads the paper endpoint, which knows no other account's ids."""
+    the web reads the paper endpoint, which knows no other account's ids.
+    ``now`` anchors the lookback (the wall clock when None)."""
     from ...engine.fills import reconcile_orders
     from ...storage import Storage
 
     try:
         with Storage(trading_db) as store:
-            return reconcile_orders(broker, store, "paper")
+            return reconcile_orders(broker, store, "paper", now=now)
     except Exception:  # noqa: BLE001 - a fill sync never blocks a suggestion
         log.exception("Fill sync failed; suggesting from the broker as it stands")
         return 0

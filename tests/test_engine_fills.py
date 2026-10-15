@@ -220,7 +220,21 @@ def test_the_today_refresh_syncs_paper_fills_only(tmp_path):
     with Storage(db) as st:
         paper, dry = _log(st, "p"), _log(st, "d", mode="dry_run")
     broker = ScriptedBroker({"p": FILLED, "d": FILLED})
-    assert advisor_service.sync_fills(broker, db) == 1
+    assert advisor_service.sync_fills(broker, db, now=NOW) == 1
     assert broker.asked == ["p"]
     with Storage(db) as st:
         assert _row(st, paper)["status"] == "filled" and _row(st, dry)["status"] is None
+
+
+def test_the_today_sync_lookback_runs_from_the_given_now(tmp_path, monkeypatch):
+    """A fixed `now` pins the 7-day lookback: the wall clock a month later
+    must not age the order out (the test used to fail after 2026-10-22)."""
+    from tradebot.web.services import advisor_service
+
+    monkeypatch.setattr(fills, "utcnow", lambda: NOW + timedelta(days=30))
+    db = str(tmp_path / "t.db")
+    with Storage(db) as st:
+        paper = _log(st, "p")
+    assert advisor_service.sync_fills(ScriptedBroker({"p": FILLED}), db, now=NOW) == 1
+    with Storage(db) as st:
+        assert _row(st, paper)["status"] == "filled"
