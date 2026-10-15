@@ -19,6 +19,12 @@ updates:
     groups:
       frontend-deps:
         patterns: ["*"]
+    # Tailwind 4 and ECharts 6 are migrations, not bumps: take them on purpose.
+    ignore:
+      - dependency-name: tailwindcss
+        update-types: ["version-update:semver-major"]
+      - dependency-name: echarts
+        update-types: ["version-update:semver-major"]
 
   # Keep the GitHub Actions used by CI up to date.
   - package-ecosystem: github-actions
