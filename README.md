@@ -131,7 +131,7 @@ Like any watchlist edit, it stops a running autopilot. The last run survives a r
   own prices, and a rejected trade stays rejected until the proposal changes
   or the trading day ends. A pass that proposes different trades replaces it.
   An approval more than one poll interval after the last pass expires the
-  batch: it never executes late. The phone gets one push per batch, then a
+  batch, and so does the close: it never executes late or at the next open. The phone gets one push per batch, then a
   reminder every 2 x `poll_seconds` (at least 30 minutes), or sooner when a
   re-sized line grows more than 10% past what the push said.
 - **Automatic.** Every pass submits its trades.

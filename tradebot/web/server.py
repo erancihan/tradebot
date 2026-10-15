@@ -87,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
     app = _build_app(args)
     # uvicorn configures only its own loggers; without this the startup line
     # and the autopilot's warnings never reach a service manager's journal.
-    logging.basicConfig(level=logging.INFO,
+    logging.basicConfig(level=logging.INFO, datefmt="%Y-%m-%d %H:%M:%S%z",
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     print(f"Dashboard: http://{args.host}:{args.port}  "
           f"(trading={app.state.trading_db}, arena={args.arena_db}, season={args.season_db}, "

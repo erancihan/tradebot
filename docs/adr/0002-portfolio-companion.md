@@ -75,8 +75,9 @@ One new core concept, the proposal, feeds three flows.
   trading day ends, never longer: the same trades are not asked about again
   that day.
 - A changed proposal, an approval older than one `poll_seconds`, a failed pass,
-  a pass the broker reports closed, a daily-loss halt, switching off and the
-  first automatic pass expire the batch. A late approval never executes.
+  the first tick after the close (or a pass the broker reports closed), a
+  daily-loss halt, switching off and the first automatic pass expire the batch.
+  A late approval never executes, and nothing waits overnight for the open.
 - Each process pushes a batch once (without `TRADEBOT_WEB_TOKEN` a restart
   changes the link key, so the old push's buttons stop working), then again as
   a reminder every `links.ttl_seconds(poll)` = max(2 x `poll_seconds`, 30
