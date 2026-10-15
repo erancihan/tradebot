@@ -48,3 +48,17 @@ def test_short_then_cover_books_pnl():
     pf.execute("TSLA", 10, price=180)          # cover @ 180 -> profit 200
     assert pf.position("TSLA").is_flat
     assert pf.realized_pnl == 200
+
+
+def test_a_backtest_leg_closing_a_short_is_labelled_short():
+    import pytest
+
+    from tradebot.portfolio import Portfolio
+
+    book = Portfolio(cash=10_000.0)
+    book.execute("X", -10, 100.0)
+    book.execute("X", 10, 90.0)
+    assert book.trades[0].side == "short" and book.trades[0].pnl == pytest.approx(100.0)
+    book.execute("Y", 10, 100.0)
+    book.execute("Y", -10, 110.0)
+    assert book.trades[1].side == "long"

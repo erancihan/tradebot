@@ -150,8 +150,8 @@ class Trade:
     exit_price: float
     pnl: float
     timestamp: datetime = field(default_factory=utcnow)    # the closing fill
-    #: When the position opened and which way it pointed; None/"long" for a
-    #: backtest leg, which never records them.
+    #: When the position opened (None for a backtest leg, which never records
+    #: it) and which way the closed position pointed.
     entry_ts: datetime | None = None
     side: str = "long"
 

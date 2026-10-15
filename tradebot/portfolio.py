@@ -67,6 +67,7 @@ class Portfolio:
                     exit_price=price,
                     pnl=pnl,
                     timestamp=utcnow(),
+                    side="long" if old_qty > 0 else "short",
                 )
             )
 
