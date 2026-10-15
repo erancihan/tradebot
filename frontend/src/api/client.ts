@@ -127,6 +127,19 @@ export function getJob(id: string): Promise<JobView> {
   return getJson<JobView>(`/api/jobs/${id}`);
 }
 
+const POLL_MS = 500;
+
+// Polls a job until it settles and returns it, "done" or "error". A failing
+// request throws, so a caller that awaits this inside its try surfaces the
+// failure instead of leaving a run spinning forever.
+export async function waitForJob(id: string, intervalMs = POLL_MS): Promise<JobView> {
+  for (;;) {
+    const job = await getJob(id);
+    if (job.state === "done" || job.state === "error") return job;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+}
+
 export function getProposal(): Promise<ProposalEnvelope> {
   return getJson<ProposalEnvelope>("/api/proposal");
 }
@@ -137,6 +150,10 @@ export function refreshProposal(): Promise<{ job_id: string }> {
 
 export function submitWhatIf(body: WhatIfRequest): Promise<{ job_id: string }> {
   return postJson<{ job_id: string }>("/api/whatif", body);
+}
+
+export function submitWhatIfCompare(body: WhatIfRequest): Promise<{ job_id: string }> {
+  return postJson<{ job_id: string }>("/api/whatif/compare", body);
 }
 
 export function getAutopilot(): Promise<AutopilotView> {

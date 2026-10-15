@@ -146,6 +146,7 @@ export interface JobView {
   summary?: Record<string, number | string> | null;
   equity?: EquityCurve | null;
   benchmark?: EquityCurve | null; // what-if only
+  compare?: WhatIfCompare | null; // whatif_compare only
   provenance?: Provenance | null;
   error?: string | null;
 }
@@ -207,6 +208,26 @@ export interface WhatIfRequest {
   allocation?: string;
   selector?: string;
   selector_params?: Record<string, number>;
+}
+
+// One ranked line of a strategy comparison (see /api/whatif/compare).
+export interface CompareRow {
+  name: string;
+  final_value: number;
+  gain: number;
+  cagr: number;
+  max_drawdown: number;
+  vs_benchmark_pct: number;
+  benchmark?: boolean; // the equal-weight buy-and-hold row
+}
+
+export interface WhatIfCompare {
+  rows: CompareRow[]; // best final value first, benchmark not included
+  benchmark: CompareRow;
+  curves: Record<string, EquityCurve>; // the top five plus "benchmark"
+  errors: { name: string; error: string }[];
+  skipped: { name: string; reason: string }[];
+  plan_strategy: string;
 }
 
 export interface WhatIfPresetRequest {

@@ -13,8 +13,8 @@ VALID_SOURCES = ("real", "synthetic")
 MAX_SYMBOLS = 12                     # a phone form, not a universe screen
 
 
-@router.post("/whatif")
-def create_whatif(req: WhatIfRequest, request: Request):
+def _job_params(req: WhatIfRequest, request: Request) -> dict:
+    """A validated plan as job params: shared by a single run and a comparison."""
     if req.source not in VALID_SOURCES:
         raise HTTPException(status_code=400, detail=f"source must be one of {VALID_SOURCES}")
     symbols = list(dict.fromkeys(s.strip().upper() for s in req.symbols if s.strip()))
@@ -32,7 +32,19 @@ def create_whatif(req: WhatIfRequest, request: Request):
     params = req.model_dump()
     params.update(symbols=symbols,
                   cache_dir=request.app.state.cache_dir)
-    return {"job_id": request.app.state.jobs.submit("whatif", params)}
+    return params
+
+
+@router.post("/whatif")
+def create_whatif(req: WhatIfRequest, request: Request):
+    return {"job_id": request.app.state.jobs.submit("whatif", _job_params(req, request))}
+
+
+@router.post("/whatif/compare")
+def create_whatif_compare(req: WhatIfRequest, request: Request):
+    """The same plan once per strategy (default params), ranked against the benchmark."""
+    params = _job_params(req, request)
+    return {"job_id": request.app.state.jobs.submit("whatif_compare", params)}
 
 
 @router.get("/whatif/presets")

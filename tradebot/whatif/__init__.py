@@ -9,10 +9,12 @@ the headline; the time-weighted metrics strip contributions out.
 from __future__ import annotations
 
 from .compare import benchmark_plan, comparison
+from .compare_many import StrategyComparison, compare_strategies, needs_configuration
 from .plan import WhatIfPlan, WhatIfResult, monthly_cash_flows
-from .run import plan_backtester, run_whatif, whatif_risk
+from .run import plan_backtester, plan_window, run_whatif, whatif_risk
 
 __all__ = [
-    "WhatIfPlan", "WhatIfResult", "benchmark_plan", "comparison", "monthly_cash_flows",
-    "plan_backtester", "run_whatif", "whatif_risk",
+    "StrategyComparison", "WhatIfPlan", "WhatIfResult", "benchmark_plan", "compare_strategies",
+    "comparison", "monthly_cash_flows", "needs_configuration", "plan_backtester",
+    "plan_window", "run_whatif", "whatif_risk",
 ]

@@ -16,16 +16,17 @@ from .backtest import _run_backtest
 from .dryrun import _run_dryrun
 from .proposal import _run_proposal
 
-#: Kinds a browser may submit through POST /api/jobs. A proposal refresh has
-#: its own route because its parameters come from the server, not the form.
 from .whatif import _run_whatif
+from .whatif_compare import _run_whatif_compare
 
-#: Kinds the generic Run page may submit. ``whatif`` has its own endpoint and
-#: request model, so it is accepted by the registry but not listed here.
+#: Kinds the generic Run page may submit. ``whatif``, ``whatif_compare`` and
+#: ``proposal`` have their own endpoints, so the registry accepts them but
+#: they are not listed here.
 VALID_KINDS = ("backtest", "dryrun")
 
 _RUNNERS = {"backtest": _run_backtest, "dryrun": _run_dryrun,
-            "proposal": _run_proposal, "whatif": _run_whatif}
+            "proposal": _run_proposal, "whatif": _run_whatif,
+            "whatif_compare": _run_whatif_compare}
 
 
 def _as_fields(outcome) -> dict:
@@ -45,6 +46,7 @@ class Job:
     summary: dict | None = None
     equity: dict | None = None      # {"index": [...], "equity": [...]}
     benchmark: dict | None = None   # what-if only: the comparison curve
+    compare: dict | None = None     # whatif_compare only: ranked rows and curves
     provenance: dict | None = None  # what data this ran on — travels with the result
     error: str | None = None
 

@@ -1,0 +1,51 @@
+{# The "Compare strategies" result: every rule on the plan, ranked. State lives in whatifCompare.ts. #}
+<div x-show="state === 'done' && view === 'compare'" x-cloak data-compare-card class="space-y-4">
+  <div class="break-words rounded-lg border px-3 py-1.5 text-xs font-medium"
+       :class="provenance && provenance.source === 'real'
+               ? 'border-emerald-700 bg-emerald-950/50 text-emerald-300'
+               : 'border-amber-700 bg-amber-950/50 text-amber-300'">
+    <span x-text="provenanceLabel()"></span>
+  </div>
+
+  <div class="space-y-3 rounded-lg border border-slate-800 bg-slate-900/50 p-4">
+    <div class="text-xs uppercase tracking-wide text-slate-500">Which plan would have done best</div>
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-xs text-slate-500">
+          <th class="py-1 text-left font-normal">Plan</th>
+          <th class="py-1 text-right font-normal">Final value</th>
+          <th class="py-1 text-right font-normal">Made</th>
+          <th class="py-1 text-right font-normal">Worst drop</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="row in compareRows()" :key="row.benchmark ? 'benchmark' : row.name">
+          <tr :class="isPlanRow(row) ? 'bg-emerald-950/60' : ''" data-compare-row>
+            <td class="break-words py-1.5 pr-2"
+                :class="row.benchmark ? 'italic text-slate-400' : (isPlanRow(row) ? 'font-semibold text-emerald-300' : 'text-slate-200')">
+              <span x-text="rowLabel(row)"></span>
+              <span x-show="isPlanRow(row)" class="block text-xs font-normal text-emerald-400">your plan</span>
+            </td>
+            <td class="py-1.5 text-right text-slate-100" x-text="rowMoney(row.final_value)"></td>
+            <td class="py-1.5 text-right" :class="row.gain >= 0 ? 'text-emerald-400' : 'text-rose-400'"
+                x-text="rowMoney(row.gain)"></td>
+            <td class="py-1.5 text-right text-slate-300" x-text="rowPct(row.max_drawdown)"></td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+    <p class="text-xs text-slate-500">
+      Each strategy runs on its default settings with your symbols, cash, dates and
+      portfolio settings. Buy and hold is the same symbols in equal parts. Strategies that
+      need a roster set in the config file are not run here.
+    </p>
+    <p x-show="skippedText()" class="break-words text-xs text-slate-500" x-text="skippedText()"></p>
+    <p x-show="errorsText()" class="break-words text-xs text-rose-300" x-text="errorsText()"></p>
+  </div>
+
+  <div class="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+    <div class="mb-1 text-xs text-slate-500">The best five, and buy and hold (dashed)</div>
+    <div x-ref="compareChart" class="h-72 w-full"></div>
+  </div>
+  <p class="text-xs text-slate-500" x-text="provenance?.note"></p>
+</div>

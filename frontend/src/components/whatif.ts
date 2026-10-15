@@ -3,16 +3,17 @@
 // Phone first: one column, large inputs, one primary button. The job runs on
 // the server (`POST /api/whatif`) and is polled through the shared
 // `/api/jobs/{id}`. Every result shows the data it ran on (provenance).
+// "Compare strategies" (./whatifCompare) runs the same form once per strategy.
 
 import * as echarts from "echarts";
 
-import { getCache, getJob, getStrategies, submitWhatIf } from "../api/client";
+import { getCache, getStrategies, submitWhatIf, waitForJob } from "../api/client";
 import { el, nextTick, refs } from "../alpine";
 import { comparisonOption } from "../charts/equityChart";
+import { compareState } from "./whatifCompare";
 import type {
   CacheEntry,
   EquityCurve,
-  JobView,
   Provenance,
   StrategyParam,
   StrategySpec,
@@ -21,8 +22,6 @@ import type {
 } from "../types";
 
 type Chart = ReturnType<typeof echarts.init>;
-
-const POLL_MS = 500;
 
 interface WhatIfForm {
   symbols: string;
@@ -42,6 +41,7 @@ export function whatIf() {
   // multi-series updates (its internals compare objects by identity).
   let chart: Chart | null = null;
   return {
+    ...compareState(),
     form: {
       symbols: "SPY",
       source: "real",
@@ -185,37 +185,28 @@ export function whatIf() {
 
     async submit() {
       this.state = "running";
+      this.view = "single";
       this.error = "";
       this.summary = null;
       this.provenance = null;
+      // Every await (the poll included) sits inside this try, so a failing
+      // request ends in "error" instead of leaving the button disabled on a
+      // run that will never finish.
       try {
         const { job_id } = await submitWhatIf(this.buildRequest());
-        await this.poll(job_id);
-      } catch (err) {
-        this.state = "error";
-        this.error = err instanceof Error ? err.message : String(err);
-      }
-    },
-
-    // Polls until the job settles. Every poll is awaited inside `submit`'s
-    // try, so a failing request ends in "error" instead of leaving the
-    // button disabled on a run that will never finish.
-    async poll(jobId: string) {
-      for (;;) {
-        const job: JobView = await getJob(jobId);
-        if (job.state === "done") {
-          this.state = "done";
-          this.summary = job.summary ?? {};
-          this.provenance = job.provenance ?? null;
-          if (job.equity) await this.render(job.equity, job.benchmark ?? null);
-          return;
-        }
+        const job = await waitForJob(job_id);
         if (job.state === "error") {
           this.state = "error";
           this.error = job.error ?? "job failed";
           return;
         }
-        await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+        this.state = "done";
+        this.summary = job.summary ?? {};
+        this.provenance = job.provenance ?? null;
+        if (job.equity) await this.render(job.equity, job.benchmark ?? null);
+      } catch (err) {
+        this.state = "error";
+        this.error = err instanceof Error ? err.message : String(err);
       }
     },
 

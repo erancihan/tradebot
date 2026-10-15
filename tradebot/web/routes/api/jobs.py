@@ -56,4 +56,4 @@ def read_job(job_id: str, request: Request):
         raise HTTPException(status_code=404, detail="job not found")
     return JobView(id=job.id, kind=job.kind, state=job.state,
                    summary=job.summary, equity=job.equity, benchmark=job.benchmark,
-                   provenance=job.provenance, error=job.error)
+                   compare=job.compare, provenance=job.provenance, error=job.error)
