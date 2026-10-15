@@ -17,8 +17,9 @@
           <div class="flex items-center gap-3">
             <span class="w-16 font-mono text-base font-semibold text-slate-100">{{ line.symbol }}</span>
             <span class="rounded border px-2 py-0.5 text-xs font-semibold uppercase {{ 'border-emerald-700 bg-emerald-900/60 text-emerald-300' if line.action == 'buy' else 'border-rose-700 bg-rose-900/60 text-rose-300' }}">{{ line.action }}</span>
-            <span class="ml-auto text-right text-sm text-slate-300">
-              {{ '%g' | format(line.order_qty | abs) }} sh · {{ line.notional | money }}</span>
+            <span class="ml-auto text-right text-sm text-slate-300" data-pending-size>
+              {{ '%g' | format(line.order_qty | abs) }} sh · {{ line.notional | money }}
+              {%- if line.price %}<span class="block text-xs text-slate-500" data-pending-price>@ {{ line.price | money }} a share</span>{% endif %}</span>
           </div>
           <p class="text-xs text-slate-400">{{ line.reason }}</p>
           <div class="grid grid-cols-2 gap-2">

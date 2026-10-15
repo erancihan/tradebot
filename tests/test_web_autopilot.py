@@ -119,6 +119,19 @@ def test_approve_through_the_api(tmp_path):
     assert set(pilot.engine.broker.positions()) == {pending[0]["symbol"]}
 
 
+def test_each_pending_line_shows_qty_price_and_reason(tmp_path):
+    # On a phone the line is all there is to approve on: the share price sits
+    # under the size, so neither has to wrap beside the symbol and badge.
+    client, _ = _pending_pass(tmp_path)
+    pending = client.get("/api/autopilot").json()["pending"]
+    page = client.get("/partials/autopilot").text
+    for line in pending:
+        item = page.split(f'data-pending-line="{line["id"]}"')[1].split("</li>")[0]
+        assert f'{abs(line["order_qty"]):g} sh · $' in item
+        assert f'@ ${line["price"]:,.2f} a share' in item
+        assert line["reason"] in item and "truncate" not in item
+
+
 def test_reject_through_the_api(tmp_path):
     client, pilot = _pending_pass(tmp_path)
     ids = [ln["id"] for ln in client.get("/api/autopilot").json()["pending"]]
