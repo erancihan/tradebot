@@ -8,11 +8,13 @@ hours, scheduling, errors) runs without a network or a wall clock.
 from __future__ import annotations
 
 import threading
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from tradebot.autopilot import HALT_ERROR, Autopilot
+from tradebot.autopilot.links import ttl_seconds
 from tradebot.broker import DryRunBroker
 from tradebot.cli import main
 from tradebot.config import Settings
@@ -235,17 +237,108 @@ def test_reject_marks_lines_and_submits_nothing(tmp_path):
     assert pilot.state().pending == 0
 
 
-def test_a_stale_batch_is_replaced_by_the_next_pass_never_executed(tmp_path):
+def _spy_proposals(pilot, monkeypatch, change=None) -> list:
+    """Record each later pass's proposal, rewritten line by line by ``change``
+    (a line, or None to drop it) when given."""
+    real, seen = pilot.engine.propose, []
+
+    def propose(*args, **kw):
+        proposal = real(*args, **kw)
+        if change is not None:
+            lines = [change(ln) for ln in proposal.lines]
+            proposal = replace(proposal, lines=[ln for ln in lines if ln is not None])
+        seen.append(proposal)
+        return proposal
+
+    monkeypatch.setattr(pilot.engine, "propose", propose)
+    return seen
+
+
+def _one_more_share(line):
+    """The same trade, re-sized: the prices moved since the last pass."""
+    price, qty = line.price + 1.0, line.order_qty + 1
+    return replace(line, price=price, order_qty=qty, desired_qty=line.desired_qty + 1,
+                   notional=abs(qty) * price)
+
+
+def _pushes(notifier) -> list[dict]:
+    return [e for e in notifier.events if e["type"] == "pending_trades"]
+
+
+def test_an_unchanged_proposal_keeps_the_pending_batch(tmp_path, monkeypatch):
     pilot, broker, clock, _, first = _approve_pass(tmp_path)
+    seen = _spy_proposals(pilot, monkeypatch, _one_more_share)
+    clock.sleep(300)
+    pilot.tick()
+    second = pilot.storage.pending_lines("dry_run")
+    assert [ln["id"] for ln in second] == [ln["id"] for ln in first]
+    assert {ln["batch_id"] for ln in second} == {first[0]["batch_id"]}
+    assert "expired" not in _statuses(pilot).values()
+    newer = {ln.symbol: ln for ln in seen[0].lines}
+    for line in second:
+        fresh = newer[line["symbol"]]
+        assert (line["price"], line["order_qty"]) == (fresh.price, fresh.order_qty)
+        assert line["created_at"] == clock.now.isoformat()
+    assert all(b["order_qty"] == a["order_qty"] + 1 for a, b in zip(first, second))
+    head = pilot.storage.latest_proposal("dry_run")
+    assert head["id"] == first[0]["batch_id"] and head["created_at"] == clock.now.isoformat()
+    assert broker._order_seq == 0
+
+
+def test_a_rejected_line_is_not_asked_again_while_the_proposal_holds(tmp_path):
+    pilot, _, clock, notifier, first = _approve_pass(tmp_path)
+    kept, dropped = first
+    assert pilot.reject([dropped["id"]]) == 1
+    clock.sleep(300)
+    pilot.tick()
+    status = _statuses(pilot)
+    assert status[dropped["id"]] == "rejected" and status[kept["id"]] == "pending"
+    assert [ln["id"] for ln in pilot.storage.pending_lines("dry_run")] == [kept["id"]]
+    assert len(_pushes(notifier)) == 1
+
+
+def test_a_changed_proposal_replaces_the_batch(tmp_path, monkeypatch):
+    pilot, broker, clock, notifier, first = _approve_pass(tmp_path)
+    _spy_proposals(pilot, monkeypatch, lambda ln: ln if ln.symbol == SYMBOLS[0] else None)
     clock.sleep(300)
     pilot.tick()
     status = _statuses(pilot)
     assert {status[ln["id"]] for ln in first} == {"expired"}
     second = pilot.storage.pending_lines("dry_run")
-    assert len(second) == len(SYMBOLS)
-    assert not {ln["id"] for ln in first} & {ln["id"] for ln in second}
+    assert [ln["symbol"] for ln in second] == [SYMBOLS[0]]
+    assert second[0]["batch_id"] != first[0]["batch_id"]
+    pushes = _pushes(notifier)
+    assert [p["batch_id"] for p in pushes] == [first[0]["batch_id"], second[0]["batch_id"]]
     assert pilot.approve([ln["id"] for ln in first]) == 0  # expired: never executed
     assert broker._order_seq == 0
+
+
+def test_only_a_new_batch_or_a_due_reminder_is_announced(tmp_path):
+    pilot, _, clock, notifier, first = _approve_pass(tmp_path)
+    for _ in range(2):
+        clock.sleep(300)
+        pilot.tick()                                        # t+5m, t+10m: quiet
+    assert len(_pushes(notifier)) == 1
+    clock.now = OPEN_NOW + timedelta(seconds=ttl_seconds(pilot.poll_seconds))
+    pilot.tick()                                            # a link lifetime later
+    pushes = _pushes(notifier)
+    assert len(pushes) == 2
+    assert {p["batch_id"] for p in pushes} == {first[0]["batch_id"]}
+    clock.sleep(300)
+    pilot.tick()
+    assert len(_pushes(notifier)) == 2                      # the reminder resets the wait
+
+
+def test_approval_after_a_refresh_submits_the_latest_quantity(tmp_path, monkeypatch):
+    pilot, broker, clock, _, first = _approve_pass(tmp_path)
+    seen = _spy_proposals(pilot, monkeypatch, _one_more_share)
+    clock.sleep(300)
+    pilot.tick()
+    clock.sleep(120)                                        # within one poll of the refresh
+    assert pilot.approve([ln["id"] for ln in first]) == len(SYMBOLS)
+    held = {sym: pos.qty for sym, pos in broker.positions().items()}
+    assert held == {ln.symbol: ln.order_qty for ln in seen[0].lines}
+    assert held == {ln["symbol"]: ln["order_qty"] + 1 for ln in first}
 
 
 def test_a_late_approval_expires_the_batch_instead_of_trading(tmp_path):

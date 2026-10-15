@@ -8,6 +8,7 @@ faked), then POSTed the way ntfy does: the guard header, no cookie.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from urllib.parse import urlsplit
 from unittest.mock import patch
 
@@ -196,15 +197,40 @@ def test_links_work_without_the_cookie_when_a_token_is_set(tmp_path, pushes):
     assert resp.status_code == 200 and resp.json()["approved"] == 2
 
 
-def test_an_old_batch_link_finds_nothing_after_the_next_pass(tmp_path, pushes):
+def _only_spy(pilot, monkeypatch) -> None:
+    """Every later pass proposes SPY alone: a changed proposal."""
+    real = pilot.engine.propose
+
+    def propose(*args, **kw):
+        proposal = real(*args, **kw)
+        return replace(proposal, lines=[ln for ln in proposal.lines if ln.symbol == "SPY"])
+
+    monkeypatch.setattr(pilot.engine, "propose", propose)
+
+
+def test_an_old_batch_link_finds_nothing_after_a_changed_proposal(
+        tmp_path, pushes, monkeypatch):
     _, client, pilot, links = _setup(tmp_path, pushes)
     old = _pending(pilot)[0]["batch_id"]
+    _only_spy(pilot, monkeypatch)
     pilot.tick()                                    # replaces (expires) the batch
     fresh = _pending(pilot)
     assert fresh and all(ln["batch_id"] != old for ln in fresh)
     resp = client.post(links["Approve all"], headers=POST_HEADERS)
     assert resp.status_code == 200 and resp.json()["approved"] == 0
     assert _pending(pilot) == fresh and pilot.engine.broker.positions() == {}
+
+
+def test_a_signed_link_still_acts_after_a_quiet_pass(tmp_path, pushes):
+    _, client, pilot, links = _setup(tmp_path, pushes)
+    batch = _pending(pilot)[0]["batch_id"]
+    pilot.tick()                                    # the same proposal: carried over
+    assert {ln["batch_id"] for ln in _pending(pilot)} == {batch}
+    assert len([p for p in pushes if p.get_header("Actions")]) == 1   # no second push
+    resp = client.post(links["Approve all"], headers=POST_HEADERS)
+    assert resp.status_code == 200 and resp.json() == {"batch_id": batch, "approved": 2}
+    assert set(pilot.engine.broker.positions()) == {"SPY", "QQQ"}
+    assert _pending(pilot) == []
 
 
 def test_a_non_ascii_signature_is_a_403_not_a_500(tmp_path):

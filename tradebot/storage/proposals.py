@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import json
 
-#: ``expired``: a pending line the next autopilot pass replaced before anyone
-#: approved it. It is never executed: the prices it was sized at have moved.
+#: ``expired``: a pending line a changed proposal replaced (or a late approval,
+#: a halt, switching off) before anyone approved it. It is never executed.
 LINE_STATUSES = ("suggested", "pending", "approved", "rejected", "submitted", "expired")
 
 _LINE_COLUMNS = ("symbol", "action", "target", "current_qty", "desired_qty",
                  "order_qty", "price", "notional", "weight", "reason")
+#: What a carried-over batch takes from the newer pass (``refresh_pending_batch``).
+_SIZING_COLUMNS = ("target", "current_qty", "desired_qty", "order_qty", "price",
+                   "notional", "weight", "reason")
 
 
 class ProposalsMixin:
@@ -108,5 +111,40 @@ class ProposalsMixin:
             raise ValueError(f"status must be one of {LINE_STATUSES}, got {status!r}")
         self._conn.executemany(
             "UPDATE proposals SET status = ? WHERE id = ?", [(status, int(i)) for i in ids],
+        )
+        self._conn.commit()
+
+    def batch_lines(self, batch_id: int, mode: str) -> list[dict]:
+        """Every line of one batch of ``mode``, whatever its status."""
+        rows = self._conn.execute(
+            "SELECT * FROM proposals WHERE batch_id = ? AND mode = ? ORDER BY id",
+            (int(batch_id), mode),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def refresh_pending_batch(self, batch_id: int, proposal, mode: str) -> None:
+        """Re-size a carried-over batch in place from a newer, same-shaped pass.
+
+        Each still-pending line takes the new line of its ``(symbol, action)``:
+        sizing, price, reason and ``created_at`` (the staleness clock). Lines
+        in any other status (a rejection) are left alone; the header takes the
+        new equity, cash, provenance and time. The batch id never changes, so
+        an earlier push's link still names it.
+        """
+        created = proposal.created_at.isoformat()
+        self._conn.execute(
+            "UPDATE proposal_batches SET created_at = ?, equity = ?, cash = ?, provenance = ?"
+            " WHERE id = ? AND mode = ?",
+            (created, float(proposal.equity), float(proposal.cash),
+             json.dumps(proposal.provenance or {}, default=str), int(batch_id), mode),
+        )
+        self._conn.executemany(
+            "UPDATE proposals SET created_at = ?, "
+            + ", ".join(f"{c} = ?" for c in _SIZING_COLUMNS)
+            + " WHERE batch_id = ? AND mode = ? AND status = 'pending'"
+            " AND symbol = ? AND action = ?",
+            [(created, *(getattr(line, c) for c in _SIZING_COLUMNS), int(batch_id), mode,
+              line.symbol, line.action)
+             for line in proposal.lines if line.order_qty and not line.skipped],
         )
         self._conn.commit()
