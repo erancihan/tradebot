@@ -12,6 +12,7 @@ straight from SQLite.
 
 from __future__ import annotations
 
+import logging
 import threading
 from datetime import datetime, timezone
 
@@ -19,6 +20,8 @@ from ...autopilot import MODE_LABELS, Autopilot, load_state, store_mode
 from ...config import AlpacaCredentials
 from ...storage import Storage
 from . import autopilot_build
+
+log = logging.getLogger("tradebot.web.autopilot")
 
 _BUILD_LOCK = threading.Lock()
 
@@ -71,8 +74,31 @@ def set_mode(app, mode: str) -> dict:
         with Storage(app.state.trading_db) as st:
             store_mode(st, scope(), mode, datetime.now(timezone.utc))
         return view(app)
-    get(app).set_mode(mode)
+    pilot = get(app)
+    pilot.set_mode(mode)
+    if mode != "off":
+        pilot.start()     # once: a running loop just reads the new mode next wake
+    # "off" needs nothing more: set_mode set the stop event the sleep waits on.
     return view(app)
+
+
+def resume(app) -> None:
+    """At server start: pick the loop back up if the stored mode is on, so a
+    restart does not silently stop an autopilot the user left running."""
+    with Storage(app.state.trading_db) as st:
+        mode = load_state(st, scope()).mode
+    if mode == "off":
+        return
+    try:
+        get(app).start()
+    except AutopilotUnavailable as exc:
+        log.warning("Autopilot left %s but cannot resume: %s", mode, exc)
+
+
+def shutdown(app) -> None:
+    pilot = current(app)
+    if pilot is not None:
+        pilot.stop()
 
 
 def approve(app, line_ids: list[int]) -> dict:

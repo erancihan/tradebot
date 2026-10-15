@@ -38,7 +38,7 @@ merged to master from its `feat/<epic>` branch with a no-ff merge commit.
 - [x] S4.1 tracer: `/autopilot` page shows state from `autopilot_state`, the toggle writes the mode
 - [x] S4.2 `Autopilot` runner thread: passes on `poll_seconds` inside market hours, injected clock, offline test
 - [x] S4.3 `approve` mode: pending proposals, approve and reject, submit only approved rows
-- [ ] S4.4 `auto` mode, notifications on fills and halts, stop on a daily-loss halt
+- [x] S4.4 `auto` mode, notifications on fills and halts, stop on a daily-loss halt
 - [ ] S4.5 `tradebot run --autopilot` headless parity
 
 ## E5: Expansion

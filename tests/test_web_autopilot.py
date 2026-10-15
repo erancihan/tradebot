@@ -139,3 +139,44 @@ def test_switching_on_without_cached_bars_says_how_to_get_them(tmp_path):
     data = client.post("/api/autopilot", json={"mode": "auto"}).json()
     assert data["state"]["mode"] == "off"                   # nothing was switched on
     assert "tradebot data pull --symbols SPY QQQ" in data["notice"]
+
+
+# --- the runner thread inside the web process ------------------------------------
+
+def _join(pilot) -> None:
+    pilot._thread.join(5)
+    assert not pilot._thread.is_alive()
+
+
+def test_switching_on_starts_the_runner_once_and_off_stops_it(tmp_path):
+    _seed_cache(tmp_path)
+    app = _app(tmp_path)
+    client = TestClient(app)
+    assert client.post("/api/autopilot", json={"mode": "auto"}).json()["state"]["running"]
+    pilot = autopilot_service.get(app)
+    thread = pilot._thread
+    client.post("/api/autopilot", json={"mode": "approve"})
+    assert pilot._thread is thread                          # still the one loop
+    data = client.post("/api/autopilot", json={"mode": "off"}).json()
+    assert data["state"]["mode"] == "off"
+    _join(pilot)
+    assert client.get("/api/autopilot").json()["state"]["running"] is False
+
+
+def test_the_server_resumes_a_running_autopilot_and_stops_it_on_shutdown(tmp_path):
+    _seed_cache(tmp_path)
+    with Storage(tmp_path / "t.db") as st:
+        st.set_autopilot_values("dry_run", {"mode": "auto"})
+    app = _app(tmp_path)
+    with TestClient(app) as client:                         # runs the lifespan
+        assert client.get("/api/autopilot").json()["state"]["running"] is True
+        pilot = autopilot_service.current(app)
+    _join(pilot)
+    assert pilot.running is False
+
+
+def test_an_off_autopilot_is_not_built_at_startup(tmp_path):
+    app = _app(tmp_path)                                    # nothing cached: build would fail
+    with TestClient(app) as client:
+        assert client.get("/autopilot").status_code == 200
+    assert autopilot_service.current(app) is None

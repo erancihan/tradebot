@@ -262,3 +262,48 @@ def test_switching_off_expires_what_was_waiting(tmp_path):
     pilot.set_mode("off")
     assert pilot.state().pending == 0
     assert broker._order_seq == 0
+
+
+# --- automatic ------------------------------------------------------------------
+
+def test_auto_mode_notifies_each_order(tmp_path):
+    pilot, _, _, notifier = build(tmp_path)
+    pilot.set_mode("auto")
+    pilot.tick()
+    orders = [e for e in notifier.events if e["type"] == "order"]
+    assert {e["symbol"] for e in orders} == set(SYMBOLS)
+
+
+def test_daily_loss_halt_sets_mode_off_and_records_the_error(tmp_path, monkeypatch):
+    pilot, broker, _, notifier = build(tmp_path)
+    pilot.set_mode("auto")
+    monkeypatch.setattr(pilot.engine.risk, "daily_loss_tripped", lambda start, now: True)
+    assert pilot.run_forever(max_ticks=5) == 1             # the halt ends the loop
+    state = pilot.state()
+    assert state.mode == "off" and state.last_error == "daily loss halt"
+    assert broker._order_seq == 0
+    kinds = [e["type"] for e in notifier.events]
+    assert "halt" in kinds and "autopilot_off" in kinds
+
+
+def test_switching_back_on_clears_the_halt_message(tmp_path, monkeypatch):
+    pilot, _, _, _ = build(tmp_path)
+    pilot.set_mode("auto")
+    monkeypatch.setattr(pilot.engine.risk, "daily_loss_tripped", lambda start, now: True)
+    pilot.tick()
+    assert pilot.set_mode("auto").last_error is None
+
+
+def test_a_new_trading_day_starts_a_new_loss_session(tmp_path):
+    pilot, _, clock, _ = build(tmp_path)
+    pilot.set_mode("auto")
+    pilot.tick()
+    first = pilot.engine._session_start_equity
+    assert first is not None
+    clock.sleep(300)
+    pilot.tick()                                           # same day: same anchor
+    assert pilot.engine._session_start_equity == first
+    pilot.engine._session_start_equity = 1.0               # mark the old session
+    clock.now = OPEN_NOW + timedelta(days=1)
+    pilot.tick()                                           # next day: re-anchored
+    assert pilot.engine._session_start_equity != 1.0
