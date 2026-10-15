@@ -112,8 +112,7 @@ config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])
   config file holds them (`write_settings` refuses credential-looking keys). The
   web fetches bars only through `BarCache` and only with credentials in the
   server environment. Without them it uses cached bars and says so (`docs/adr/0001-server-side-refresh.md`).
-- **Every result carries provenance:** source, symbols, window and bar count.
-  Synthetic dates are axis labels, not forecasts.
+- **Every result carries provenance:** source, symbols, window and bar count. Synthetic dates are labels, not forecasts.
 - **No inline JS in templates.** All browser code is type-checked TypeScript
   bundled by esbuild. Templates only present data.
 
@@ -238,8 +237,9 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   older than one `poll_seconds`, and switching off all expire it.
 - **Signed batch links** (`autopilot/links.py`; ntfy buttons when `notify.public_url` is set)
   approve or reject only that batch's still-pending lines via `Autopilot.approve`/`reject`, never
-  the mode. HMAC key: from `TRADEBOT_WEB_TOKEN`, else random per process. Expire after 2 x poll
-  (min 10 min). A repeat returns 200 `{"approved": 0}`. They skip the cookie gate, not the guard.
+  the mode or a live account (no Approve button either). HMAC key from `TRADEBOT_WEB_TOKEN`, else
+  random per process; 2 x poll (min 10 min); single use (replay = 409); skip the cookie gate, not
+  the guard. **The ntfy topic then grants approval:** self-host ntfy or use its access control.
 - **The daily-loss breaker is per session day and flattens** (`engine/session.py`):
   each pass rolls the anchor when `now`'s exchange date changes (a replay's `now` is
   its newest bar); a breach closes every position and stays out that day. The

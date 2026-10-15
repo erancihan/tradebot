@@ -70,5 +70,8 @@ One new core concept, the proposal, feeds three flows.
 - They are the only URL-borne credential in the app. That is acceptable because
   a link can only approve or reject lines already pending in its own batch,
   through the page's `Autopilot.approve`/`reject`, never changes the mode, and
-  dies with the batch. The secret derives from `TRADEBOT_WEB_TOKEN`, else is
+  dies with the batch. Each link acts once (a replay is a 409) and a live
+  account never gets an Approve link. The links ride through the ntfy topic,
+  so the topic grants approval: the README asks for a self-hosted or
+  access-controlled ntfy. The secret derives from `TRADEBOT_WEB_TOKEN`, else is
   random per process.
