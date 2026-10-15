@@ -47,6 +47,9 @@ def view(repo: TradingRepository, settings, settings_path: str | None) -> dict:
         "config_hint": None if settings_path else CONFIG_HINT,
         "symbols": active["symbols"],
         "symbol_source": active["source"],
+        # Whether a pass closes a held name once it leaves the list: what the
+        # watchlist's remove confirmation promises (never on live).
+        "manages_unlisted": manages_unlisted_for(settings.mode, settings),
         "proposal": _shape(stored) if stored else None,
     }
 

@@ -141,3 +141,25 @@ def test_today_on_a_live_config_never_sells_an_off_list_name(tmp_path, offline):
     client = _client(tmp_path, _live_config(tmp_path))
     assert _refresh(client)["state"] == "done"
     assert list(_lines(client)) == ["SPY", "QQQ"]
+
+
+_STAYS = ('data-remove-confirm="Remove QQQ? You hold 13 shares; they stay in the '
+          'account (the autopilot does not sell names off the list)."')
+
+
+@pytest.mark.parametrize("live", [False, True])
+def test_remove_confirmation_never_promises_a_sale_the_autopilot_will_not_make(
+        tmp_path, offline, live):
+    """With ``manage_unlisted: false``, or on live (never sells what it did not
+    buy), removing a held name leaves it in the account, and the question says so."""
+    mode = "live" if live else "paper"
+    with Storage(tmp_path / "t.db") as st:
+        st.record_order(Order(symbol="QQQ", qty=13, side=Side.BUY), None, mode)
+    path = (_live_config(tmp_path) if live
+            else _config(tmp_path, extra="manage_unlisted: false\n"))
+    client = _client(tmp_path, path)
+    client.post("/api/watchlist", json={"add": ["QQQ", "SPY"]}, headers=POST_HEADERS)
+    for url in ("/today", "/partials/watchlist"):
+        body = client.get(url).text
+        assert _STAYS in body, url
+        assert "sells them at its next pass" not in body, url
