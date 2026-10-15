@@ -8,7 +8,7 @@ Gate approvals delegated by the owner (2026-10-14). Approved when written.
 - Gate 4 Slice plan: APPROVED 2026-10-15
 
 ## Slices
-- [ ] S1 tracer: `/settings` page renders the current settings read-only, under More
+- [x] S1 tracer: `/settings` page renders the current settings read-only, under More
 - [ ] S2 save: `POST /api/settings` validates and writes `config.yaml`, server settings reload
 - [ ] S3 strategy and portfolio pickers from the registries, params as typed fields
 - [ ] S4 setup card on Today: config, credentials, cached bars, with the fix for each

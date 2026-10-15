@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Settings · tradebot{% endblock %}
+{% block content %}
+{% set s = view.settings %}
+{% macro section(title) -%}
+  <section class="space-y-2 rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+    <h2 class="text-sm font-semibold text-slate-200">{{ title }}</h2>
+    <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">{{ caller() }}</dl>
+  </section>
+{%- endmacro %}
+{% macro row(label, value) -%}
+  <dt class="text-slate-500">{{ label }}</dt>
+  <dd class="break-words text-slate-200">{{ value if value is not none and value != '' else '—' }}</dd>
+{%- endmacro %}
+<div class="mx-auto max-w-xl space-y-4" data-settings>
+  <h1 class="text-lg font-semibold text-slate-100">Settings</h1>
+
+  {% include "components/settings_status.html" %}
+
+  {% call section("Symbols") %}{{ row("Config symbols", s.symbols | join(", ")) }}{{ row("Timeframe", s.timeframe) }}{% endcall %}
+  {% call section("Strategy") %}
+    {{ row("Name", s.strategy.name) }}
+    {% for k, v in s.strategy.params.items() %}{{ row(k, v) }}{% endfor %}
+  {% endcall %}
+  {% call section("Portfolio") %}
+    {{ row("Selector", s.portfolio.selector.name if s.portfolio.selector else "none") }}
+    {{ row("Allocation", s.portfolio.allocation or "none") }}
+    {{ row("Overlays", s.portfolio.overlays | map(attribute="name") | join(", ") or "none") }}
+  {% endcall %}
+  {% call section("Risk") %}
+    {% for k, v in s.risk.items() %}{{ row(k, v) }}{% endfor %}
+  {% endcall %}
+  {% call section("Autopilot") %}
+    {{ row("Poll seconds", s.poll_seconds) }}
+    {{ row("Brief, minutes before open", s.autopilot.brief_minutes_before_open) }}
+    {{ row("Starting cash", s.initial_cash) }}
+  {% endcall %}
+  {% call section("Alerts") %}
+    {{ row("ntfy topic", s.notify.ntfy_topic) }}
+    {{ row("ntfy server", s.notify.ntfy_server) }}
+    {{ row("Webhook", s.notify.webhook_url) }}
+  {% endcall %}
+  {% call section("Market") %}{{ row("Calendar", s.market) }}{% endcall %}
+</div>
+{% endblock %}

@@ -19,6 +19,7 @@ from ..services import (
     consortium_service,
     holdings_service,
     metrics_service,
+    settings_service,
     whatif_presets,
 )
 from ..services.jobs import stack_catalog
@@ -62,6 +63,14 @@ def autopilot_page(request: Request):
     return templates.TemplateResponse(
         request, "pages/autopilot.html",
         {"autopilot": autopilot_service.view(request.app), "active": "autopilot"})
+
+
+@router.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request):
+    """Phone-first: everything config.yaml holds that the owner should choose."""
+    return templates.TemplateResponse(
+        request, "pages/settings.html",
+        {"view": settings_service.view(request.app), "active": "settings"})
 
 
 @router.get("/run", response_class=HTMLResponse)
