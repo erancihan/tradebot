@@ -265,7 +265,8 @@ Alpaca. Approve links in phone alerts outlive a restart only with
 
 - **History** (`/history`): what the bot has done and decided, newest first,
   for the account the dashboard shows. A card compares equity now with the
-  first of the last 2000 snapshots, beside a small equity chart. Below it one timeline mixes the
+  first of the last 2000 snapshots and with equal-weight buy and hold of the active list (from
+  cached daily closes, drawn as a dashed line on the small equity chart). Below it one timeline mixes the
   orders the bot sent (symbol, side, shares, and the amount at the price the
   trade was sized at) with each proposal batch (its trades by status: suggested,
   pending, approved, rejected, submitted or expired). Tap a batch for each

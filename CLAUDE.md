@@ -56,7 +56,7 @@ tradebot/
   web/           app (create_app, load_settings), server, startup, guard, access, repository/,
                  schemas/, services/ account, advisor, autopilot (+ reset), autopilot_build, cache,
                    consortium, whatif_presets, notify_service, symbols_service, history_service,
-                   holdings_service, discover_service, settings_service (view, save),
+                   benchmark, holdings_service, discover_service, settings_service (view, save),
                    settings_validate, settings_secrets (mask alert targets), setup_service,
                    jobs/ {registry, frames, frames_many, backtest, dryrun, proposal, whatif,
                    whatif_compare, discover, catalog (strategy_catalog, stack_specs)}
@@ -171,9 +171,10 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
 - **History** shows `default_mode()`, else `settings.mode`, pinned by `?mode=` in its URLs; orders
   and batches page on a `(ts, id)` keyset each (`X-History-Next`). `orders.price` is the sizing
   price (NULL on a flatten or old row); `schema.migrate` adds a later column on open, the web never.
-- **The Today refresh** gives the selector the whole cached history and the
-  strategy the last `required_history + 30` bars, so engine and web can differ
-  when their histories start on different days.
+  The performance card compares with equal-weight buy and hold of the active list from cached daily
+  closes (`services/benchmark.py`), no fetch; absent (with a note) without bars.
+- **The Today refresh** gives the selector the whole cached history and the strategy the last
+  `required_history + 30` bars, so engine and web can differ when their histories start on different days.
 - **One list for suggestions and the autopilot:** the watchlist when not empty,
   else `settings.symbols` (`symbols_service.with_active_symbols`, a copy). A
   watchlist edit stops a running autopilot (`autopilot_service.reset`), as a Settings save does.
@@ -245,10 +246,9 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   each pass rolls the anchor when `now`'s exchange date changes (a replay's `now` is
   its newest bar); a breach closes every position and stays out that day. The
   autopilot also turns off; its anchor persists per scope (`autopilot/session.py`).
-- **One lock, one connection:** the loop thread and web taps share the engine
-  and SQLite (`check_same_thread=False`, WAL, `busy_timeout=5000`) under the
-  Autopilot `RLock`. A line is `submitted` once the broker accepts it; later
-  bookkeeping only logs. A mode switch wakes the loop.
+- **One lock, one connection:** the loop thread and web taps share the engine and SQLite
+  (`check_same_thread=False`, WAL, `busy_timeout=5000`) under the Autopilot `RLock`. A line
+  is `submitted` once the broker accepts it; later bookkeeping only logs. A mode switch wakes the loop.
 - **The web autopilot is paper or dry-run, never live** (`autopilot_build`); a
   dry-run's account dies with a restart. `tradebot run --autopilot` builds as `run`, keeps
   state in scope `cli_<account>` (never the web's), expires no pending lines at start; a
