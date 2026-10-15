@@ -3,7 +3,9 @@
 // and swaps in the server-rendered list, so the markup lives in one template.
 // "Updated X ago" ticks locally from the proposal's timestamp. The watchlist
 // chips are server-rendered too; an add or a remove posts, then reloads them
-// and the proposal list (whose empty state names the list in use).
+// and the proposal list (whose empty state names the list in use). The
+// Discover card (./discover) adds names on its own and announces it with a
+// `watchlist-changed` event, which reloads the same panes.
 
 import { changeWatchlist, getJob, getPartial, getProposal, refreshProposal } from "../api/client";
 import type { WatchlistChange } from "../types";
@@ -82,15 +84,19 @@ export function today() {
       this.notice = "";
       try {
         this.notice = (await changeWatchlist(change)).notice ?? "";
-        const panes = refs(this);
-        panes.watchlist.innerHTML = await getPartial("/partials/watchlist");
-        panes.list.innerHTML = await getPartial("/partials/proposal");
+        await this.reloadPanes();
         return true;
       } catch (err) {
         this.state = "error";
         this.error = err instanceof Error ? err.message : String(err);
         return false;
       }
+    },
+
+    async reloadPanes() {
+      const panes = refs(this);
+      panes.watchlist.innerHTML = await getPartial("/partials/watchlist");
+      panes.list.innerHTML = await getPartial("/partials/proposal");
     },
 
     // Resolves when the job is done; rejects with the server's message on error.

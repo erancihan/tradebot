@@ -182,6 +182,16 @@ export function changeWatchlist(body: WatchlistChange): Promise<WatchlistView> {
   return postJson<WatchlistView>("/api/watchlist", body);
 }
 
+export function runDiscover(): Promise<{ job_id: string }> {
+  return postJson<{ job_id: string }>("/api/discover/run", {});
+}
+
+// Discover's Add: the server seeds an empty watchlist with the active symbols
+// first, so the config list never silently drops out.
+export function addFromDiscover(symbol: string): Promise<WatchlistView> {
+  return postJson<WatchlistView>("/api/discover/add", { symbol });
+}
+
 export function getSettings(): Promise<SettingsView> {
   return getJson<SettingsView>("/api/settings");
 }

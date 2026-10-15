@@ -34,7 +34,7 @@ tradebot/
   indicators.py  risk.py (RiskManager + RiskConfig)  allocation.py  overlays.py
                  walkforward.py  portfolio.py  models.py
   selection/     base, ranked (momentum, low_vol), regime (regime_switch), registry
-  universe/      screen (LiquidityScreen), alpaca     consortium/  voice, consensus, panel
+  universe/      screen (LiquidityScreen), alpaca, discover    consortium/  voice, consensus, panel
   backtest/      result, runner (Backtester), steps (per-bar helpers shared by the
                  backtester and arena/simulation.py), flows (cash flows, growth index)
   whatif/        plan, run (run_whatif, whatif_risk, plan_window), compare, compare_many
@@ -48,7 +48,7 @@ tradebot/
   engine/        core (Engine.step -> PassOutcome), signals, orders, pending
   autopilot/     state, schedule, runner (Autopilot, injected clock/sleep/calendar),
                  approvals, background, brief (MorningBrief), session, links (signed batch links)
-  storage/       SQLite tradebot.db mixins: orders, bars, weights, proposals, autopilot, watchlist
+  storage/       tradebot.db mixins: orders, bars, weights, proposals, autopilot, watchlist, discover
   cli/           build_parser/main + one module per command
   arena/         api, loader, interfaces, adapters, simulation, scenario, runner +
                  isolation, sandbox, scoring, gate/, result, tournament, league,
@@ -56,19 +56,19 @@ tradebot/
   web/           app (create_app, load_settings), server, startup, guard, access, repository/,
                  schemas/, services/ account, advisor, autopilot (+ reset), autopilot_build, cache,
                    consortium, whatif_presets, notify_service, symbols_service, history_service,
-                   holdings_service, settings_service (view, save), settings_validate,
-                   settings_secrets (mask alert targets), setup_service (Today card),
+                   holdings_service, discover_service, settings_service (view, save),
+                   settings_validate, settings_secrets (mask alert targets), setup_service,
                    jobs/ {registry, frames, frames_many, backtest, dryrun, proposal, whatif,
-                   whatif_compare, catalog (strategy_catalog, stack_specs)}
+                   whatif_compare, discover, catalog (strategy_catalog, stack_specs)}
                  routes/ pages, partials (+ history), sse, api/ {trading, arena, jobs (+ /stack),
-                   proposal, whatif (+ /compare), autopilot, notify, watchlist, settings (+ /setup)}
+                   proposal, whatif (+ /compare), autopilot, notify, watchlist, discover, settings (+ /setup)}
                  templates/ pages (today, whatif, autopilot, history, settings, ...),
-                   components (proposal_list, watchlist, holdings, setup_card, settings_status,
-                   settings_picker, autopilot_panel, whatif_compare, history_*, tabbar, ...)
+                   components (proposal_list, discover_card/_rows, watchlist, holdings, setup_card,
+                   settings_*, autopilot_panel, whatif_compare, history_*, tabbar, ...)
                  static-src/ (PWA, committed), static/ (built, gitignored)
 algos/           12 contestants + canaries/ and consortium/ (both opt-in)
 scenarios/       regime library, factor library (xs_*), real_xs_* (+ sealed holdout), legacy real_*
-frontend/        TypeScript, Tailwind, Alpine, ECharts, esbuild (settings[Form].ts, history.ts)
+frontend/        TypeScript, Tailwind, Alpine, ECharts, esbuild (settings[Form].ts, history.ts, discover.ts)
 tests/  docs/ (research-record.md, adr/, plans/)  data/cache/ (gitignored)  Makefile
 config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])  deploy/ (systemd, launchd)
 ```
@@ -183,6 +183,8 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   else `settings.symbols` (`symbols_service.with_active_symbols`, a copy). A
   watchlist edit stops a running autopilot (`autopilot_service.reset`), as a Settings save does.
   Symbols match `^[A-Z.\-]{1,10}$` after upper-casing.
+- **Discover** ranks by the `MomentumSelector` score over the cached or Alpaca pool, excludes
+  held and watched names, persists in `discover_runs`; Add seeds an empty watchlist first.
 - **Contributions are not returns.** With `cash_flows` metrics use the growth
   index `equity_t / (equity_{t-1} + flow_t)`: a flow is invested at its bar's
   open and earns that bar. The arena never passes flows. What-if cash: month's first bar.
@@ -193,10 +195,9 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   strategies (a roster) are skipped, a raising one is an `errors` entry, 120 s cap.
 
 **Arena and season**
-- **Isolation:** `process` (POSIX default) forks with a hard kill and never
-  downgrades. `thread` is soft (marks `TIMEOUT`, cannot kill). `auto` warns
-  before falling back. Never wrap a worker in a `ThreadPoolExecutor` context
-  manager: its exit waits for the task.
+- **Isolation:** `process` (POSIX default) forks with a hard kill and never downgrades.
+  `thread` is soft (marks `TIMEOUT`, cannot kill). `auto` warns before falling back.
+  Never wrap a worker in a `ThreadPoolExecutor` context manager: its exit waits for the task.
 - **Sandbox:** process isolation hardens by default (no writes, empty network
   namespace) unless `--no-harden`. `--seccomp` denies `execve`/`ptrace`
   last, after `no_new_privs`. An unenforceable tier (CI, macOS) logs one warning
@@ -207,15 +208,14 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
 - **The `algos/` head-count (12) is in tests** (`test_web.py`,
   `test_arena_season.py`, `test_arena_tournament.py`, `test_arena_journal.py`).
   `canaries/` and `consortium/` are subdirectories the loader glob skips.
-- **Meta strategies are expensive:** `_TailBounded` caps each call to
-  `2 x required_history`. Use `--time-budget 20`. Never trim a roster to fit a budget.
+- **Meta strategies are expensive:** `_TailBounded` caps each call to `2 x required_history`.
+  Use `--time-budget 20`. Never trim a roster to fit a budget.
 - **Fold scorers are in-sample for the analyst** (parameters chosen knowing the
   scenarios), and `worst_fold` alone has a trivial optimum (all cash = 0.0). Check a
   scenario for degeneracy first (`tests/test_scenario_library.py`).
-- **A gauntlet must be balanced** (`MIRROR_PAIRS`). An unbalanced one gives a
-  wrong verdict. One draw is a coin flip: use `arena gate --seeds N`, and fix
-  the evaluation, never the data. The factor pool is fixed, joint, and the
-  haven costs money to hold.
+- **A gauntlet must be balanced** (`MIRROR_PAIRS`). An unbalanced one gives a wrong
+  verdict. One draw is a coin flip: use `arena gate --seeds N`, and fix the evaluation,
+  never the data. The factor pool is fixed, joint, and the haven costs money to hold.
 - **Season bars are the source of truth.** The `(season_id, symbol, ts)` key
   makes re-delivery idempotent. The feed backfills up to `catchup` (30) missed
   bars. Seed a new season (`arena season seed`). Backfilled standings are not a

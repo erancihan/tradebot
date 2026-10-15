@@ -23,6 +23,15 @@ export function el(ctx: unknown): HTMLElement {
   return (ctx as AlpineEl).$el;
 }
 
+interface AlpineDispatch {
+  $dispatch?: (name: string, detail?: unknown) => void;
+}
+
+// Fire a bubbling DOM event from the component's root (no-op outside Alpine).
+export function dispatch(ctx: unknown, name: string, detail?: unknown): void {
+  (ctx as AlpineDispatch).$dispatch?.(name, detail);
+}
+
 export function nextTick(ctx: unknown): Promise<void> {
   return (ctx as AlpineNextTick).$nextTick();
 }

@@ -1,0 +1,44 @@
+{#- Discover's ranked rows and their provenance. Served for first paint and
+    swapped in after a search or an Add. Each Add button carries
+    data-add-symbol; one delegated click handler in discover.ts reads it.
+    Expects `discover`. -#}
+{% set run = discover.run %}
+{% if run %}
+  {% set prov = run.provenance %}
+  <p class="text-xs text-slate-500" data-discover-provenance data-discover-source="{{ run.source }}">
+    Pool: {{ 'Alpaca most-active, screened' if run.source == 'alpaca' else 'cached daily bars, screened' }}
+    {%- if run.as_of %} · as of {{ run.as_of }}{% endif %}
+    {%- if prov.bars %} · {{ prov.bars }} bars{% endif %}
+    {%- if prov.start and prov.end %} {{ prov.start[:10] }} to {{ prov.end[:10] }}{% endif %}
+    {%- if prov.pool is defined %} · {{ prov.ranked }} of {{ prov.pool }} ranked{% endif %}
+    · computed {{ run.created_at[:16] | replace('T', ' ') }} UTC
+  </p>
+  {% if run.rows %}
+    <ul class="divide-y divide-slate-800 rounded-lg border border-slate-800">
+      {% for row in run.rows %}
+        <li class="flex flex-col gap-1 px-3 py-3" data-discover-row="{{ row.symbol }}">
+          <div class="flex items-center gap-3">
+            <span class="w-16 font-mono text-base font-semibold text-slate-100">{{ row.symbol }}</span>
+            <span class="text-sm {{ 'text-emerald-300' if row.score >= 0 else 'text-rose-300' }}">{{ '%+.0f' | format(row.score * 100) }}%</span>
+            <span class="text-sm text-slate-400">{{ row.price | money }}</span>
+            {% if row.on_watchlist %}
+              <span class="ml-auto text-xs text-slate-400" data-on-watchlist>on watchlist</span>
+            {% else %}
+              <button type="button" data-add-symbol="{{ row.symbol }}" aria-label="Add {{ row.symbol }} to the watchlist"
+                      class="ml-auto min-h-[40px] rounded-lg border border-slate-700 px-3 text-sm font-semibold text-slate-100 hover:bg-slate-800">Add</button>
+            {% endif %}
+          </div>
+          <p class="text-xs text-slate-400">{{ row.reason }}</p>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="rounded-lg border border-dashed border-slate-800 p-4 text-sm text-slate-500" data-discover-none>
+      No new name passed the liquidity screen with six months of history.</p>
+  {% endif %}
+  <p class="text-xs text-slate-600" data-discover-add-note>Add puts a name on your watchlist next to your current symbols.</p>
+{% else %}
+  <p class="text-sm text-slate-400" data-discover-empty>Tap Find candidates to rank
+    {{ discover.pool_hint }} by 6-month momentum (skipping the last month), leaving out
+    what you already watch or hold.</p>
+{% endif %}
