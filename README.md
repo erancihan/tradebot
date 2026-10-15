@@ -4,48 +4,202 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 
-A lean, **paper-trading-first** equities trading bot in Python, built on
-[Alpaca](https://alpaca.markets/). It backtests, paper-trades, and (when you
-explicitly opt in) live-trades US stocks & ETFs using pluggable strategies and
-hard risk limits.
-
-**Cost model:** free to build and run. Alpaca offers commission-free US equity
-trading, a $0 minimum, free IEX market data, and a paper-trading sandbox that
-mirrors the live API. The only money at risk is capital *you* choose to deploy
-in live mode. Everything else — the SDK, the data, this code — is free and open.
-
-> **Contributing / picking this up?** Read [`CLAUDE.md`](CLAUDE.md) for the
-> architecture, invariants, gotchas, and dev workflow. Claude Code skills for
-> common tasks live in [`.claude/skills/`](.claude/skills/).
+A paper-trading-first portfolio companion for US stocks and ETFs, built on
+[Alpaca](https://alpaca.markets/). Open it on your phone. It tells you what to
+buy or sell today and why. It can run the portfolio for you, with or without
+your approval per trade. It replays past plans with monthly contributions, so
+you see the money a plan makes. Behind the app sits a full trading core
+(backtester, risk manager, paper/live engine) and a research arena that ranks
+algorithms. Alpaca is commission-free with a $0 minimum, free IEX data and a
+free paper account, so running it costs nothing.
 
 > ⚠️ **Not financial advice.** Automated trading can lose money fast. The
-> defaults here are conservative and the bot runs in **paper mode** unless you
-> jump through deliberate hoops to enable live trading. Understand the code and
-> backtest thoroughly before risking a cent.
+> defaults are conservative and the bot runs in **paper mode** unless you take
+> deliberate steps to enable live trading. Understand the code and test in
+> paper mode before you risk a cent.
 
----
+## Use it from your phone
 
-## Why it's built this way
+This is the main path. Everything here runs without API keys. Keys add live
+market data and a real paper account.
 
-A trading bot is ~20% strategy and ~80% plumbing that stops you losing money by
-accident. The design reflects that:
+### 1. Install and start
 
-- **Paper by default.** Live trading needs `mode: live` *and* an environment
-  latch (`TRADEBOT_LIVE_CONFIRM=I_UNDERSTAND`). You can't risk real money by
-  fat-fingering a config.
-- **Risk lives in one place.** A `RiskManager` sizes every position (max % of
-  equity per symbol), caps total gross exposure, and trips a daily-loss circuit
-  breaker that flattens and halts. Strategies can't bypass it.
-- **Backtest == live.** The backtester runs the *same* `Strategy` and
-  `RiskManager` objects the live engine uses, so what you test is what you run.
-- **No look-ahead.** Signals decided on bar *t*'s close are executed on bar
-  *t+1*, with configurable slippage and commission.
-- **Auditable.** Every order and periodic equity snapshot is written to SQLite.
-- **Offline-friendly.** The strategy/backtest core depends only on
-  pandas + numpy; the Alpaca SDK is imported lazily, so you can develop, test,
-  and backtest with no credentials and no network.
+```bash
+make install-web      # venv + Python web extra + npm install
+make web              # build the frontend, then serve at http://127.0.0.1:8000
+```
 
-## Architecture
+`make web` listens on loopback only. To open it from a phone, see
+[Reach it over the network](#8-reach-it-over-the-network). For the terminal
+commands in this README, activate the venv with `source .venv/bin/activate`.
+
+### 2. Settings: pick symbols and a strategy
+
+Open **Settings** (`/settings`, under **More** on a phone). Pick your symbols
+and bar size, a strategy, and optionally a selector (hold the best N) and an
+allocator (how to split money). Parameters show as typed fields. Risk limits
+are typed as percentages. The same page sets the autopilot cadence, the
+morning brief, alert destinations and the exchange calendar.
+
+Tap **Save**. The server builds every component you named, so a typo comes
+back as one readable sentence. Then it writes `config.yaml` atomically and
+reloads. A running autopilot stops on save so it never trades on old settings.
+Start it again from Autopilot.
+
+Settings never shows or accepts a broker key. It only says whether `.env` has
+them. It never changes `mode` (paper or live). Alert destinations show masked.
+Leave a masked value as it is to keep it. A saved file has no comments.
+[`config.example.yaml`](config.example.yaml) documents every key. Overlays and
+a `universe:` block survive a save but are edited in the file.
+
+### 3. Add Alpaca paper keys (optional)
+
+Without keys the app works from cached bars (What-if also offers synthetic
+ones) and the account is simulated. With keys it fetches missing bars and
+reads your paper account.
+
+1. Create a free Alpaca account, open **Paper Trading** and generate API keys.
+2. Run `cp .env.example .env` and paste your **paper** key and secret.
+3. Run `make install-live` (the Alpaca SDK and `.env` loading), then restart
+   `make web`.
+
+Until config, keys and cached bars are all in place, Today shows a
+**Finish setting up** card with the fix for each one.
+
+### 4. Today: what to trade now
+
+**Today** (`/today`) is the first tab. Tap **Refresh** to compute a proposal on
+the server. Each row shows the symbol, a BUY, SELL or HOLD badge, the share
+quantity, the dollar amount and a one-line reason built from each layer:
+
+```
+sma_crossover signals long; rank 2 of 5, weight 23%, capped by the risk limit; buy.
+```
+
+A row can also say `not selected (rank 4 of 5)` or `within band, hold`.
+
+- **Account strip:** equity, cash and their source, `paper (Alpaca)`,
+  `paper (from log)` or `paper (starting cash)`.
+- **Holdings:** quantity, last cached price, value and weight per position.
+- **Watchlist:** type a symbol and tap **Add**, tap the cross on a chip to
+  remove it. While it has symbols, Refresh and the autopilot scan those
+  instead of the config's `symbols`. An edit stops a running autopilot.
+
+Refresh reads bars through the local cache. It fetches missing bars only with
+server-side Alpaca keys. Without them, an uncached symbol gets the exact
+`tradebot data pull` command. The proposal comes from `advisor.propose`, the
+same function the engine runs before it submits. A suggestion is exactly what
+a paper pass trades. Nothing on Today places an order.
+
+### 5. Autopilot: let it trade
+
+**Autopilot** (`/autopilot`) is the second tab. Pick a mode:
+
+- **Off.** Nothing runs.
+- **Approve first.** Every `poll_seconds` inside market hours the bot computes
+  the Today proposal and lists its trades under **Waiting for approval**. Tap
+  **Approve** or **Reject** per trade, or **Approve all**. A batch is sized at
+  the prices of its pass. It expires when the next pass replaces it, or after
+  one poll interval. It never executes late.
+- **Automatic.** Every pass submits its trades.
+
+The status card shows the mode, the loop, the account, the last and next pass,
+the pending count and the last error. If the daily-loss limit
+(`risk.max_daily_loss_pct`) trips, the autopilot switches itself **off**,
+shows `daily loss halt` and notifies you.
+
+With keys the autopilot trades the **paper** account. Without them it runs a
+dry-run (simulated fills) over cached bars and labels the account `dry_run`.
+It never reaches a live account. The loop is a thread inside the web server.
+It resumes after a restart in a non-off mode and stops with the server.
+
+### 6. What-if: replay a plan
+
+**What-if** (`/whatif`) is the third tab. Pick a preset or type symbols, a
+start and end date, starting cash and a monthly contribution. **Advanced**
+adds a strategy, a selector and an allocator. Tap **Run what-if**.
+
+The server replays the plan with the same `Backtester` as everything else and
+adds the monthly cash on the first trading day of each month. The benchmark is
+equal-weight buy and hold over the same symbols with the same cash. The result
+leads with the money gain (final value minus everything put in), then the
+comparison. Yearly growth and worst drop leave contributions out.
+
+Presets come from the cache, familiar index funds first. With an empty cache
+the presets are synthetic and labelled so. The date pickers are bounded by
+cache coverage. An uncached range shows the exact `tradebot data pull` command.
+
+### 7. Phone alerts with ntfy
+
+[ntfy](https://ntfy.sh) pushes alerts to your phone as plain text, with no
+account:
+
+1. Install the ntfy app (Android or iOS).
+2. Pick a long, hard-to-guess topic name and subscribe to it in the app. A
+   topic on ntfy.sh is public to anyone who knows its name.
+3. Enter the topic on **Settings** and Save, or set `notify.ntfy_topic` in
+   `config.yaml` (plus `notify.ntfy_server` for a self-hosted server).
+
+Tap **Send test alert** on Autopilot. The page says which channels accepted
+it. You then get an alert for each approval batch, order, bracket exit,
+daily-loss halt and morning brief.
+
+**Morning brief.** Set `autopilot.brief_minutes_before_open: 30` and the
+autopilot sends the day's proposal that many minutes before each open:
+
+```
+BUY 35 SPY (buy_and_hold signals long; buy.)
+BUY 38 QQQ (buy_and_hold signals long; buy.)
+```
+
+The brief is a preview. It stores, parks and submits nothing. It fires once
+per session in any mode while the loop runs.
+
+### 8. Reach it over the network
+
+By default the server listens on loopback and needs no login. For a phone on
+the same network, set a token and list the host the phone uses:
+
+```bash
+make web-build
+export TRADEBOT_WEB_TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(24))")
+tradebot-web --host 0.0.0.0 --allow-host 192.168.1.20   # your LAN IP or hostname
+```
+
+Open `http://192.168.1.20:8000/login` **once** on the phone and paste the
+token. It sets a long-lived HttpOnly cookie (an HMAC of the token, not the
+token). Then use **Add to Home Screen**. The app ships a web manifest, so it
+opens full screen with the bottom tab bar (Today, Autopilot, What-if, More).
+
+Two guards are always on. Requests for an unlisted `Host` are refused
+(`--allow-host` or a comma-separated `TRADEBOT_ALLOWED_HOSTS` extend the
+loopback default, and `'*'` disables the check with a warning). Every
+state-changing request needs `X-Requested-With: tradebot`, which the frontend
+sends and a cross-site form cannot (the login form is exempt). The token is
+posted from a form, never put in a URL. Scripts send
+`Authorization: Bearer <token>`. Prefer the env var to `--token`, because
+other users see command-line arguments in `ps`. The connection is plain HTTP.
+Keep it on a network you trust, or put HTTPS in front (the cookie is then
+marked `Secure`). `--config other.yaml` serves a different settings file.
+
+### More pages (under More on a phone)
+
+- **Dashboard** (`/`): equity curve, account stats, orders, positions and the
+  target allocations of the latest rebalance.
+- **Run** (`/run`): a backtest or dry-run on synthetic or cached real bars.
+  Every result wears a **provenance badge** naming its data.
+- **Chart** (`/chart`): candlesticks with order pins. The account header and
+  equity curve update live over one SSE stream, with a pause toggle.
+- **Arena**, **Seasons**, **Consortium**: the [research views](#research-tooling).
+
+Run and What-if read only the local cache. The Today refresh is the one page
+action that fetches bars, and only with server-side keys. Empty pages say
+which command fills them.
+
+## How it decides
+
+Every flow, from the Today page to a backtest, runs one pipeline:
 
 ```
                  ┌──────────────┐
@@ -54,7 +208,7 @@ accident. The design reflects that:
                         │
                         ▼
                  ┌──────────────┐   cross-sectional gate: momentum top-K
-                 │   Selector   │ → which symbols may be held   (optional)
+                 │   Selector   │ → which symbols can be held   (optional)
                  └──────────────┘
                         │
                         ▼
@@ -75,808 +229,335 @@ accident. The design reflects that:
    └─────────────┘              └─────────────┘
 ```
 
-| Module | Responsibility |
-|---|---|
-| `tradebot/indicators.py` | SMA, EMA, RSI, MACD, Bollinger, crossover helpers (pure pandas) |
-| `tradebot/strategies/` | `Strategy` interface + crossover, RSI, Donchian, MACD, Bollinger, momentum, Supertrend, buy-and-hold, meta |
-| `tradebot/risk.py` | Position sizing, joint book allocation, exposure cap, no-trade band, daily-loss breaker |
-| `tradebot/allocation.py` | Portfolio weighting: equal / inverse-vol / explicit |
-| `tradebot/selection.py` | Cross-sectional selection: momentum/reversal + low-vol top-K with hysteresis |
-| `tradebot/universe.py` | Candidate discovery: Alpaca most-actives + liquidity screen |
-| `tradebot/overlays.py` | Risk overlays: vol-targeting dial, sector caps (reduce-only) |
-| `tradebot/walkforward.py` | Walk-forward evaluation: per-fold out-of-sample metrics |
-| `tradebot/portfolio.py` | Cost-basis & realised-P&L accounting (backtest) |
-| `tradebot/backtest.py` | Event-driven backtester + performance metrics |
-| `tradebot/broker/` | `Broker` interface + Alpaca adapter (lazy SDK import), bracket exits |
-| `tradebot/data/` | Alpaca history, synthetic generator, CSV loader, websocket stream |
-| `tradebot/engine.py` | Live/paper rebalance loop |
-| `tradebot/notify.py` | Fill / circuit-breaker notifications (log + optional webhook) |
-| `tradebot/consortium.py` | Blend many algorithms into one book, weighted by voice |
-| `tradebot/storage.py` | SQLite persistence of orders + equity |
-| `tradebot/config.py` | YAML config + env secrets + live-trading gate |
-| `tradebot/cli/` | the `tradebot` CLI, one module per command group (`demo`, `backtest`, `run`, `status`, `arena`, ...) |
+- **Universe → selector → allocator → risk.** An optional universe screen
+  picks which symbols qualify. The selector picks which to hold now. The
+  allocator sets how much of each. The `RiskManager` turns weights into share
+  quantities under per-name and gross caps. Strategies only emit targets in
+  `{-1, 0, +1}` and never size positions.
+- **Paper by default.** Live trading needs `mode: live` in the config **and**
+  `TRADEBOT_LIVE_CONFIRM=I_UNDERSTAND` in the environment. The web app cannot
+  switch either one.
+- **No look-ahead.** A decision made on bar *t*'s close fills on bar *t+1*.
+  Selection, weights and sizing obey the same shift.
+- **Backtest equals live.** The backtester, the engine, the Today page and the
+  arena share the same `Strategy` and `RiskManager` code.
+- **Provenance on every result.** Proposals, What-if runs and Run jobs record
+  their data source, window and age. A synthetic curve never passes for a real
+  one.
+- **Auditable and offline-first.** Every order, equity snapshot and target
+  weight goes to SQLite. The core needs only pandas and numpy, and the Alpaca
+  SDK loads lazily, so every page and test runs with no keys and no network.
 
-## Quickstart
+[`CLAUDE.md`](CLAUDE.md) holds the module map, invariants and gotchas, and
+[`.claude/skills/`](.claude/skills/) holds Claude Code skills for common tasks.
 
-### 1. Try it with zero setup (offline)
+## Terminal reference
 
-```bash
-make install          # venv + core deps (pandas, numpy, pytest)
-make test             # run the suite
-make demo             # backtest both strategies on synthetic data
-```
+Install with `make install` (core), `make install-live` (adds Alpaca) or
+`make install-web` (adds the web app). `tradebot <command> --help` lists
+every flag.
 
-`demo` needs no API keys and no network — it generates synthetic price data and
-backtests `SmaCrossover` and `RsiReversion` against it.
+### Commands
 
-### 2. Backtest a real symbol
-
-Backtest from a local CSV (columns: `timestamp,open,high,low,close,volume`):
+The realism ladder runs backtest → dry-run → paper → live:
 
 ```bash
-cp config.example.yaml config.yaml
-make install
-.venv/bin/python -m tradebot.cli backtest --config config.yaml --csv data/SPY.csv --symbol SPY
+tradebot demo [--strategy NAME] [--portfolio]              # offline, synthetic data
+tradebot backtest --config config.yaml --csv data/SPY.csv --symbol SPY
+tradebot backtest --config config.yaml --walk-forward 4    # Alpaca history, per-fold metrics
+tradebot run --config config.yaml --replay                 # offline forward-test
+tradebot run --config config.yaml --replay-csv data/SPY.csv  # replay your own CSV
+tradebot run --config config.yaml --dry-run                # live data, simulated fills
+tradebot run --config config.yaml --once                   # one paper pass
+tradebot run --config config.yaml                          # continuous paper loop
+tradebot status --config config.yaml                       # broker account snapshot
+tradebot universe --config config.yaml                     # screened universe (needs keys)
+tradebot data pull --symbols SPY QQQ --start 2024-01-01 --end 2025-01-01
+tradebot-web [--host H] [--port P] [--config F] [--allow-host H] [--token T]
 ```
 
-…or pull history straight from Alpaca (needs free keys, see below):
-
-```bash
-make install-live
-.venv/bin/python -m tradebot.cli backtest --config config.yaml --out equity.csv
-```
-
-### 3. Dry-run forward-test
-
-A **dry-run** runs the *exact* real-time trading loop — data → strategy → risk →
-order — but fills orders against a **local virtual account** (seeded from
-`initial_cash`) instead of sending them anywhere. No money, no broker account,
-no order ever leaves the process. Positions and P&L evolve over time, so it's a
-true forward-test: the dress rehearsal between backtesting and paper trading.
-
-Fully offline (replays synthetic data — **no credentials, no network**):
-
-```bash
-make install
-.venv/bin/python -m tradebot.cli run --config config.yaml --replay --replay-periods 300
-# or replay your own history:
-.venv/bin/python -m tradebot.cli run --config config.yaml --replay-csv data/SPY.csv
-```
-
-Against **live** market data (needs a free Alpaca *data* key — still no trading
-account is used):
-
-```bash
-make install-live
-.venv/bin/python -m tradebot.cli run --config config.yaml --dry-run
-```
-
-`--dry-run` overlays whatever `mode` your config has (even `mode: live`) and
-simply suppresses real submits, so it never trips the live-money gate. On exit it
-prints a forward-test summary, and every simulated order + equity snapshot is
-written to the SQLite log tagged `dry_run`.
-
-> **What it does *not* model:** real fills (it uses last price ± fixed slippage,
-> instant and full), order rejects/partials, buying-power/PDT/settlement rules.
-> For realistic execution, graduate to `mode: paper`. The realism ladder is:
-> **backtest → dry-run → paper → live**.
-
-### 4. Paper trade
-
-1. Create a free Alpaca account, open **Paper Trading**, and generate API keys.
-2. `cp .env.example .env` and paste your **paper** key/secret.
-3. Set `mode: paper` in `config.yaml` (the default).
-
-```bash
-make install-live
-.venv/bin/python -m tradebot.cli status --config config.yaml   # sanity-check connection
-.venv/bin/python -m tradebot.cli run --config config.yaml --once   # one rebalance pass
-.venv/bin/python -m tradebot.cli run --config config.yaml           # continuous loop
-```
-
-### 5. Go live (only when you're sure)
-
-Live trading is intentionally awkward to enable:
-
-1. Set `mode: live` in `config.yaml`.
-2. Put **live** (not paper) API keys in `.env`.
-3. Export the safety latch: `export TRADEBOT_LIVE_CONFIRM=I_UNDERSTAND`.
-
-Without all three the bot refuses to place live orders.
-
-## Configuration
-
-Strategy and risk knobs live in `config.yaml` (safe to commit — no secrets).
-Secrets live in `.env` / environment only. See `config.example.yaml` for the
-full annotated set. Key risk controls:
-
-```yaml
-risk:
-  max_position_pct: 0.10     # ≤10% of equity per symbol
-  max_gross_exposure: 1.0    # ≤100% of equity deployed at once
-  max_daily_loss_pct: 0.03   # flatten + halt after a 3% daily drawdown
-```
-
-### Bracket exits (stop-loss / take-profit)
-
-Two optional risk knobs attach exit legs to every order that *adds* exposure —
-opening or adding to a position, or flipping its direction. Reductions and exits
-never carry them:
-
-```yaml
-risk:
-  stop_loss_pct: 0.05        # exit 5% below the entry price
-  take_profit_pct: 0.15      # exit 15% above it   (either may be set alone)
-```
-
-Live, these become a real Alpaca bracket order (`oto` when only one leg is set),
-so the broker holds the legs even if the bot is offline. In a dry-run they are
-simulated from each bar's high/low, pessimistically: on a bar that touches both
-levels the **stop** wins, a gap through the stop fills at the **open** (a stop is
-a trigger, not a guaranteed price), and a target never fills better than its
-limit.
-
-Two things to be clear about:
-
-- **Backtests do not model brackets.** Neither the backtester nor the arena
-  simulates resting orders, so a backtest of a bracketed config shows the
-  un-bracketed result. Never quote a backtest as evidence about a stop.
-- **A bracket protects between rebalances, not against your own signal.** If the
-  strategy still says long after a stop fires, the next pass buys back in. If you
-  want it to stay out, that belongs in the strategy.
-
-### Notifications
-
-Order fills, bracket exits and circuit-breaker halts are always logged. Point
-them at a webhook to get them as JSON too (stdlib `urllib` — no new dependency):
-
-```yaml
-notify:
-  webhook_url: https://hooks.example.com/tradebot
-```
-
-Delivery failures are logged and swallowed. An unreachable endpoint slows a pass
-by at most the 5s timeout; it never halts trading.
-
-### Phone alerts (ntfy)
-
-[ntfy](https://ntfy.sh) pushes the same events to your phone as plain text,
-with no account:
-
-1. Install the ntfy app (Android or iOS).
-2. Pick a long, hard-to-guess topic name and subscribe to it in the app (a
-   topic on ntfy.sh is public to anyone who knows its name).
-3. Set it in the config and restart `tradebot-web`:
-
-```yaml
-notify:
-  ntfy_topic: tradebot-pick-a-long-random-name
-  # ntfy_server: https://ntfy.example.com    # optional, for a self-hosted server
-```
-
-Tap **Send test alert** on the Autopilot page (or `POST /api/notify/test`) to
-check it: the page says which channels accepted the message.
-
-## Portfolio: selection + allocation
-
-By default every symbol gets the same fixed `max_position_pct` slug of equity.
-An optional `portfolio:` block turns the symbol list into a managed portfolio
-with two independent layers — *which* symbols to hold, and *how much* of each:
-
-```yaml
-strategy:
-  name: buy_and_hold           # selector-only portfolio (momentum top-K)
-portfolio:
-  selector:
-    name: momentum
-    params: {lookback: 252, skip: 21, top_k: 5}   # 12-1 momentum, hold 5
-  allocation: inverse_vol      # equal | inverse_vol | explicit
-  params: {window: 63}
-risk:
-  rebalance_band_pct: 0.02     # skip drift trades < 2% of equity
-```
-
-**Selection (which):** the `momentum` selector ranks the pool each bar by
-trailing `lookback`-bar return skipping the most recent `skip` bars (the
-classic "12-1" construction), and holds the top `top_k`. Hysteresis keeps a
-holding until it slips below `exit_rank` (default 1.5×K), so borderline names
-don't churn. `reverse: true` flips the ranking into short-term reversal (hold
-the biggest recent losers — use a short lookback). The `low_vol` selector
-holds the `top_k` *calmest* names by rolling realized volatility instead.
-Membership *gates* the per-symbol strategy: with `buy_and_hold` the selector
-is the sole signal; with e.g. `sma_crossover` a symbol must be selected *and*
-trending to be held. Symbols without a full lookback of history are never
-selected.
-
-**Allocation (how much):**
-- **`equal`** — 1/N over the held symbols. The classic hard-to-beat baseline.
-- **`inverse_vol`** — weight by 1/volatility (rolling stdev of daily returns
-  over `window` bars), so risk rather than dollars is spread evenly. Symbols
-  without enough history to measure get nothing.
-- **`explicit`** — fixed per-symbol weights you choose; unlisted symbols get 0.
-
-**Overlays (optional risk transforms):** applied to the weights in configured
-order, and reduce-only by design — they can de-risk the book but never add
-exposure:
-- **`sector_cap`** — cap any one sector's total weight so a screen can't
-  become a single factor bet (unmapped symbols share one conservative
-  "other" bucket; map via inline `sectors:` or a `sectors_file:` CSV).
-- **`vol_target`** — scale the whole book down when its realized volatility
-  runs above `target_vol` (annualized); calm regimes are *never* levered up.
-  Keep it last in the chain so it measures the book it actually scales.
-
-The whole book is sized in one order-independent pass: weights are capped
-per-name, scaled down proportionally if their total exceeds
-`max_gross_exposure`, and only then turned into share quantities. A
-`rebalance_band_pct` no-trade band suppresses tiny drift trades (full exits
-always execute) — in the offline demo it cuts trade count ~10×. Selection and
-weights obey the same one-bar shift as signals in backtests (decided on bar
-*t*, filled on *t+1*), and each rebalance's (post-overlay) target weights are
-persisted to the SQLite log.
-
-**Walk-forward evaluation:** don't trust one backtest number. `tradebot
-backtest --walk-forward N` splits the history into N contiguous folds after
-the pipeline's warmup and evaluates each independently, printing per-fold
-return/Sharpe/drawdown plus the mean/worst spread — dispersion across folds
-(one great fold carrying the rest) is the tell for regime-dependence or luck.
-
-Try it offline, no credentials:
-
-```bash
-.venv/bin/python -m tradebot.cli demo --portfolio
-```
-
-**Universe (which symbols even qualify):** instead of hand-typing `symbols`,
-an optional `universe:` block discovers the candidate pool from Alpaca at
-startup — today's most-active names, filtered to active + tradable assets,
-screened by minimum price (default $5) and rolling average dollar volume, and
-capped to the most liquid `max_symbols`. The resolved list replaces `symbols`
-for the session, is printed at startup, and is snapshotted to SQLite as a
-point-in-time paper trail. Preview it any time:
-
-```bash
-.venv/bin/python -m tradebot.cli universe --config config.yaml
-```
-
-Two honest caveats: Alpaca's free IEX feed reports only ~2% of consolidated
-volume (set ADV floors conservatively), and a universe screened *today* is
-survivorship-biased for historical backtests — use it live-forward (paper),
-not as evidence about the past.
-
-The full portfolio pipeline is then: **universe** (which symbols qualify) →
-**selector** (which to hold now) → **allocator** (how much of each) →
-**RiskManager** (final quantities under caps).
-
-## Strategies
-
-- **`sma_crossover`** — trend-following. Long when the fast MA is above the slow
-  MA, flat (or short) otherwise. SMA or EMA selectable.
-- **`rsi_reversion`** — mean-reversion. Long when RSI is oversold, exit when it
-  normalises; optional short side.
-- **`donchian_breakout`** — turtle-style trend entry. Long on a break above the
-  prior `entry`-bar high, exit on a break below the prior `exit`-bar low.
-- **`macd_trend`** — long while the MACD line (fast EMA − slow EMA) is above its
-  signal line; optional short side.
-- **`bollinger_reversion`** — buy a close below the lower Bollinger band, exit
-  when price reverts to the middle band; optional short side above the upper.
-- **`momentum`** — time-series momentum. Long when the `lookback`-bar rate of
-  change beats `threshold`, with an optional trend filter (price above a
-  `trend_ma` SMA); optional short side.
-- **`supertrend`** — ATR-based trend follower. Bands sit `multiplier` × ATR
-  around the bar midpoint and only tighten toward price. Long in an up trend,
-  flat (or short) in a down trend.
-- **`buy_and_hold`** — always long; the benchmark every idea has to beat, and
-  the signal to use when a portfolio selector should be the only decision-maker.
-- **`follow_leader`** — meta: each bar, trade whatever sub-strategy earned the
-  most over the trailing `window` (a greedy bandit over a mixed roster).
-- **`ensemble_vote`** — meta: long/short only when at least `min_agree`
-  sub-strategies agree; disagreement means flat.
-
-Add your own by subclassing `Strategy` and implementing
-`target_positions(bars) -> Series` (values in `{-1, 0, +1}`), then register it in
-`tradebot/strategies/registry.py`. Because strategies are pure functions of
-price data, they're trivial to unit-test (see `tests/test_strategies.py`).
-
-## Algorithm arena (competitions)
-
-Load multiple algorithms dynamically and rank them head-to-head over identical
-data — like a coding competition for trading strategies. Drop a decorated `.py`
-file in `algos/` (or point `--algos` at any path) and it's discovered, run, and
-scored automatically.
-
-```bash
-tradebot arena list  --algos ./algos                       # discover contestants
-tradebot arena run   --algos ./algos --score sharpe        # rank them
-tradebot arena run   --algos ./algos --save                # ...and persist the run
-tradebot arena league --algos ./algos --snapshots 10       # standings evolve over a season
-tradebot arena season create --name s1 --symbols SPY --algos ./algos  # durable, resumable real-time league
-tradebot arena season run 1 --replay                       # advance it offline (or live with Alpaca creds)
-tradebot arena season run 1 --simulate                     # dry-run the live daemon offline (market clock + replay)
-tradebot arena history                                     # list past tournaments
-tradebot arena show  [run_id]                              # reprint a saved leaderboard
-tradebot arena journal                                     # attempts per algo family (data-snooping ledger)
-tradebot arena validate algos/my_algo.py                   # smoke-test one file
-```
-
-Saved runs (metadata, per-contestant results, and equity curves as JSON) go to a
-local SQLite DB (`arena.db`), ready for the dashboard to chart later.
-
-A contestant is a class with the `@register` decorator, in **either** interface:
-
-```python
-# event-driven (look-ahead-safe: only sees the current bar + past via ctx)
-from tradebot.arena import register, Algo, Action
-
-@register(name="rsi_dip", author="you")
-class RsiDip(Algo):
-    def on_bar(self, bar, ctx) -> Action:
-        if ctx.rsi(14) < 30: return Action.long()
-        if ctx.rsi(14) > 55: return Action.flat()
-        return Action.hold()
-```
-
-```python
-# vectorized (reuse the Strategy interface)
-from tradebot.arena import register
-from tradebot.strategies import Strategy
-
-@register(name="my_trend")
-class MyTrend(Strategy):
-    def target_positions(self, bars): ...   # Series in {-1,0,+1}
-```
-
-```python
-# cross-sectional: a whole portfolio competes as ONE entry
-from tradebot.arena import PortfolioAlgo, register
-from tradebot.allocation import InverseVolatility
-from tradebot.selection import MomentumSelector
-from tradebot.strategies import BuyAndHold
-
-@register(name="momo_book", tags=("portfolio",))
-class MomoBook(PortfolioAlgo):
-    def __init__(self):
-        super().__init__(strategy=BuyAndHold(),                       # selector-only book
-                         selector=MomentumSelector(lookback=60, skip=5, top_k=2),
-                         allocator=InverseVolatility(window=30))
-```
-
-A `PortfolioAlgo` composes the *same* strategy/selector/allocator/overlay stack
-the backtester and live engine run (a test keeps them in lockstep), so a
-portfolio entry that wins the arena is directly promotable to paper trading.
-The `scenarios/cross_sectional.yaml` scenario gives the pool a persistent
-leader/laggard spread — the environment where selection skill shows up.
-
-Every contestant runs through the **same simulation core** (which a test proves
-matches the `Backtester`), over an identical `Scenario` — same data, capital, and
-cost/risk model — fed bar-by-bar so the future is never visible. Crashes and
-timeouts are isolated (one bad algo can't sink the field), and the leaderboard is
-ranked by a configurable metric (`sharpe` | `total_return` | `cagr` | `calmar` |
-`worst_fold` | `consistency`). The last two are **robustness** metrics: they
-split the realized equity curve into contiguous folds and score the worst fold
-(a crash can't hide behind a recovery) or the mean minus the dispersion
-(regime-dependence penalty). Scenarios are reproducible YAML; synthetic and CSV
-sources work fully offline. See [`algos/README.md`](algos/README.md) for the
-contestant guide.
-
-**The experiment journal.** Trying twenty variants and reporting the best one
-is how backtests lie. Every `arena run` automatically journals one *attempt*
-per contestant (status and score included — failures count) into the arena DB;
-`--no-journal` opts out. Variants declare a shared family
-(`@register(name="donchian_55_20", family="donchian")`) so attempts accumulate
-against the *idea*, not each name. `tradebot arena journal` shows the ledger —
-each attempt records its **balance change** (`10,000 -> 12,261 (+22.6%)`) and
-the **simulated period** (`2023-01-02 -> 2024-12-30`) alongside the ranking
-score — a score ranks, but dollars-over-what-window tells the story — and the
-more attempts a family has burned, the stricter the bar its winner must clear.
-
-**The promotion runbook (arena → paper).** An algorithm *earns* its way to
-real (paper) trading; nothing is promoted off one leaderboard:
-
-```bash
-# 1. write it, smoke-test it
-tradebot arena validate algos/my_algo.py
-
-# 2. the gauntlet: candidate vs buy_and_hold across the regime library.
-#    Exit code is the verdict (0 pass / 1 fail); every run is journaled.
-tradebot arena gate --algos ./algos --candidate my_algo \
-  --scenarios scenarios/bull_trend.yaml scenarios/sideways_chop.yaml \
-              scenarios/crash_recovery.yaml scenarios/vol_spike.yaml \
-              scenarios/cross_sectional.yaml
-
-# 3. out-of-sample folds on the config you'd actually trade
-tradebot backtest --config my.yaml --walk-forward 4
-
-# 4. offline forward-test of that exact config (live loop, simulated fills)
-tradebot run --config my.yaml --replay
-
-# 5. paper: the real-time loop and/or a live paper season
-tradebot run --config my.yaml
-tradebot arena season create --name paper1 --symbols ... --algos ./algos \
-    --isolation process --time-budget 10
-```
-
-For a season you intend to leave running, prefer `--isolation process`. The
-default `thread` runner is faster but its time budget is **soft** — it can flag
-an over-budget contestant but cannot kill it, so a slow algo leaks a busy thread
-every tick until the season crawls. Process isolation makes the budget a hard
-kill (and sandboxes each contestant).
-
-The gate checks five things: the candidate completes every scenario, beats
-the baseline's mean return net of costs, is at least as robust (`worst_fold`)
-in a majority of regimes, never breaches the absolute drawdown bound, and — in
-any scenario where the *baseline itself* breaches that bound — is no worse than
-the baseline. The last two are separate on purpose: an absolute bound answers
-"is this catastrophic", a relative one answers "is this worse than just
-holding", and in a crash regime only the second is measuring the candidate. The
-verdict
-prints alongside the family's journal attempt count — a gate passed on the
-20th try means much less than one passed on the 2nd.
-
-**Regime scenario library.** `scenarios/` ships stress environments built from
-piecewise synthetic regimes (the price path is continuous across segment
-boundaries): `bull_trend`, `sideways_chop`, `crash_recovery` (calm bull → sharp
-crash → volatile recovery), and `vol_spike`. An algorithm that only ever met the
-default scenario has been tested on one market; the library is the gauntlet:
-
-```bash
-tradebot arena run --algos ./algos --scenario scenarios/crash_recovery.yaml --score worst_fold
-tradebot arena run --algos ./algos --scenario scenarios/sideways_chop.yaml  --score consistency
-```
-
-**Real data, pulled once and cached.** A scenario can compete over real Alpaca
-history. You pull it once into a local cache, then every run is offline and
-reproducible (the bars are fed bar-by-bar, "as if real time"):
-
-```bash
-tradebot data pull --symbols SPY QQQ --start 2023-01-01 --end 2024-01-01
-tradebot arena run --algos ./algos --scenario scenarios/alpaca_spy.yaml
-```
-
-The `BarCache` (`tradebot/data/cache.py`) downloads any missing range, merges it
-into the on-disk cache, and serves everything else from disk — so a given
-(symbol, timeframe, range) is fetched at most once. Beside each CSV it writes a
-`*.coverage.json` manifest recording which windows were actually pulled, so a
-request is served offline even when no bar sits on its boundaries — real
-calendars put the first daily bar at the session open and have nothing at all on
-a weekend end-date. Pulling needs the `[live]` extra (`pip install -e ".[live]"`)
-and paper credentials; replaying afterwards needs neither.
-
-> Contestants run in isolated subprocesses with a hard timeout + CPU/memory
-> limits, and are **sandboxed by default** — **no disk writes, no network**
-> (`--no-harden` to opt out). For fully adversarial code, add `--seccomp` to also
-> install a syscall filter denying `execve`/`execveat`/`ptrace` (blocks
-> `subprocess`/`os.system`). OS-level container/gVisor containment is deferred
-> on purpose. See [`docs/research-record.md`](docs/research-record.md).
-
-## Consortium (many algorithms, one book)
-
-Rather than betting on a single algorithm, run a panel of them and blend what
-each *would* hold. A member that loses money is not thrown out — its **voice**
-shrinks, and it can earn it back. Membership is permanent; influence is earned.
-
-```bash
-tradebot-web                       # then open /consortium
-```
-
-The page shows every member's current book side by side, its voice, and the
-blended consensus. It is **advisory** — it places no orders.
-
-Two things make the blend behave sensibly:
-
-- **Agreement is conviction.** The consensus is the voice-weighted average of
-  the member books, so a unanimous panel takes a full position, a split panel
-  takes a small one, and an evenly divided panel stands aside. Disagreement
-  shrinks the trade instead of flipping a coin.
-- **Nobody is silenced permanently.** The `hedge` voice weights members by their
-  own realised P&L, with a floor, so a member that comes good again recovers.
-
-It also competes as an ordinary contestant, with no exemption from the gauntlet:
-
-```bash
-tradebot arena gate --algos ./algos ./algos/consortium     --candidate consortium --scenarios scenarios/xs_*.yaml --time-budget 120
-```
-
-It lives in `algos/consortium/` rather than `algos/` because it costs the *sum
-of its members* to run — keep it out of ordinary tournaments and give it a
-larger time budget.
-
-> **Read any consortium result with this caveat.** The shipped members are
-> mostly trend and mean-reversion variants over one equity-beta pool. Averaging
-> correlated members reduces the noise in the estimate, not the systematic
-> exposure — this panel is closer to one strategy wearing many hats than to a
-> diversified committee. What makes a consortium worth having is member
-> *diversity*, which is a roster problem rather than a combiner problem.
-
-**What it actually scored.** Over the balanced 7-scenario factor library the
-consortium **fails the gate**, and it fails the opposite way to everything
-before it: mean CAGR 3.37% vs `buy_and_hold`'s 9.17%, but a better worst fold in
-5 of 7 scenarios (at every fold count tried) and a shallower drawdown than the
-baseline in both crashes (−33.64% vs −45.93%, −40.56% vs −49.11%). It is the
-textbook diversification trade — smoother, safer, and it gives up return in
-roughly the proportion it takes out risk. That is exactly the signature the
-caveat above predicts, which is the point: it was written before the run.
-
-The `hedge` voice scores 3.68% against equal voice's 3.37% over the same seven
-scenarios — +0.31pp, same verdict, same pattern. Weighting members by their
-trailing P&L mostly reallocates noise, which is why equal weight is the default.
-
-## Today: suggestions
-
-Open `/today` on a phone (it is the first tab) to see what the bot would buy
-or sell right now. Each row shows the symbol, a BUY / SELL / HOLD badge, the
-share quantity and dollar amount, and a one-line reason built from what each
-layer decided, for example:
-
-> sma_crossover signals long; rank 2 of 5, weight 23%, capped by the risk limit; buy.
-
-A row can also say `not selected (rank 4 of 5)` when the selector dropped the
-symbol, or `within band, hold` when the change is smaller than the no-trade
-band. The account strip on top shows equity, cash and where they came from:
-`paper (Alpaca)` with credentials, `paper (from log)` from the local SQLite log
-(positions are the signed sum of logged orders), or `paper (starting cash)`.
-
-Under the account strip a **Holdings** card lists what the account owns:
-quantity, last price, value and weight (value / equity). With credentials it
-reads the paper account's positions; without them it sums the order log for
-the server's mode. Prices are the last cached close (a held symbol with no
-cached bars is named instead of guessed). API: `GET /api/holdings` returns
-`{source, equity, rows: [{symbol, qty, price, value, weight, as_of}], skipped}`.
-
-Tap **Refresh** to compute a new proposal on the server. It reads bars through
-the local cache and fetches missing bars only when Alpaca credentials are in the
-server's environment; without them it uses cached bars and, for a symbol that
-is not cached, answers with the exact `tradebot data pull` command. The
-suggestion is computed by `advisor.propose`, the same function the engine runs
-before it submits, so a suggestion is exactly what a paper pass would trade.
-Nothing on this page places an order.
-
-Below the list sits your **watchlist**: type a symbol and tap **Add**, tap the
-cross on a chip to remove it. While the watchlist has any symbols, the refresh
-and the autopilot scan those instead of the config's `symbols`; when it is
-empty the page says the config symbols are in use. (A running autopilot picks
-up watchlist edits after `tradebot-web` restarts.) API: `GET /api/watchlist`
-returns `{symbols, source}` (`watchlist` or `config`), `POST /api/watchlist`
-takes `{"add": [...]}` or `{"remove": [...]}`.
-
-The page advises on the strategy stack (and, without a watchlist, the symbols)
-in the server's settings:
-
-```bash
-tradebot-web --config config.yaml   # default: ./config.yaml if present, else SPY + QQQ
-```
-
-## Autopilot
-
-Open `/autopilot` (the second tab on a phone) and pick one of three modes:
-
-- **Off**: nothing runs.
-- **Approve first**: every `poll_seconds` inside market hours the bot
-  computes the same proposal the Today page shows and lists its trades under
-  "Waiting for approval". Tap **Approve** or **Reject** per trade, or
-  **Approve all**. Only the approved trades are submitted. A batch is sized at
-  the prices of its pass, so it expires when the next pass replaces it, or when
-  you approve it more than one poll interval later; it is never executed late.
-  Each new batch sends a `pending_trades` notification (set
-  `notify.ntfy_topic` to get it on your phone, see Phone alerts).
-- **Automatic**: every pass submits its trades. Each order is notified.
-
-The status card shows the mode, whether the loop is running, the account,
-the last and next pass, the number of pending trades and the last error.
-If the daily-loss limit (`risk.max_daily_loss_pct`) trips, the autopilot
-switches itself **off**, shows `daily loss halt` and notifies you.
-
-The web autopilot trades the **paper** account when Alpaca credentials are in
-the server's environment. Without them it runs a dry-run (simulated fills)
-over the cached bars and labels the account `dry_run`; if a symbol is not
-cached the page shows the `tradebot data pull` command. It never reaches a
-live account. The loop runs as a thread inside `tradebot-web`; it resumes when
-the server restarts in a non-off mode and stops when the server stops.
-
-Run the same autopilot without the web server:
+Always pass explicit `--start` and `--end` to `data pull`. The cache records
+the window you asked for. `tradebot arena` is under
+[Research tooling](#research-tooling).
+
+A **dry-run** runs the real-time loop but fills orders against a local virtual
+account seeded from `initial_cash`. `--dry-run` overrides any `mode`, even
+`mode: live`, so it never trips the live gate. Orders land in SQLite tagged
+`dry_run`. It does not model real fills (last price plus fixed slippage,
+instant and full), rejects, partials, buying power, PDT or settlement.
+
+**Walk-forward** splits the history into N folds after the warmup and prints
+per-fold return, Sharpe and drawdown. One great fold carrying the rest points
+to luck or one regime.
+
+**Headless autopilot.** These build the engine exactly as `tradebot run` does,
+so `--dry-run`, `--replay` and the live gate all apply:
 
 ```bash
 tradebot run --config config.yaml --autopilot --mode auto       # paper, market hours
 tradebot run --config config.yaml --autopilot --mode approve    # park trades for the web page
+tradebot run --config config.yaml --autopilot --mode off        # morning brief only
 tradebot run --config config.yaml --replay --autopilot --mode auto --iterations 50   # offline
 ```
 
-It builds the engine exactly as `tradebot run` does (`--dry-run`, `--replay`
-and the live latch all apply). In approve mode the parked trades are approved
-from the Autopilot page of a server that uses the same database; with paper
-credentials both submit to the same paper account.
+Parked trades wait on the Autopilot page of a server with the same database.
 
-### Morning brief
+**Go live (only when you are sure).** Set `mode: live`, put **live** keys in
+`.env` and `export TRADEBOT_LIVE_CONFIRM=I_UNDERSTAND`. Without all three the
+bot refuses to place live orders.
 
-Set a lead time and the autopilot sends the day's proposal that many minutes
-before each open, as a short plain list through the notifier (log, webhook):
+**Run it for free** on an always-on machine you own, such as a Raspberry Pi.
+Use `systemd` or `tmux`, or `run --once` from `cron`. Paper trading and IEX
+data stay inside Alpaca's free tier.
+
+### Configuration
+
+Settings live in `config.yaml` (safe to commit, no secrets). Secrets live in
+`.env` only. [`config.example.yaml`](config.example.yaml) annotates every key.
+The blocks people copy most:
 
 ```yaml
+risk:
+  max_position_pct: 0.10      # at most 10% of equity per symbol
+  max_gross_exposure: 1.0     # at most 100% of equity deployed
+  max_daily_loss_pct: 0.03    # flatten + halt after a 3% daily drawdown
+  rebalance_band_pct: 0.02    # skip drift trades under 2% of equity (exits always run)
+portfolio:
+  selector:
+    name: momentum
+    params: {lookback: 252, skip: 21, top_k: 5}   # 12-1 momentum, hold 5
+  allocation: inverse_vol     # equal | inverse_vol | explicit
+  params: {window: 63}
+  overlays:                   # reduce-only, applied in order
+    - name: vol_target
+      params: {target_vol: 0.15, window: 20}
+notify:
+  webhook_url: https://hooks.example.com/tradebot
+  ntfy_topic: tradebot-pick-a-long-random-name
 autopilot:
   brief_minutes_before_open: 30
+market: us_equities           # or bist
 ```
 
-```
-BUY 35 SPY (buy_and_hold signals long; buy.)
-BUY 38 QQQ (buy_and_hold signals long; buy.)
+**Selectors.** `momentum` ranks the pool by trailing `lookback` return,
+skipping the last `skip` bars, and holds the top `top_k`. Hysteresis keeps a
+holding until it slips below `exit_rank` (default 1.5×K). `reverse: true`
+holds the biggest recent losers. `low_vol` holds the `top_k` calmest names.
+With `strategy: buy_and_hold` the selector is the only signal. With any other
+strategy a symbol must be selected **and** signal long.
+
+**Allocators.** `equal` (1/N), `inverse_vol` (1/volatility over `window`
+bars) or `explicit` (fixed weights, unlisted symbols get 0). **Overlays.**
+`sector_cap` caps one sector's total weight. `vol_target` scales the book down
+when realized volatility runs above target and never levers up. Keep it last.
+
+**Universe.** A `universe:` block replaces `symbols` at startup with today's
+most-active, tradable names screened by price and average dollar volume.
+Preview it with `tradebot universe`. Free IEX data reports about 2% of
+consolidated volume, so set volume floors low. A universe screened today is
+survivorship-biased for backtests. Use it live-forward.
+
+**Market calendars.** `us_equities` (default) is 09:30-16:00 New York with
+NYSE holidays. `bist` is Borsa Istanbul, 10:00-18:00 Istanbul time with
+Turkish holidays through 2027. Alpaca is the only broker, so `bist` changes
+when the loop wakes. Orders still go to the US paper account.
+
+### Strategies
+
+| Name | Idea |
+|---|---|
+| `sma_crossover` | Long when the fast MA is above the slow MA (SMA or EMA) |
+| `rsi_reversion` | Long when RSI is oversold, exit when it normalises |
+| `donchian_breakout` | Long on a break above the prior high, exit below the prior low |
+| `macd_trend` | Long while MACD is above its signal line |
+| `bollinger_reversion` | Buy below the lower band, exit at the middle band |
+| `momentum` | Long when the `lookback` rate of change beats `threshold`, optional trend filter |
+| `supertrend` | ATR bands that only tighten toward price, long in an up trend |
+| `buy_and_hold` | Always long. The benchmark, and the signal for a selector-only book |
+| `follow_leader` | Meta: trade the sub-strategy with the best trailing P&L |
+| `ensemble_vote` | Meta: long or short only when `min_agree` sub-strategies agree |
+
+Most take `allow_short`. To add one, subclass `Strategy`, implement
+`target_positions(bars)` returning values in `{-1, 0, +1}`, and register it in
+`tradebot/strategies/registry.py`. The `add-strategy` skill walks through it.
+
+### Bracket exits
+
+Two optional risk keys attach exit legs to every order that **adds** exposure.
+Reductions and exits never carry them:
+
+```yaml
+risk:
+  stop_loss_pct: 0.05        # exit 5% below the entry price
+  take_profit_pct: 0.15      # exit 15% above it (either one alone works)
 ```
 
-The brief is a preview: it asks the advisor for the same lines the Today page
-shows and stores, parks or submits nothing. It fires once per session, in any
-mode, as long as the loop runs. To get only the brief, with no trading:
+Live, these become an Alpaca bracket order (`oto` with one leg), so the broker
+holds the legs while the bot is offline. A dry-run simulates them from each
+bar's high and low, pessimistically. On a bar that touches both levels the
+stop wins. A gap through the stop fills at the open. A target never fills
+better than its limit.
+
+**Backtests do not model brackets.** Never quote a backtest as evidence about
+a stop. **A bracket protects between passes, not against your own signal.**
+After a stop fires, the next pass buys back in on a long signal.
+
+### Notifications
+
+Order fills, bracket exits, daily-loss halts, approval batches and the morning
+brief always go to the log. Add `notify.webhook_url` to get them as JSON, or
+an ntfy topic to get them on your phone (see
+[Phone alerts with ntfy](#7-phone-alerts-with-ntfy)). Both use stdlib
+`urllib`. A failed delivery is logged and swallowed. An unreachable endpoint
+slows a pass by at most the 5s timeout and never halts trading.
+
+## Research tooling
+
+The arena ranks algorithms head-to-head over identical data. It is how an idea
+earns its way to paper trading. Verdicts, numbers and caveats live in
+[`docs/research-record.md`](docs/research-record.md). No contestant passes the
+promotion gate yet.
+
+### Arena
+
+Drop a decorated `.py` file in `algos/` (or point `--algos` anywhere) and it
+is discovered, run and scored:
 
 ```bash
-tradebot run --config config.yaml --autopilot --mode off
+tradebot arena list     --algos ./algos                  # discover contestants
+tradebot arena validate algos/my_algo.py                 # smoke-test one file
+tradebot arena run      --algos ./algos --score sharpe   # rank them (--save persists the run)
+tradebot arena league   --algos ./algos --snapshots 10   # standings over a replayed season
+tradebot arena history                                   # past saved tournaments
+tradebot arena show     [run_id]                         # reprint a saved leaderboard
 ```
 
-The event is `{"type": "brief", "opens_at": ..., "text": ..., "lines": [...]}`.
+A contestant is an event-driven `Algo`, a vectorized `Strategy` subclass or a
+whole-book `PortfolioAlgo`:
 
-### Market hours
+```python
+from tradebot.arena import register, Algo, Action, PortfolioAlgo
+from tradebot.allocation import InverseVolatility
+from tradebot.selection import MomentumSelector
+from tradebot.strategies import BuyAndHold
 
-"Market hours" come from the config's `market:` calendar: `us_equities`
-(default, 09:30-16:00 New York, NYSE holidays) or `bist` (Borsa Istanbul,
-10:00-18:00 Istanbul, Turkish holidays through 2027). Alpaca is the only
-broker, so `bist` only moves when the loop wakes; orders still go to the US
-paper account.
+@register(name="rsi_dip", author="you")
+class RsiDip(Algo):                      # sees only the current bar and the past
+    def on_bar(self, bar, ctx) -> Action:
+        if ctx.rsi(14) < 30: return Action.long()
+        if ctx.rsi(14) > 55: return Action.flat()
+        return Action.hold()
 
-## Dashboard (web UI)
-
-A FastAPI dashboard visualises everything the bot records: the equity curve,
-account stats, recent orders and positions (from the SQLite log, with a live
-Alpaca overlay when credentials are present), the **target allocations** of the
-latest rebalance (weight bars + the resolved candidate universe, refreshed
-live), plus the **arena leaderboards** with each contestant's equity curve.
-
-The **Run** page launches a backtest or dry-run forward-test from the browser
-(a background job → polled → summary + equity chart) on either of two data
-sources: **synthetic** (a seeded, invented path on an artificial calendar —
-long runs stamp dates years ahead; they are labels, not forecasts) or **cached
-real bars** (whatever `tradebot data pull` already put in `data/cache`, picked
-by symbol and date range). Every result wears a **provenance badge** saying
-which one produced it, so a synthetic curve can never pass for a real one. The
-Run page **never fetches from the network** (only the Today refresh may, and only
-with server-side credentials) — ask for an uncached range
-and it answers with the exact pull command to run instead. The strategy
-dropdown lists the whole registry, with its parameters introspected into form
-fields. Empty pages (dashboard, arena, consortium on a fresh machine) say which
-command fills them rather than presenting blank tables.
-
-The **What-if** page (a bottom tab on phones) answers "what would this plan
-have made?". Pick a preset or type symbols, a start and end date, starting
-cash and a monthly contribution, then optionally a strategy, a selector (hold
-the best N) and an allocator. The server replays the plan with the same
-`Backtester` as everything else, adding the monthly cash on the first trading
-day of each month, and runs equal-weight buy and hold over the same symbols
-with the same cash as the benchmark. The result card leads with the money
-gain (final value minus everything put in), then the comparison with buy and
-hold; growth and worst drop leave contributions out. Presets come from what
-is cached (familiar index funds first, only symbols that share a window;
-synthetic, and labelled so, when the cache is empty), the date
-pickers are bounded by cache coverage, and an uncached range shows the exact
-`tradebot data pull` command. API: `POST /api/whatif` (polled through
-`/api/jobs/{id}`) and `GET /api/whatif/presets`.
-
-The **Settings** page (`/settings`, under More on phones) edits `config.yaml`
-from the browser: symbols and bar size, the strategy, selector and allocator
-(dropdowns from the registries, their parameters as typed fields), risk limits
-(typed as percentages, stored as fractions), autopilot cadence and morning
-brief, alert destinations and the exchange calendar. Save validates by
-building every component the document names (a typo comes back as one
-readable sentence), writes the file atomically and reloads the server's
-settings; a running autopilot is stopped so it never trades on old settings
-(start it again from Autopilot). The page never shows or accepts a broker key
-(it only says whether `.env` has them), never changes `mode`, and shows alert
-destinations masked: leave a masked value as it is to keep it. A saved file
-has no comments; `config.example.yaml` documents every key, and overlays and a
-`universe:` block are kept but edited in the file. API: `GET/POST
-/api/settings`, `GET /api/stack`, and `GET /api/setup`, which feeds the
-**Finish setting up** card on Today (config saved, keys present, bars cached,
-each with its fix) until all three are ready.
-
-The **Chart** page (under More on phones) shows a
-candlestick of the bars the bot acted on, with buy/sell order pins overlaid. A
-live account header (equity/cash/buying-power/market status) and the equity curve
-update live over a single **SSE** stream while a session runs, with a one-click
-pause.
-The **Seasons** page shows each live-league season's standings and a
-return-over-the-season chart.
-
-```bash
-make install-web      # python web extra + npm install
-make web              # build the frontend, then serve at http://127.0.0.1:8000
+@register(name="momo_book", tags=("portfolio",))
+class MomoBook(PortfolioAlgo):           # a whole portfolio competes as ONE entry
+    def __init__(self):
+        super().__init__(strategy=BuyAndHold(),
+                         selector=MomentumSelector(lookback=60, skip=5, top_k=2),
+                         allocator=InverseVolatility(window=30))
 ```
 
-Stack: server-side Jinja templates, **TypeScript** bundled with esbuild (no inline
-JS — everything is an imported, type-checked module), **Alpine.js** for reactivity,
-**Apache ECharts** for charts, **Tailwind** for styling. The layering is strict —
-`routes → services → repository`, with HTML *partials* reused for both first paint
-and Alpine's polling, and JSON endpoints feeding the charts. Nothing in the
-trading core imports FastAPI; the web layer is purely additive.
+Every contestant runs the `Backtester`'s simulation core, fed bar by bar so the
+future is invisible. A winning `PortfolioAlgo` is directly promotable. Scores
+are `sharpe`, `total_return`, `cagr`, `calmar`, `worst_fold` and `consistency`.
+The last two score the worst fold or the mean minus the dispersion. The
+contestant guide is [`algos/README.md`](algos/README.md).
 
-Frontend dev loop:
+Contestants run in forked processes with a hard timeout and optional
+`--cpu-seconds` and `--memory-mb` limits. They are sandboxed by default (no
+disk writes, no network). `--no-harden` opts out. `--seccomp` also denies
+`execve` and `ptrace`. `--require-sandbox` fails a contestant, instead of
+warning, when the kernel refuses a mechanism.
+
+### Scenarios
+
+Scenarios are reproducible YAML files in [`scenarios/`](scenarios/). The
+regime library (`bull_trend`, `sideways_chop`, `crash_recovery`, `vol_spike`)
+is single-symbol. The factor library (seven `xs_*` files) shares one 8-name
+pool and one market factor, so it exercises cross-sectional selection, in
+rewarding and punishing pairs. The real pack (`real_xs_2021` to
+`real_xs_2023`, sector SPDRs plus TLT, GLD and SHY) ends with the sealed
+holdout `real_xs_2024_2025h1`. Run the holdout once, last.
 
 ```bash
-cd frontend
-npm run typecheck     # strict tsc
-npm run watch:js      # rebuild bundle on change (also: watch:css)
+tradebot arena run --algos ./algos --scenario scenarios/crash_recovery.yaml --score worst_fold
+tradebot data pull --symbols SPY QQQ --start 2023-01-01 --end 2024-01-01
+tradebot arena run --algos ./algos --scenario scenarios/alpaca_spy.yaml
 ```
 
-> Built assets (`tradebot/web/static/`) are gitignored and reproduced by
-> `npm run build`. The dashboard is read-only — it never places orders.
+Real bars are pulled once into `data/cache` (needs the `[live]` extra and
+keys). Every later run is offline.
 
-### Reaching it from your phone
+### Gate and journal
 
-By default the dashboard listens on loopback only and needs no login. To open
-it from a phone on the same network:
+The gate judges a candidate against `buy_and_hold` over a gauntlet. The exit
+code is the verdict (0 pass, 1 fail):
 
 ```bash
-export TRADEBOT_WEB_TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(24))")
-tradebot-web --host 0.0.0.0 --allow-host 192.168.1.20   # your LAN IP or hostname
+tradebot arena gate --algos ./algos --candidate my_algo \
+  --scenarios scenarios/xs_*.yaml --seeds 5
 ```
 
-Then open `http://192.168.1.20:8000/login` **once** on the phone and paste the
-token: it sets a long-lived, HttpOnly session cookie (holding an HMAC of the
-token, not the token) and redirects to the dashboard. Add it to the home screen
-from there. On a fresh install open **Settings** (`/settings`) first: pick your
-symbols and a strategy and Save, then go to Today and tap Refresh. The Today
-page's setup card says what is still missing (API keys in the server's `.env`,
-price history) and how to fix it. The token is posted from a form, never put in a URL, so it stays out
-of access logs and browser history. Scripts can send
-`Authorization: Bearer <token>` instead.
+It checks five things. The candidate completes every scenario and beats the
+baseline's mean CAGR net of costs. Its `worst_fold` matches or beats the
+baseline in most scenarios. Its drawdown stays inside `--max-drawdown` (35%),
+and where the baseline breaches that bound, the candidate is no worse. `--seeds N` re-draws the gauntlet and flags
+`UNSTABLE` when the verdict flips.
 
-Two guards are always on, token or not: requests for an unlisted `Host` are
-refused (`--allow-host` / `TRADEBOT_ALLOWED_HOSTS` extend the loopback default;
-`'*'` disables the check, with a warning), and every state-changing request must
-carry `X-Requested-With: tradebot`, which the bundled frontend sends and a
-cross-site form cannot (the login form is the single exemption). Prefer the env
-var to `--token`: command-line arguments are visible to other users in `ps`. The
-connection is plain HTTP, so keep it on a network you trust (or put HTTPS in
-front; the cookie is then marked `Secure`).
+Every `arena run` and `arena gate` journals one attempt per contestant into
+`arena.db` (`--no-journal` opts out). Variants share a family
+(`@register(name="donchian_55_20", family="donchian")`), so attempts count
+against the idea. `tradebot arena journal` prints the ledger with balance
+change and simulated period, and `--export PATH` writes it to CSV. A gate
+passed on the 20th try means much less than one passed on the 2nd.
 
-## Running a long paper season
+**Promotion runbook:** validate, gate, `backtest --walk-forward` on the config
+you plan to trade, `run --replay`, then paper with `run` or a season.
 
-A season ranks the whole field over wall-clock time, persisting only the bars —
-so it survives restarts, and resuming is just reloading and stepping again.
+### Consortium
 
-**Seed it first.** A daily season started from zero measures nothing for
-months: `MomentumSelector(lookback=60)` is flat for its first 61 bars, so a
-fresh season spends a quarter with nobody deployed. Backfilling real history
-fixes that, and it is sound — bars are the source of truth and every contestant
-is causal, so replaying real history is exactly what running live over that
-period would have produced.
+A consortium runs a panel of algorithms and blends the books of its members. A
+losing member keeps its seat but its **voice** shrinks, and it can earn it
+back. A split panel takes a small position. The **Consortium** page shows each
+member's book, its voice and the blended consensus. It places no orders.
+
+It lives in `algos/consortium/` because it costs the sum of its members:
 
 ```bash
-# 1. pull the history once (needs the [live] extra + free data keys)
+tradebot arena gate --algos ./algos ./algos/consortium --candidate consortium \
+  --scenarios scenarios/xs_*.yaml --time-budget 120
+```
+
+The shipped members are mostly trend and mean-reversion variants over one
+equity-beta pool. A panel over them is close to one strategy wearing many
+hats. Member diversity is what makes a consortium worth having.
+
+### Seasons
+
+A season ranks the field over wall-clock time. It stores only bars, so it
+survives restarts. Seed it first, because a daily season from zero spends a
+quarter warming up:
+
+```bash
 tradebot data pull --symbols XLK XLE XLV XLF XLY XLP XLI XLB XLU TLT GLD SHY \
     --timeframe 1day --start 2025-01-02 --end 2026-08-01
-
-# 2. create the season — process isolation for anything long-running
 tradebot arena season create --name paper1 \
     --symbols XLK XLE XLV XLF XLY XLP XLI XLB XLU TLT GLD SHY \
-    --algos ./algos --score sharpe \
-    --isolation process --time-budget 30 --db season.db
-
-# 3. backfill, so the field starts warmed up
+    --algos ./algos --score sharpe --isolation process --time-budget 30 --db season.db
 tradebot arena season seed 1 --start 2025-01-02 --end 2026-08-01 --db season.db
-
-# 4. run the daemon (market-hours gated; --simulate dry-runs it offline)
-tradebot arena season run 1 --db season.db
+tradebot arena season run 1 --db season.db               # market-hours daemon
+tradebot arena season run 1 --simulate --db season.db    # dry-run the daemon offline
+tradebot arena season standings 1 --db season.db
 ```
 
-Standings built on seeded bars are **backfilled, not live-earned** — the window
-was chosen after the fact and everything in it was knowable when the field was
-written. `season seed` records the boundary and `season standings` prints it, so
-the two claims stay separable. Read the live portion as the result.
+Seeded standings are backfilled, not live-earned. `season standings` and the
+**Seasons** page show the seed boundary. Read the live portion as the result.
 
-Watch it at `/seasons` in the dashboard.
-
-### Keeping it alive
-
-The daemon is a normal long-running process: supervise it however you already
-supervise things. It sleeps through closed markets and holidays on its own, and
-because bars are the only state, a hard kill loses at most the tick in flight.
+Use `--isolation process` for anything long-running. The default `thread`
+runner cannot kill an over-budget contestant, so a slow one leaks a thread
+every tick. A restart heals up to 30 missed bars. Re-run `season seed` for a
+longer gap. A systemd unit:
 
 ```ini
-# /etc/systemd/system/tradebot-season.service
 [Service]
 ExecStart=/path/to/.venv/bin/tradebot arena season run 1 --db /var/lib/tradebot/season.db
 WorkingDirectory=/path/to/tradebot
@@ -885,50 +566,34 @@ Restart=always
 RestartSec=60
 ```
 
-Two things worth knowing before you leave it running:
-
-- **Use `--isolation process`.** The default `thread` runner is faster but its
-  time budget is soft — it can flag an over-budget contestant but not kill it,
-  so a slow algo leaks a busy thread every tick until the season crawls. Process
-  isolation makes the budget a hard kill.
-- **Recompute is O(history) per tick.** That is fine at daily cadence for years,
-  but a minute-bar season over a large field will not keep up.
-- **Downtime heals itself, up to a point.** The feed delivers every bar that
-  settled since it last ran, so a reboot or a laptop asleep over a weekend costs
-  nothing — bars are keyed by timestamp, so re-delivery is idempotent. Past ~30
-  bars of downtime, re-run `season seed` for the gap.
-
-## Running it for free, continuously
-
-For a $0 deployment, run the loop on any always-on machine you already have
-(a Raspberry Pi, a home server) under `cron`/`systemd`/`tmux`, or schedule
-`run --once` with `cron`. Paper trading and IEX data stay within Alpaca's free
-tier.
-
 ## Testing
 
 ```bash
-make test     # fully offline, no credentials needed
+make test                          # pytest, fully offline, no credentials
+cd frontend && npm run typecheck   # strict tsc (needs make install-web)
+cd frontend && npm run watch:js    # rebuild the bundle on change (also watch:css)
 ```
 
-## Research record
-
-The arena's research results, the gate verdicts and the standing decisions are
-in [`docs/research-record.md`](docs/research-record.md). No contestant passes
-the promotion gate yet.
+Built assets in `tradebot/web/static/` are gitignored. `npm run build`
+reproduces them. The web stack is Jinja templates, TypeScript bundled by
+esbuild, Alpine.js, Apache ECharts and Tailwind, with no inline JavaScript.
 
 ## Design decisions
 
-The reasoning behind the companion flows (Today, Autopilot, What-if), the
-market calendars and the things deliberately left out is in
-[`docs/adr/0002-portfolio-companion.md`](docs/adr/0002-portfolio-companion.md).
+- [`docs/adr/0001-server-side-refresh.md`](docs/adr/0001-server-side-refresh.md):
+  why the server computes suggestions and can fetch bars.
+- [`docs/adr/0002-portfolio-companion.md`](docs/adr/0002-portfolio-companion.md):
+  the companion flows (Today, Autopilot, What-if), Settings, market calendars
+  and what was left out on purpose.
+- [`docs/research-record.md`](docs/research-record.md): research results, gate
+  verdicts and standing decisions.
 
 ## Disclaimer
 
-This software is for educational purposes and provided "as is", without warranty
-of any kind. Trading involves substantial risk of loss. You are solely
-responsible for any orders it places and any money you lose. Test in paper mode
-first, and never deploy capital you can't afford to lose.
+This software is for educational purposes and provided "as is", without
+warranty of any kind. Trading involves substantial risk of loss. You are
+solely responsible for any orders it places and any money you lose. Test in
+paper mode first, and never deploy capital you cannot afford to lose.
 
 ## License
 
