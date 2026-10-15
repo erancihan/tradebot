@@ -20,6 +20,7 @@ from ..services import (
     holdings_service,
     metrics_service,
     settings_service,
+    setup_service,
     whatif_presets,
 )
 from ..services.jobs import stack_catalog
@@ -53,6 +54,8 @@ def today_page(request: Request, repo: TradingRepository = Depends(get_trading_r
     context = {"today": advisor_service.view(repo, state.settings, state.settings_path),
                "holdings": holdings_service.view(state.settings, trading_db=state.trading_db,
                                                  cache_dir=state.cache_dir),
+               "setup": setup_service.setup_status(state.settings, state.settings_path,
+                                                   state.cache_dir, repo),
                "active": "today"}
     return templates.TemplateResponse(request, "pages/today.html", context)
 

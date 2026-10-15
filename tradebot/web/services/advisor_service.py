@@ -29,7 +29,8 @@ ACCOUNT_LABELS = {
     "initial_cash": "starting cash",
 }
 
-CONFIG_HINT = "cp config.example.yaml config.yaml"
+#: Where a fresh install chooses its symbols and strategy (no terminal needed).
+CONFIG_HINT = "/settings"
 
 
 def view(repo: TradingRepository, settings, settings_path: str | None) -> dict:

@@ -1,12 +1,14 @@
-"""JSON for the Settings page: read and save the editable config document."""
+"""JSON for the Settings page (read and save config.yaml) and the setup card."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Body, HTTPException, Request, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
 
-from ...services import settings_service
+from ...dependencies import get_trading_repo
+from ...repository import TradingRepository
+from ...services import settings_service, setup_service
 from ...services.settings_validate import InvalidSettings
 
 router = APIRouter()
@@ -32,3 +34,11 @@ def save(request: Request, response: Response, doc: Any = Body(...)) -> dict:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except InvalidSettings as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/setup")
+def setup(request: Request, repo: TradingRepository = Depends(get_trading_repo)) -> dict:
+    """What a fresh install still lacks: config, credentials, cached bars."""
+    state = request.app.state
+    return setup_service.setup_status(state.settings, state.settings_path,
+                                      state.cache_dir, repo)

@@ -72,7 +72,7 @@ def test_settings_page_renders_the_sections_and_never_a_key(tmp_path, monkeypatc
 
 
 def test_settings_is_in_the_more_sheet_and_the_top_nav(tmp_path):
-    body = _client(tmp_path, _config(tmp_path)).get("/today").text
+    body = _client(tmp_path, _config(tmp_path)).get("/autopilot").text
     assert body.count('href="/settings"') == 2
 
 
@@ -277,3 +277,47 @@ def test_a_kept_secret_must_still_point_where_it_did(tmp_path):
     resp = _post(client, doc)
     assert resp.status_code == 400 and "full webhook URL again" in resp.json()["detail"]
     assert open(path).read() == before
+
+
+# --- setup card -----------------------------------------------------------------
+
+def _seed_bars(tmp_path, symbols):
+    from tradebot.data.cache import BarCache
+    from tradebot.data.synthetic import synthetic_ohlcv
+
+    cache = BarCache(tmp_path / "cache")
+    for sym in symbols:
+        cache.store(sym, "1day", synthetic_ohlcv(periods=30, seed=1))
+
+
+def test_setup_status_reports_missing_config_credentials_and_bars(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    data = _client(tmp_path).get("/api/setup").json()
+    assert data["ready"] is False
+    assert data["config"]["ok"] is False and "Settings" in data["config"]["hint"]
+    assert data["credentials"]["ok"] is False and ".env" in data["credentials"]["hint"]
+    assert data["bars"]["ok"] is False and data["bars"]["missing"] == ["SPY", "QQQ"]
+    hint = data["bars"]["hint"]
+    assert "tradebot data pull --symbols SPY QQQ --timeframe 1day --start " in hint
+    assert "--end " in hint
+
+
+def test_setup_bars_hint_says_refresh_when_the_server_has_keys(tmp_path, monkeypatch):
+    monkeypatch.setattr("tradebot.config.AlpacaCredentials.from_env", lambda: object())
+    _seed_bars(tmp_path, ["XLK"])
+    data = _client(tmp_path, _config(tmp_path)).get("/api/setup").json()
+    assert data["config"]["ok"] and data["credentials"]["ok"]
+    assert data["bars"]["missing"] == ["XLE"]
+    assert data["bars"]["hint"].startswith("Tap Refresh")
+
+
+def test_today_shows_the_setup_card_until_everything_is_ready(tmp_path, monkeypatch):
+    path = _config(tmp_path)
+    body = _client(tmp_path, path).get("/today").text
+    assert "data-setup-card" in body
+    assert 'data-setup-item="config" data-ok="true"' in body
+    assert 'data-setup-item="credentials" data-ok="false"' in body
+
+    monkeypatch.setattr("tradebot.config.AlpacaCredentials.from_env", lambda: object())
+    _seed_bars(tmp_path, ["XLK", "XLE"])
+    assert "data-setup-card" not in _client(tmp_path, path).get("/today").text

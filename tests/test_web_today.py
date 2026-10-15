@@ -54,13 +54,14 @@ def test_today_page_renders_empty_state_with_refresh_hint(tmp_path, monkeypatch)
     assert "data-empty" in body
     assert "Tap Refresh" in body
     assert "SPY, QQQ" in body                    # the default symbols
-    assert "cp config.example.yaml config.yaml" in body
+    assert 'href="/settings"' in body and "Open Settings" in body
+    assert "cp config.example.yaml" not in body
 
 
 def test_today_page_with_a_config_drops_the_config_hint(tmp_path):
     body = _client(tmp_path, _config(tmp_path, ("XLK",))).get("/today").text
     assert "Tap Refresh" in body and "XLK" in body
-    assert "config.example.yaml" not in body
+    assert "Open Settings" not in body
 
 
 def test_today_page_shows_the_stored_proposal(tmp_path):
