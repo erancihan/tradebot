@@ -64,6 +64,8 @@ def _check_shape(doc: dict[str, Any]) -> None:
         raise InvalidSettings(f"symbols: {exc}") from exc
     if doc.get("timeframe", "1day") not in _TIMEFRAME_ALIASES:
         raise InvalidSettings(f"timeframe must be one of {', '.join(_TIMEFRAME_ALIASES)}")
+    if not isinstance(doc.get("manage_unlisted", True), bool):
+        raise InvalidSettings("manage_unlisted must be true or false")
     for block in ("strategy", "portfolio", "risk", "notify", "autopilot"):
         if doc.get(block) is not None and not isinstance(doc[block], dict):
             raise InvalidSettings(f"{block} must be an object")

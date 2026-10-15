@@ -321,6 +321,7 @@ export interface SettingsDoc {
   initial_cash: number;
   market: string;
   autopilot: { brief_minutes_before_open: number | null };
+  manage_unlisted?: boolean;
   strategy: NamedParams;
   portfolio: {
     selector: NamedParams | null;

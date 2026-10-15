@@ -356,7 +356,7 @@ def test_settings_page_has_a_field_for_every_s5_setting(tmp_path):
                  "public_url",
                  "webhook_url", "market", "timeframe", "initial_cash", "max_position_pct",
                  "max_gross_exposure", "max_daily_loss_pct", "rebalance_band_pct",
-                 "stop_loss_pct", "take_profit_pct", "allow_fractional"):
+                 "stop_loss_pct", "take_profit_pct", "allow_fractional", "manage_unlisted"):
         assert f'name="{name}"' in body, name
 
 
@@ -383,6 +383,22 @@ def test_save_autopilot_alerts_market_and_risk(tmp_path):
     raw = yaml.safe_load(open(path))
     assert "autopilot" not in raw and "stop_loss_pct" not in raw["risk"]
     assert raw["notify"]["ntfy_topic"] == "my-topic-123"         # masked in, kept
+
+
+def test_sell_names_that_leave_the_list_saves_and_refuses_a_non_boolean(tmp_path):
+    path = _config(tmp_path)
+    client = _client(tmp_path, path)
+    body = client.get("/settings").text
+    assert "Sell names that leave the list" in body
+    doc = _doc(client)
+    assert doc["manage_unlisted"] is True
+    doc["manage_unlisted"] = False
+    assert _post(client, doc).status_code == 200
+    assert yaml.safe_load(open(path))["manage_unlisted"] is False
+    assert _doc(client)["manage_unlisted"] is False
+    doc["manage_unlisted"] = "no"
+    resp = _post(client, doc)
+    assert resp.status_code == 400 and "manage_unlisted" in resp.text
 
 
 # --- the public URL (the push's Approve/Skip buttons) ------------------------------

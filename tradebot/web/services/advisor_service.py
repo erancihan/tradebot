@@ -106,9 +106,11 @@ def build_inputs(settings, *, trading_db: str, cache_dir: str, lookback: int,
         "computed_at": now.isoformat(),
         "note": "raw/unadjusted daily bars; suggestions only, nothing was ordered",
     }
-    # Held names off the list: the advisor closes them (the list is the mandate).
-    unlisted = unlisted_service.unlisted(positions, settings.symbols, cache_dir=cache_dir,
-                                         timeframe=settings.timeframe)
+    # Held names off the list: the advisor closes them (the list is the mandate),
+    # unless the owner switched that off (the web never runs live).
+    unlisted = unlisted_service.unlisted(
+        positions, settings.symbols, cache_dir=cache_dir, timeframe=settings.timeframe,
+        fetcher=fetcher, now=now) if settings.manage_unlisted else None
     return {"frames": frames, "selector_frames": history, "equity": equity,
             "cash": cash, "positions": positions, "provenance": provenance,
             "unlisted": unlisted}
