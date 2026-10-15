@@ -303,3 +303,12 @@ def test_orders_record_why_they_were_sent(tmp_path):
             "SELECT side, qty, intent FROM orders ORDER BY id")]
     assert got == [("buy", 5.0, "entry"), ("sell", 2.0, "exit"), ("sell", 6.0, "entry"),
                    ("sell", 4.0, "exit")]
+
+
+def test_manages_unlisted_for_is_the_one_rule_without_an_engine():
+    from tradebot.engine.unlisted import manages_unlisted_for
+
+    assert manages_unlisted_for("paper", Settings(mode="paper")) is True
+    assert manages_unlisted_for("paper", Settings(mode="paper", manage_unlisted=False)) is False
+    assert manages_unlisted_for("live", Settings(mode="paper")) is False
+    assert manages_unlisted_for("paper", Settings(mode="live")) is False

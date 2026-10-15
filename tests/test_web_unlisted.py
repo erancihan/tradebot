@@ -123,3 +123,21 @@ def test_today_ignores_a_crypto_position_as_the_engine_pass_does(tmp_path, monke
     client = _client(tmp_path, _config(tmp_path))
     assert _refresh(client)["state"] == "done"
     assert "BTCUSD" not in _lines(client)
+
+
+def _live_config(tmp_path) -> str:
+    path = tmp_path / "config.yaml"
+    path.write_text("mode: live\nsymbols: [SPY, QQQ]\n"
+                    "strategy:\n  name: sma_crossover\n  params: {fast: 5, slow: 20}\n")
+    return str(path)
+
+
+def test_today_on_a_live_config_never_sells_an_off_list_name(tmp_path, offline):
+    """One rule with the engine (``manages_unlisted_for``): live never sells
+    what it did not buy, whatever ``manage_unlisted`` says (on by default)."""
+    _seed_cache(tmp_path, ("SPY", "QQQ", "IWM"))
+    with Storage(tmp_path / "t.db") as st:
+        st.record_order(Order(symbol="IWM", qty=5, side=Side.BUY), None, "live")
+    client = _client(tmp_path, _live_config(tmp_path))
+    assert _refresh(client)["state"] == "done"
+    assert list(_lines(client)) == ["SPY", "QQQ"]

@@ -20,15 +20,21 @@ log = logging.getLogger("tradebot.engine")
 PRICE_LOOKBACK = 10
 
 
-def manages_unlisted(engine) -> bool:
-    """Whether this engine closes held names off the list.
+def manages_unlisted_for(mode: str, settings) -> bool:
+    """Whether an account in ``mode`` under ``settings`` closes held names off
+    the list: the one rule for the engine and the Today page.
 
     Part of the live gate: live trades only the list and never sells what it
     did not buy, whatever ``manage_unlisted`` says. Elsewhere the flag decides.
     """
-    if engine.mode == "live" or engine.settings.is_live:
+    if mode == "live" or settings.is_live:
         return False
-    return bool(engine.settings.manage_unlisted)
+    return bool(settings.manage_unlisted)
+
+
+def manages_unlisted(engine) -> bool:
+    """Whether this engine closes held names off the list (``manages_unlisted_for``)."""
+    return manages_unlisted_for(engine.mode, engine.settings)
 
 
 def read_unlisted(engine) -> dict[str, tuple[float, float | None]] | None:
