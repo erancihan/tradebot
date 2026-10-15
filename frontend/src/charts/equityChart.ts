@@ -101,14 +101,45 @@ export function comparisonOption(plan: EquityCurve, benchmark: EquityCurve | nul
   return option;
 }
 
-/** ECharts option for a single equity curve with buy/sell markers (dashboard). */
+/** A session date's close as an instant: 20:00 UTC, near the US close. */
+function closeTime(day: string): number {
+  return Date.parse(`${day.slice(0, 10)}T20:00:00Z`);
+}
+
+/**
+ * The daily benchmark on the snapshots' category axis: each close sits at
+ * its nearest-in-time snapshot (a later close wins a shared slot), every
+ * other slot is null and the line joins across them. The axis stays the
+ * snapshots', so the labels and order pins are unchanged.
+ */
+export function benchmarkOnSnapshots(series: EquitySeries): (number | null)[] {
+  const times = series.points.map((p) => Date.parse(p.ts));
+  const data: (number | null)[] = times.map(() => null);
+  for (const point of series.benchmark ?? []) {
+    const t = closeTime(point.ts);
+    let best = -1;
+    let bestDiff = Infinity;
+    times.forEach((time, i) => {
+      const diff = Math.abs(time - t);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        best = i;
+      }
+    });
+    if (best >= 0) data[best] = point.value;
+  }
+  return data;
+}
+
+/** ECharts option for the equity curve with buy/sell markers and, when the
+ * API sent one, the dashed "Hold the list" benchmark (dashboard, History). */
 export function equityOption(series: EquitySeries, orders: OrderRow[] = []): EChartsOption {
   const option = baseLineOption();
   const labels = axisLabels(series.points.map((p) => p.ts));
   option.xAxis = { ...option.xAxis, data: labels };
   option.series = [
     {
-      name: "equity",
+      name: "Equity",
       type: "line",
       smooth: true,
       showSymbol: false,
@@ -119,6 +150,19 @@ export function equityOption(series: EquitySeries, orders: OrderRow[] = []): ECh
       markPoint: orderMarkPoints(series, orders, labels),
     },
   ];
+  if (series.benchmark?.length && series.points.length) {
+    option.legend = { textStyle: { color: "#cbd5e1" }, top: 0 };
+    option.grid = { ...option.grid, top: 36 };
+    option.series.push({
+      name: "Hold the list",
+      type: "line",
+      showSymbol: false,
+      connectNulls: true,
+      lineStyle: { color: LINE_COLORS[1], width: 2, type: "dashed" },
+      itemStyle: { color: LINE_COLORS[1] },
+      data: benchmarkOnSnapshots(series),
+    });
+  }
   return option;
 }
 
