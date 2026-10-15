@@ -13,20 +13,21 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from .backtest import _run_backtest
+from .discover import _run_discover
 from .dryrun import _run_dryrun
 from .proposal import _run_proposal
 
 from .whatif import _run_whatif
 from .whatif_compare import _run_whatif_compare
 
-#: Kinds the generic Run page may submit. ``whatif``, ``whatif_compare`` and
-#: ``proposal`` have their own endpoints, so the registry accepts them but
-#: they are not listed here.
+#: Kinds the generic Run page may submit. ``whatif``, ``whatif_compare``,
+#: ``proposal`` and ``discover`` have their own endpoints, so the registry
+#: accepts them but they are not listed here.
 VALID_KINDS = ("backtest", "dryrun")
 
 _RUNNERS = {"backtest": _run_backtest, "dryrun": _run_dryrun,
             "proposal": _run_proposal, "whatif": _run_whatif,
-            "whatif_compare": _run_whatif_compare}
+            "whatif_compare": _run_whatif_compare, "discover": _run_discover}
 
 
 def _as_fields(outcome) -> dict:

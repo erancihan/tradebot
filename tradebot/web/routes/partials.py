@@ -16,6 +16,7 @@ from ..services import (
     advisor_service,
     autopilot_service,
     consortium_service,
+    discover_service,
     history_service,
     holdings_service,
     metrics_service,
@@ -91,6 +92,12 @@ def watchlist(request: Request, repo: TradingRepository = Depends(get_trading_re
         request, "components/watchlist.html",
         {"today": advisor_service.view(repo, state.settings, state.settings_path)},
     )
+
+
+@router.get("/discover", response_class=HTMLResponse)
+def discover(request: Request, repo: TradingRepository = Depends(get_trading_repo)):
+    return templates.TemplateResponse(request, "components/discover_rows.html",
+                                      {"discover": discover_service.view(repo)})
 
 
 @router.get("/autopilot", response_class=HTMLResponse)

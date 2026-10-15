@@ -1,0 +1,23 @@
+{#- Today: the Discover card, names the owner neither watches nor holds,
+    ranked by 6-month momentum. Its own Alpine component (discover.ts): the
+    button runs the job, each row's Add posts to the watchlist. Expects
+    `discover`. -#}
+<div class="space-y-3 rounded-lg border border-slate-800 bg-slate-900/40 p-3"
+     x-data="discover" @click="onRowClick($event)" data-discover>
+  <div class="flex items-baseline justify-between gap-2">
+    <h2 class="text-sm font-semibold text-slate-200">Discover</h2>
+    <span class="text-xs text-slate-500">names you do not watch or hold</span>
+  </div>
+  <button type="button" @click="find()" :disabled="state === 'running'" data-discover-find
+          class="min-h-[48px] w-full rounded-lg bg-slate-700 text-base font-semibold text-white hover:bg-slate-600 disabled:opacity-50">
+    <span x-show="state !== 'running'">Find candidates</span>
+    <span x-show="state === 'running'" x-cloak>Searching…</span>
+  </button>
+  <div x-show="error" x-cloak x-text="error"
+       class="rounded-lg border border-rose-800 bg-rose-950/40 p-3 text-sm text-rose-300 break-words"></div>
+  <div x-show="notice" x-cloak x-text="notice"
+       class="rounded-lg border border-amber-800 bg-amber-950/40 p-3 text-sm text-amber-300 break-words"></div>
+  <div x-ref="rows" class="space-y-2">
+    {% include "components/discover_rows.html" %}
+  </div>
+</div>

@@ -3,7 +3,7 @@
 {% block content %}
 {% set p = today.proposal %}
 <section class="mx-auto max-w-xl space-y-4" x-data="today"
-         data-created-at="{{ p.created_at if p else '' }}">
+         @watchlist-changed="reloadPanes()" data-created-at="{{ p.created_at if p else '' }}">
   <div class="flex items-baseline justify-between">
     <h1 class="text-lg font-semibold text-slate-100">Today</h1>
     <span class="text-xs text-slate-500" x-text="ago">
@@ -26,6 +26,8 @@
   <div x-ref="list" class="space-y-3">
     {% include "components/proposal_list.html" %}
   </div>
+
+  {% include "components/discover_card.html" %}
 
   <div class="space-y-3 rounded-lg border border-slate-800 bg-slate-900/40 p-3"
        @click="onWatchlistClick($event)">
