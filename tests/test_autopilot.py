@@ -14,6 +14,7 @@ import pytest
 
 from tradebot.autopilot import Autopilot
 from tradebot.broker import DryRunBroker
+from tradebot.cli import main
 from tradebot.config import Settings
 from tradebot.data import ReplayData
 from tradebot.data.synthetic import synthetic_ohlcv
@@ -307,3 +308,47 @@ def test_a_new_trading_day_starts_a_new_loss_session(tmp_path):
     clock.now = OPEN_NOW + timedelta(days=1)
     pilot.tick()                                           # next day: re-anchored
     assert pilot.engine._session_start_equity != 1.0
+
+
+# --- headless: tradebot run --autopilot -----------------------------------------
+
+def _cli_config(tmp_path, strategy="buy_and_hold") -> str:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        "mode: paper\nsymbols: [X, Y]\ntimeframe: 1day\ninitial_cash: 10000\n"
+        f"db_path: {tmp_path / 'auto.db'}\n"
+        f"strategy:\n  name: {strategy}\n  params: {{}}\n"
+    )
+    return str(cfg)
+
+
+def _orders(tmp_path) -> int:
+    with Storage(tmp_path / "auto.db") as st:
+        return st._conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
+
+
+def test_run_autopilot_headless_replay_ticks(tmp_path, capsys):
+    rc = main(["run", "--config", _cli_config(tmp_path), "--replay", "--replay-periods", "80",
+               "--autopilot", "--mode", "auto", "--iterations", "5"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "[AUTOPILOT] mode=auto account=dry_run" in out
+    assert "ticks=5 mode=auto pending=0" in out and "last_error=None" in out
+    assert "Dry-run forward-test summary" in out
+    assert _orders(tmp_path) >= 2                       # bought X and Y (then rebalanced)
+
+
+def test_run_autopilot_headless_approve_parks_trades(tmp_path, capsys):
+    rc = main(["run", "--config", _cli_config(tmp_path), "--replay", "--replay-periods", "80",
+               "--autopilot", "--iterations", "3"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "mode=approve" in out and "ticks=3" in out and "pending=2" in out
+    assert _orders(tmp_path) == 0                       # nothing without approval
+
+
+def test_run_autopilot_headless_replay_ends_when_the_tape_does(tmp_path, capsys):
+    rc = main(["run", "--config", _cli_config(tmp_path), "--replay", "--replay-periods", "40",
+               "--autopilot", "--mode", "auto"])
+    assert rc == 0
+    assert "ticks=" in capsys.readouterr().out          # no cap, still terminated

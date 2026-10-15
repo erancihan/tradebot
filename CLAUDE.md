@@ -47,11 +47,19 @@ tradebot/
   data/          synthetic + factor_panel, cache + coverage, replay, csv, alpaca_data, stream
   advisor/       propose (pure: bars + account -> Proposal of signed deltas), explain
                  (one-sentence reasons), types (Proposal, ProposalLine)
-  engine/        core (Engine.rebalance: halt, advisor.propose, submit lines), signals
-                 (fetch_frames, selector_frames), orders (current_positions, submit_line)
+  engine/        core (Engine.step -> PassOutcome: halt, advisor.propose, submit or park
+                 as pending; rebalance = step().actions; submit_lines), signals
+                 (fetch_frames, selector_frames), orders (current_positions, submit_line),
+                 pending (PassOutcome, record_pending, submit_stored)
+  autopilot/     state (Mode off|approve|auto, AutopilotState, load/store), schedule
+                 (next_pass, wait_seconds, session_day), runner (Autopilot: tick,
+                 run_forever, start/stop thread; injected clock/sleep/is_open),
+                 approvals (approve, reject, expiry, pending_trades notification)
   storage/       SQLite tradebot.db: schema, orders, bars, weights, proposals (batch header
-                 + lines with a status) (Storage = mixins)
-  cli/           __init__ (build_parser, main), common, demo, backtest, run, dryrun, status,
+                 + lines with a status), autopilot (autopilot_state scope/key/value)
+                 (Storage = mixins; check_same_thread=False for the autopilot)
+  cli/           __init__ (build_parser, main), common, demo, backtest, run, dryrun,
+                 autopilot (run --autopilot, replay clock), status,
                  universe, data, arena, arena_history, arena_gate, arena_journal,
                  arena_league, season, season_run
   arena/         api, loader, interfaces, adapters, simulation, scenario, runner + isolation
@@ -60,12 +68,18 @@ tradebot/
                  model, feeds, daemon), panel, market, contestant, store + journal
   web/           app (create_app + load_settings), server (--config), dependencies,
                  repository/ (trading, proposals, arena, season), services/ (account,
-                 advisor (Today view + build_inputs), cache, consortium, whatif_presets,
+                 advisor (Today view + build_inputs), autopilot (one Autopilot per
+                 process: view, set_mode, approve, reject, resume, shutdown),
+                 autopilot_build (paper broker or dry-run over cached bars), cache,
+                 consortium, whatif_presets,
                  jobs/ {registry, frames, frames_many, backtest, dryrun, proposal, whatif,
                  catalog}), schemas/ (+ proposal, whatif), routes/ (pages incl. /today
-                 and /whatif, partials incl. /partials/proposal, sse, api/ {trading, arena,
-                 jobs, proposal, whatif}), templates/ (pages/today.html, pages/whatif.html,
-                 components/proposal_list.html, components/tabbar.html),
+                 /whatif and /autopilot, partials incl. /partials/proposal and
+                 /partials/autopilot, sse, api/ {trading, arena, jobs, proposal, whatif,
+                 autopilot}), templates/ (pages/today.html, pages/whatif.html,
+                 pages/autopilot.html, components/proposal_list.html,
+                 components/autopilot_panel.html, components/pending_trades.html,
+                 components/tabbar.html), app lifespan resumes/stops the autopilot,
                  static-src/ (PWA manifest + icons, committed), static/ (built, gitignored)
 algos/           12 contestants + canaries/ and consortium/ (both opt-in)
 scenarios/       regime library, factor library (xs_*), real_xs_* (+ sealed holdout), legacy real_*
@@ -74,7 +88,7 @@ tests/  docs/ (research-record.md, adr/, plans/)  data/cache/ (gitignored)
 config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])  Makefile
 ```
 
-Later epics add `autopilot.py` and `market/`.
+A later epic adds `market/` (the `MarketCalendar` protocol).
 
 ## Invariants
 
@@ -306,6 +320,28 @@ build on every push and PR, with no credentials.
   alone runs the panel twice.
 - `EqualVoice` is the default. `HedgeVoice` and its `eta` are a research claim.
   State `eta` with any result.
+
+**Autopilot**
+- **A pending batch expires; it never executes late.** An approve-mode pass
+  sizes its trades at that pass's prices. The next pass expires the previous
+  batch before it proposes, an approval of a batch older than one
+  `poll_seconds` expires it instead of submitting, and switching off expires
+  whatever waits. Status `expired` exists for exactly this.
+- **A daily-loss halt turns the autopilot off** (`last_error = "daily loss
+  halt"`, an `autopilot_off` notification). Switching it back on the same day
+  halts again on the first pass, because the engine's loss session is
+  re-anchored only when the ET trading day changes (`Engine.reset_session`).
+- **One lock, one connection.** The loop thread and the web's approve taps
+  share the engine and its SQLite connection (`check_same_thread=False`);
+  every Autopilot method holds its `RLock`. "Off" sets the stop event the
+  default sleep waits on, so a loop sleeping until Monday's open exits at once.
+- **The web autopilot is paper or dry-run, never live.** `autopilot_build`
+  always uses the paper endpoint with credentials, else a `DryRunBroker` over
+  cached bars parked at the newest shared date. Its in-memory virtual account
+  does not survive a restart; the order log does.
+- **`tradebot run --autopilot` builds the engine exactly as `run` does** (a
+  live config still needs the latch). A replay gets a simulated clock: every
+  bar is open, each sleep advances one bar, the tape's end stops the loop.
 
 **Web and CI**
 - **Pydantic coercion.** `dict[str, float]` turns integer params into floats
