@@ -376,3 +376,29 @@ def test_the_autopilot_takes_its_calendar_from_the_settings(tmp_path):
     pilot.engine.settings.market = "bist"
     again = Autopilot(pilot.engine, pilot.storage, poll_seconds=300)
     assert again.calendar.name == "bist"
+
+
+def test_a_failed_order_record_never_lets_an_approval_order_twice(tmp_path, monkeypatch):
+    """The order reached the broker but recording it failed (database locked):
+    the line must already read ``submitted``, so a second tap cannot resend it."""
+    import sqlite3
+
+    pilot, broker, _, _, pending = _approve_pass(tmp_path)
+
+    def locked(*a, **k):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(pilot.storage, "record_order", locked)
+    chosen = pending[0]
+    assert pilot.approve([chosen["id"]]) == 1
+    assert _statuses(pilot)[chosen["id"]] == "submitted"
+    assert pilot.approve([chosen["id"]]) == 0
+    assert broker._order_seq == 1
+
+
+def test_storage_tolerates_concurrent_writers(tmp_path):
+    """The web and the autopilot write the same file: WAL lets readers run
+    beside a writer, and a busy writer waits instead of failing at once."""
+    with Storage(tmp_path / "t.db") as st:
+        assert st._conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+        assert st._conn.execute("PRAGMA busy_timeout").fetchone()[0] == 5000

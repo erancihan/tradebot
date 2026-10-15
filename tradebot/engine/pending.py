@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field, fields
+from functools import partial
 
 from ..advisor import Proposal, ProposalLine
 from . import orders
@@ -43,16 +44,17 @@ def submit_stored(engine, line_ids: list[int]) -> list[RebalanceAction]:
     """Submit the given pending lines and mark each one ``submitted``.
 
     A line that is no longer pending (expired, rejected, already submitted,
-    or another account's) is ignored, so a double tap cannot order twice.
+    or another account's) is ignored, so a double tap cannot order twice. The
+    mark is written the moment the broker accepts the order, before the order
+    log, so a failing log write cannot leave a sent line ``pending``.
     """
     rows = engine.storage.proposal_lines(line_ids, engine.mode, status="pending")
     actions: list[RebalanceAction] = []
     for row in rows:
         line = ProposalLine(**{name: row[name] for name in _LINE_FIELDS})
+        mark = partial(engine.storage.set_line_status, [row["id"]], "submitted")
         try:
-            actions.append(orders.submit_line(engine, line))
+            actions.append(orders.submit_line(engine, line, on_submitted=mark))
         except Exception:  # one bad symbol must not block the rest of the batch
             log.exception("Approved line %s (%s) failed to submit", row["id"], line.symbol)
-            continue
-        engine.storage.set_line_status([row["id"]], "submitted")
     return actions

@@ -30,6 +30,11 @@ class Storage(OrdersMixin, BarsMixin, WeightsMixin, ProposalsMixin, AutopilotMix
         self.path = str(path)
         self._conn = sqlite3.connect(self.path, check_same_thread=check_same_thread)
         self._conn.row_factory = sqlite3.Row
+        # The web process and the autopilot thread write the same file: WAL
+        # lets readers run beside a writer, and a busy writer waits up to 5 s
+        # instead of failing at once with "database is locked".
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA busy_timeout=5000")
         with closing(self._conn.cursor()) as cur:
             cur.executescript(_SCHEMA)
         self._conn.commit()

@@ -233,16 +233,16 @@ build on every push and PR, with no credentials.
   pass re-enters. `DryRunBroker` fills stop before target, gap-through at the
   open, and only on a bar *after* the entry bar (a parked replay would book a
   phantom exit each pass). Streaming only speeds bar arrival; the `Engine` polls.
-- **A notifier never breaks a trade:** every send is wrapped and remote
-  notifiers swallow errors. `deliver() -> bool` exists only for the test-alert
-  button, so a mistyped topic reads "not delivered".
+- **A notifier never breaks a trade:** sends are wrapped, remote notifiers swallow
+  errors. `deliver() -> bool` is only for the test-alert button ("not delivered").
 - **A pending batch expires, never executes late:** the next pass, an approval
   older than one `poll_seconds`, and switching off all expire it.
 - **A daily-loss halt turns the autopilot off.** The loss session re-anchors
   only when the calendar day changes (`Engine.reset_session`).
 - **One lock, one connection:** the loop thread and web taps share the engine
-  and SQLite (`check_same_thread=False`) under the Autopilot `RLock`. A mode
-  switch sets the wake event.
+  and SQLite (`check_same_thread=False`, WAL, `busy_timeout=5000`) under the
+  Autopilot `RLock`. A line is `submitted` once the broker accepts it; later
+  bookkeeping only logs. A mode switch wakes the loop.
 - **The web autopilot is paper or dry-run, never live** (`autopilot_build`).
   The dry-run's virtual account does not survive a restart, the order log does.
   `tradebot run --autopilot` builds exactly as `run`. A replay gets a simulated clock.
