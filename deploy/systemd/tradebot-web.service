@@ -1,0 +1,29 @@
+# tradebot-web as a Linux service: starts at boot, restarts on a crash.
+# Replace the three placeholders: /PATH/TO/tradebot, YOUR_USER, YOUR_HOST.
+# See deploy/README.md.
+
+[Unit]
+Description=tradebot dashboard and autopilot (paper)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/PATH/TO/tradebot
+# ALPACA_API_KEY, ALPACA_API_SECRET, TRADEBOT_WEB_TOKEN (chmod 600).
+EnvironmentFile=/etc/tradebot/env
+ExecStart=/PATH/TO/tradebot/.venv/bin/tradebot-web --host 0.0.0.0 --port 8000 --config /etc/tradebot/config.yaml --trading-db /var/lib/tradebot/tradebot.db --arena-db /var/lib/tradebot/arena.db --season-db /var/lib/tradebot/season.db --allow-host YOUR_HOST
+Restart=always
+RestartSec=10
+
+# Hardening: the whole file system is read-only except the databases, the
+# config the Settings page saves, and the bar cache (WorkingDirectory/data).
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/tradebot /etc/tradebot /PATH/TO/tradebot/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

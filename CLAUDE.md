@@ -53,8 +53,8 @@ tradebot/
   arena/         api, loader, interfaces, adapters, simulation, scenario, runner +
                  isolation, sandbox, scoring, gate/, result, tournament, league,
                  season/, panel, market, contestant, store + journal
-  web/           app (create_app, load_settings), server, guard, access, repository/, schemas/,
-                 services/ account, advisor, autopilot (+ reset), autopilot_build, cache,
+  web/           app (create_app, load_settings), server, startup, guard, access, repository/,
+                 schemas/, services/ account, advisor, autopilot (+ reset), autopilot_build, cache,
                    consortium, whatif_presets, notify_service, symbols_service, history_service,
                    holdings_service, settings_service (view, save), settings_validate,
                    settings_secrets (mask alert targets), setup_service (Today card),
@@ -70,7 +70,7 @@ algos/           12 contestants + canaries/ and consortium/ (both opt-in)
 scenarios/       regime library, factor library (xs_*), real_xs_* (+ sealed holdout), legacy real_*
 frontend/        TypeScript, Tailwind, Alpine, ECharts, esbuild (settings[Form].ts, history.ts)
 tests/  docs/ (research-record.md, adr/, plans/)  data/cache/ (gitignored)  Makefile
-config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])
+config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])  deploy/ (systemd, launchd)
 ```
 
 ## Invariants
@@ -131,8 +131,8 @@ make install | install-web | install-all | test | demo | dryrun | arena | web  #
 cd frontend && npm run typecheck | test | build | watch:js           # after install-web
 ```
 CLI: `tradebot {backtest,run,status,demo,arena,data,universe}`, `tradebot-web
-[--config PATH]` (default `./config.yaml` when present, else SPY/QQQ defaults.
-A Settings save creates `./config.yaml`). `run --dry-run` / `--replay` forward-test.
+[--config PATH] [--check]` (default `./config.yaml`, else SPY/QQQ; a Settings save creates
+it; `--check` validates, prints the startup line, exits). `run --dry-run`/`--replay` forward-test.
 Arena: `arena {list,run,validate,history,show,league,season,gate,journal}`,
 `arena season {create,seed,list,standings,run}`. CI (`.github/workflows/ci.yml`)
 runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR, no credentials.

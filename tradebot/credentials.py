@@ -19,14 +19,6 @@ def _maybe_load_dotenv() -> None:
     load_dotenv()
 
 
-def _maybe_load_dotenv() -> None:
-    try:
-        from dotenv import load_dotenv
-    except ImportError:
-        return
-    load_dotenv()
-
-
 @dataclass
 class AlpacaCredentials:
     api_key: str
