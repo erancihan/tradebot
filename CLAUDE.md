@@ -44,9 +44,9 @@ tradebot/
   broker/        base (ABC), alpaca (lazy SDK), dryrun + brackets (BracketsMixin)
   data/          synthetic + factor_panel, cache + coverage, replay, csv, alpaca_data, stream
   market/        base (MarketCalendar, TableCalendar), us, bist, registry (CALENDARS)
-  advisor/       propose (bars + account -> Proposal), explain, types
+  advisor/       propose (bars + account -> Proposal), explain, types, unlisted (off-list holdings)
   engine/        core (Engine.step -> PassOutcome), signals, orders, pending, session (daily-loss anchor),
-                 fills (reconcile: Broker.order_status -> the order log's fill columns)
+                 fills (reconcile: Broker.order_status -> the order log's fill columns), unlisted
   autopilot/     state, schedule, runner (Autopilot, injected clock/sleep/calendar),
                  approvals, background, brief (MorningBrief), session, links (signed batch links)
   storage/       tradebot.db mixins: orders, bars, weights, proposals, autopilot, watchlist, discover
@@ -57,7 +57,7 @@ tradebot/
   web/           app (create_app, load_settings), server, startup, guard, access, repository/,
                  schemas/, services/ account, advisor, autopilot (+ reset), autopilot_build, cache,
                    consortium, whatif_presets, notify_service, symbols_service, history_service,
-                   benchmark (+ _card), holdings_service, discover_service, settings_service (view, save),
+                   benchmark (+ _card), holdings_service, unlisted_service, discover_service, settings_service (view, save),
                    settings_validate, settings_secrets (mask alert targets), setup_service,
                    jobs/ {registry, frames, frames_many, backtest, dryrun, proposal, whatif,
                    whatif_compare, discover, catalog (strategy_catalog, stack_specs)}
@@ -110,15 +110,13 @@ config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])  deploy
   web fetches bars through `BarCache`, except Discover's liquidity screen (one most-actives call plus a
   ~55-day batched bar request, keys only), and only with credentials in the server environment. Without them it uses cached bars and says so (`docs/adr/0001-server-side-refresh.md`).
 - **Every result carries provenance:** source, symbols, window and bar count. Synthetic dates are labels, not forecasts.
-- **No inline JS in templates.** All browser code is type-checked TypeScript
-  bundled by esbuild. Templates only present data.
+- **No inline JS in templates.** All browser code is type-checked TypeScript bundled by esbuild. Templates only present data.
 
 ## Code rules
 
 - Functions: at most 60 lines. Modules under `tradebot/`: at most 200 lines,
   aim for 150 (`tests/test_code_shape.py`). Test modules have no module limit.
-- Split along section comments, one concern per file. Keep package re-exports
-  so imports in `tests/` and `algos/` stay unchanged.
+- Split along section comments, one concern per file. Keep package re-exports so imports in `tests/` and `algos/` stay unchanged.
 - Type hints, `from __future__ import annotations` everywhere; comments explain why.
 
 ## Dev commands
@@ -178,10 +176,12 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   alpha from the snapshot at the benchmark's last close), no fetch; absent (noted) without bars or mixed accounts.
 - **The Today refresh** gives the selector the whole cached history and the strategy the last
   `required_history + 30` bars, so engine and web can differ when their histories start on different days.
-- **One list for suggestions and the autopilot:** the watchlist when not empty,
-  else `settings.symbols` (`symbols_service.with_active_symbols`, a copy). A
-  watchlist edit stops a running autopilot (`autopilot_service.reset`), as a Settings save does.
-  Symbols match `^[A-Z.\-]{1,10}$` after upper-casing.
+- **One list for suggestions and the autopilot:** the watchlist when not empty, else `settings.symbols`
+  (`symbols_service.with_active_symbols`, a copy). A watchlist edit stops a running autopilot
+  (`autopilot_service.reset`), as a Settings save does. Symbols match `^[A-Z.\-]{1,10}$` after upper-casing.
+- **The autopilot manages exactly the list:** a held name off the list gets a sell-to-flat line (`unlisted`
+  in `advisor.propose`; engine `engine/unlisted.py`, web `unlisted_service`; no price = skipped). The product's
+  no-trade band defaults to 1% (`Settings`, `risk.product_risk`); `RiskConfig` keeps 0 for simulations.
 - **Discover** ranks by the `MomentumSelector` score over the cached or Alpaca pool, excludes
   held and watched names, persists in `discover_runs`; Add seeds an empty watchlist first.
 - **Contributions are not returns.** With `cash_flows` metrics use the growth

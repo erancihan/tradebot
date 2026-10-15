@@ -39,7 +39,10 @@ commands in this README, activate the venv with `source .venv/bin/activate`.
 Open **Settings** (`/settings`, under **More** on a phone). Pick your symbols
 and bar size, a strategy, and optionally a selector (hold the best N) and an
 allocator (how to split money). Parameters show as typed fields. Risk limits
-are typed as percentages. The same page sets the autopilot cadence, the
+are typed as percentages. The **No-trade band** skips drift trades smaller
+than that share of equity (1% unless you change it, 0 turns it off; full
+exits always run), so a pass does not trim one share each time equity moves.
+The same page sets the autopilot cadence, the
 morning brief, alert destinations and the exchange calendar.
 
 Tap **Save**. The server builds every component you named, so a typo comes
@@ -79,7 +82,10 @@ quantity, the dollar amount and a one-line reason built from each layer:
 sma_crossover signals long; rank 2 of 5, weight 23%, capped by the risk limit; buy.
 ```
 
-A row can also say `not selected (rank 4 of 5)` or `within band, hold`.
+A row can also say `not selected (rank 4 of 5)` or `within the 1% no-trade
+band, hold`. The list is the mandate: a name you hold that is not on the list
+gets a row `not on your list: sell to flat` (or `buy to flat` for a short), and
+the autopilot closes it. Without a cached price the row is skipped, never guessed.
 
 - **Account strip:** equity, cash and their source, `paper (Alpaca)`,
   `paper (from log)` or `paper (starting cash)`.
@@ -87,6 +93,8 @@ A row can also say `not selected (rank 4 of 5)` or `within band, hold`.
 - **Watchlist:** type a symbol and tap **Add**, tap the cross on a chip to
   remove it. While it has symbols, Refresh and the autopilot scan those
   instead of the config's `symbols`. An edit stops a running autopilot.
+  Removing a name you hold asks first: "Remove QQQ? You hold 13 shares; the
+  autopilot sells them at its next pass."
 
 Refresh reads bars through the local cache. It fetches missing bars only with
 server-side Alpaca keys. Without them, an uncached symbol gets the exact
@@ -427,7 +435,7 @@ risk:
   max_position_pct: 0.10      # at most 10% of equity per symbol
   max_gross_exposure: 1.0     # at most 100% of equity deployed
   max_daily_loss_pct: 0.03    # flatten + halt after a 3% daily drawdown
-  rebalance_band_pct: 0.02    # skip drift trades under 2% of equity (exits always run)
+  rebalance_band_pct: 0.01    # skip drift trades under 1% of equity (the default; exits always run)
 portfolio:
   selector:
     name: momentum
