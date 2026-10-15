@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from ...dependencies import get_trading_repo
 from ...repository import TradingRepository
@@ -10,6 +10,7 @@ from ...schemas import (
     AccountView,
     AllocationRow,
     AllocationsView,
+    BenchmarkPoint,
     Candle,
     CandleSeries,
     ConsortiumMember,
@@ -20,21 +21,33 @@ from ...schemas import (
     OrderRow,
     PositionView,
 )
-from ...services import account_service, consortium_service
+from ...services import account_service, benchmark, consortium_service
 
 router = APIRouter()
 
 
 @router.get("/equity", response_model=EquitySeries)
-def equity(mode: str | None = None, limit: int = 2000,
+def equity(request: Request, mode: str | None = None, limit: int = 2000,
            repo: TradingRepository = Depends(get_trading_repo)):
+    """Snapshots oldest first, plus holding the active list over their window."""
     rows = repo.equity_series(mode=mode, limit=limit)
     points = [
         EquityPoint(ts=r["ts"], equity=float(r["equity"]),
                     cash=float(r["cash"]), mode=r["mode"])
         for r in rows
     ]
-    return EquitySeries(mode=mode, points=points)
+    bench = benchmark.for_snapshots(repo, request.app.state.settings,
+                                    request.app.state.cache_dir, rows)
+    if bench is None:
+        return EquitySeries(mode=mode, points=points)
+    series = bench["series"]
+    return EquitySeries(
+        mode=mode, points=points,
+        benchmark=None if series is None else [
+            BenchmarkPoint(ts=day.isoformat(), value=float(v)) for day, v in series.items()],
+        benchmark_symbols=bench["symbols"], benchmark_since=bench["since"],
+        benchmark_until=bench["until"], benchmark_source=bench["source"],
+        benchmark_note=bench["note"])
 
 
 @router.get("/orders", response_model=list[OrderRow])

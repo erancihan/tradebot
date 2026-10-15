@@ -74,7 +74,8 @@ def autopilot_page(request: Request):
 @router.get("/history", response_class=HTMLResponse)
 def history_page(request: Request, repo: TradingRepository = Depends(get_trading_repo)):
     """Phone-first: what the bot ordered and suggested, newest first, for one account."""
-    view = history_service.view(repo, request.app.state.settings)
+    view = history_service.view(repo, request.app.state.settings,
+                                request.app.state.cache_dir)
     return templates.TemplateResponse(
         request, "pages/history.html",
         {"history": {**view, "first_page": True}, "active": "history"})

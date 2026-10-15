@@ -103,3 +103,16 @@ One new core concept, the proposal, feeds three flows.
   line's notional by more than 10% over the last push, the batch is pushed
   again at once, with the new sizes. Link lifetime is a trade-off the paper-only,
   single-use links accept; the ntfy topic itself is the credential.
+
+## Addendum 2026-10-15: History benchmark
+- History's performance card answers "is the bot beating just holding the list?": it
+  compares equity with equal-weight buy and hold of the active list (the watchlist, else
+  `settings.symbols`, the list the autopilot trades) from the first snapshot's equity.
+- Each symbol gets an equal share at the first session close on or after the first
+  snapshot; the benchmark is marked at each later close through the last snapshot's date,
+  ending at the last session every held name has. A name without a close at the start is
+  left out and named. The card shows the difference in percentage points.
+- Bars come from the cache only, never fetched, so the comparison needs no credentials;
+  without cached daily bars the card names the `tradebot data pull` command instead.
+- `/api/equity` carries the daily points, the symbols, the window and the source
+  (`cache`); the chart places each close at its nearest snapshot as a dashed line.

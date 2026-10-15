@@ -7,9 +7,22 @@ export interface EquityPoint {
   mode: string;
 }
 
+/** One cached daily close of the equal-weight buy-and-hold benchmark. */
+export interface BenchmarkPoint {
+  ts: string; // the session date, YYYY-MM-DD
+  value: number;
+}
+
 export interface EquitySeries {
   mode: string | null;
   points: EquityPoint[];
+  // Holding the active list over the snapshots' window (services/benchmark.py).
+  benchmark?: BenchmarkPoint[] | null;
+  benchmark_symbols?: string[];
+  benchmark_since?: string | null;
+  benchmark_until?: string | null;
+  benchmark_source?: string | null; // "cache": never fetched
+  benchmark_note?: string | null;
 }
 
 export interface OrderRow {

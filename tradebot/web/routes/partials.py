@@ -141,7 +141,8 @@ def history_performance(request: Request, mode: str | None = None,
     mode = _history_mode(request, repo, mode)
     return templates.TemplateResponse(
         request, "components/history_performance.html",
-        {"history": {"performance": history_service.performance(repo, mode)}})
+        {"history": {"performance": history_service.performance(
+            repo, mode, request.app.state.settings, request.app.state.cache_dir)}})
 
 
 @router.get("/leaderboard", response_class=HTMLResponse)
