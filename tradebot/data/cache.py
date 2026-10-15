@@ -22,8 +22,9 @@ adapter when credentials are present.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
 
 import pandas as pd
 
@@ -34,6 +35,7 @@ from .coverage import (  # noqa: F401  (_MIN_TS/_MAX_TS/_merge_windows re-export
     _merge_windows,
     _spans,
     _ts,
+    complete_through,
     read_manifest,
     write_manifest,
 )
@@ -44,8 +46,11 @@ class Fetcher(Protocol):
 
 
 class BarCache:
-    def __init__(self, root: str | Path = "data/cache") -> None:
+    def __init__(self, root: str | Path = "data/cache",
+                 clock: Callable[[], datetime] | None = None) -> None:
         self.root = Path(root)
+        # Injected so tests can stand in the middle of a session.
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def path(self, symbol: str, timeframe: str) -> Path:
         return self.root / timeframe / f"{symbol.upper()}.csv"
@@ -86,9 +91,18 @@ class BarCache:
         end=None,
         fetcher: Fetcher | None = None,
     ) -> pd.DataFrame:
-        """Return bars for ``[start, end]``, fetching+caching only on a miss."""
+        """Return bars for ``[start, end]``, fetching+caching only on a miss.
+
+        A daily request reaching past the last completed session is fetched,
+        judged and recorded only up to that session's close (``upto``), so a
+        forming bar never lands in the cache.
+        """
         start, end = _ts(start), _ts(end)
+        upto = complete_through(timeframe, end, self._clock())
         cached = self.load(symbol, timeframe)
+        if start is not None and upto is not None and upto < start:
+            # Nothing in the window has closed yet: there is nothing to fetch.
+            return self._slice(cached, start, end) if cached is not None else _empty()
         pulled = self.coverage(symbol, timeframe)
         if pulled:
             # A manifest means these windows came from a provider, so they are
@@ -99,9 +113,10 @@ class BarCache:
                 # could ever satisfy.
                 covered = cached is not None and not cached.empty
             else:
-                covered = cached is not None and _spans(pulled, start, end)
+                covered = cached is not None and _spans(pulled, start, upto)
         else:
-            covered = self._covers(cached, start, end)
+            # No manifest: an open end still means "whatever is cached".
+            covered = self._covers(cached, start, None if end is None else upto)
 
         if not covered:
             if fetcher is None:
@@ -110,7 +125,9 @@ class BarCache:
                     "range and no fetcher available. Provide credentials or pre-populate "
                     "the cache (e.g. `tradebot data pull`)."
                 )
-            fetched = fetcher(symbol, timeframe, start, end)
+            fetched = fetcher(symbol, timeframe, start, upto)
+            if fetched is not None and upto is not None and upto is not end:
+                fetched = fetched[fetched.index <= upto]       # the forming bar
             cached = self._merge(cached, fetched)
             self.store(symbol, timeframe, cached)
             # Never claim coverage wider than what the provider actually handed
@@ -121,7 +138,8 @@ class BarCache:
             # re-fetched.
             if fetched is not None and len(fetched):
                 lo = start if start is not None else _ts(fetched.index.min())
-                hi = end if end is not None else _ts(fetched.index.max())
+                bounded = start is not None or end is not None
+                hi = upto if bounded and upto is not None else _ts(fetched.index.max())
                 self.record_coverage(symbol, timeframe, lo, hi)
 
         return self._slice(cached, start, end)
@@ -147,6 +165,11 @@ class BarCache:
     @staticmethod
     def _slice(df: pd.DataFrame, start, end) -> pd.DataFrame:
         return df.loc[start:end]
+
+
+def _empty() -> pd.DataFrame:
+    return pd.DataFrame(columns=list(BAR_COLUMNS),
+                        index=pd.DatetimeIndex([], tz="UTC", name="timestamp"))
 
 
 class AlpacaFetcher:

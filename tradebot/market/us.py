@@ -80,6 +80,23 @@ def next_open(now: datetime, holidays=DEFAULT_HOLIDAYS) -> datetime:
     raise RuntimeError("no market open found within two weeks")
 
 
+def last_completed_close(now: datetime, holidays=DEFAULT_HOLIDAYS) -> datetime:
+    """The close of the newest session that has ended by ``now`` (in ET).
+
+    Before today's close that is the previous trading day's: today's daily
+    bar is still forming and must not be treated as final.
+    """
+    et = now.astimezone(ET)
+    day = et.date()
+    for _ in range(21):   # the longest closure fits with room to spare
+        if is_trading_day(day, holidays):
+            close = datetime.combine(day, MARKET_CLOSE, tzinfo=ET)
+            if close <= et:
+                return close
+        day -= timedelta(days=1)
+    raise RuntimeError("no completed session found within three weeks")
+
+
 def bar_is_complete(ts, timeframe: str, now: datetime) -> bool:
     """Whether the bar at ``ts`` represents a fully-closed period as of ``now``."""
     # Lazy: the registry imports this module, and `Settings` validates its
