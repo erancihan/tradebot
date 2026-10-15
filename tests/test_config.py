@@ -137,3 +137,14 @@ def test_market_defaults_to_us_and_rejects_unknown_calendars():
     assert Settings.from_dict({"market": "bist"}).market == "bist"
     with pytest.raises(ValueError, match="market must be one of"):
         Settings.from_dict({"market": "lse"})
+
+
+def test_the_suite_never_sees_exported_credentials():
+    # The offline guard (tests/conftest.py) clears them for the session, so a
+    # developer's exported keys cannot steer a test onto the Alpaca path.
+    from tradebot.config import AlpacaCredentials
+
+    assert AlpacaCredentials.from_env() is None
+    for name in ("ALPACA_API_KEY", "ALPACA_API_SECRET", "ALPACA_DATA_FEED",
+                 "TRADEBOT_WEB_TOKEN", "TRADEBOT_LIVE_CONFIRM"):
+        assert name not in os.environ
