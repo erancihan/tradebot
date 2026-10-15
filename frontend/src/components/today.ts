@@ -35,6 +35,13 @@ export function removalFor(target: HTMLElement | null): WatchlistChange | null {
   return symbol ? { remove: [symbol] } : null;
 }
 
+// What to ask before a remove. The server writes it on the chip: a held name
+// says the autopilot sells it at its next pass (the list is the mandate).
+export function removalQuestion(target: HTMLElement | null): string {
+  const chip = target?.closest<HTMLElement>("[data-remove-symbol]");
+  return chip?.dataset.removeConfirm || `Remove ${chip?.dataset.removeSymbol ?? ""}?`;
+}
+
 export function today() {
   return {
     state: "idle",
@@ -78,8 +85,14 @@ export function today() {
     },
 
     async onWatchlistClick(event: Event) {
-      const change = removalFor(event.target as HTMLElement | null);
-      if (change) await this.editWatchlist(change);
+      const target = event.target as HTMLElement | null;
+      const change = removalFor(target);
+      if (change && this.ask(removalQuestion(target))) await this.editWatchlist(change);
+    },
+
+    // A seam for tests; the browser's own confirmation dialog.
+    ask(question: string): boolean {
+      return window.confirm(question);
     },
 
     // True when the server accepted the edit; its refusal shows as the error.

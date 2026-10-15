@@ -3,7 +3,7 @@
 // that fails (Discover's add triggers one nothing awaits) shows on the page.
 
 import { discover } from "../src/components/discover";
-import { WATCHLIST_EDITED, today } from "../src/components/today";
+import { WATCHLIST_EDITED, removalQuestion, today } from "../src/components/today";
 import { check, json, stubFetch } from "./harness";
 
 let partialsDown = false;
@@ -59,4 +59,27 @@ function mountToday() {
   await card.onWatchlistEdited();
   check(card.error !== "", "the Discover card shows its reload failure");
   partialsDown = false;
+}
+
+// A remove asks first, with the server's words; a held name names its shares.
+{
+  const held = "Remove QQQ? You hold 13 shares; the autopilot sells them at its next pass.";
+  const chip = { dataset: { removeSymbol: "QQQ", removeConfirm: held } };
+  const target = { closest: () => chip } as unknown as HTMLElement;
+  check(removalQuestion(target) === held, `the held warning: ${removalQuestion(target)}`);
+  const plain = { closest: () => ({ dataset: { removeSymbol: "SPY" } }) } as unknown as HTMLElement;
+  check(removalQuestion(plain) === "Remove SPY?", "the plain confirmation");
+
+  const { page } = mountToday();
+  const asked: string[] = [];
+  let edits = 0;
+  Object.assign(page, {
+    ask: (q: string) => { asked.push(q); return false; },
+    editWatchlist: async () => { edits += 1; return true; },
+  });
+  await page.onWatchlistClick({ target } as unknown as Event);
+  check(asked[0] === held && edits === 0, "a declined confirmation removes nothing");
+  Object.assign(page, { ask: () => true });
+  await page.onWatchlistClick({ target } as unknown as Event);
+  check(edits === 1, "a confirmed remove edits the watchlist");
 }

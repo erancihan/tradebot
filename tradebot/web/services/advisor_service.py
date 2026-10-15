@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from ...config import AlpacaCredentials
 from ...data.cache import BarCache, build_default_fetcher
 from ..repository import TradingRepository
-from . import symbols_service
+from . import symbols_service, unlisted_service
 from .jobs.frames import _pull_hint
 
 log = logging.getLogger("tradebot.web.advisor")
@@ -106,8 +106,12 @@ def build_inputs(settings, *, trading_db: str, cache_dir: str, lookback: int,
         "computed_at": now.isoformat(),
         "note": "raw/unadjusted daily bars; suggestions only, nothing was ordered",
     }
+    # Held names off the list: the advisor closes them (the list is the mandate).
+    unlisted = unlisted_service.unlisted(positions, settings.symbols, cache_dir=cache_dir,
+                                         timeframe=settings.timeframe)
     return {"frames": frames, "selector_frames": history, "equity": equity,
-            "cash": cash, "positions": positions, "provenance": provenance}
+            "cash": cash, "positions": positions, "provenance": provenance,
+            "unlisted": unlisted}
 
 
 def _frames(settings, cache_dir, lookback, fetcher, now):

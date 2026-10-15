@@ -1,12 +1,26 @@
 {#- Today: the watchlist chips. Served for first paint and swapped in after an
-    add or remove. Each chip's button carries data-remove-symbol; one delegated
-    click handler in today.ts reads it. Expects `today`. -#}
+    add or remove. Each chip's button carries data-remove-symbol and the
+    confirmation to ask (data-remove-confirm); one delegated click handler in
+    today.ts reads them. A held name warns that the autopilot closes it: the
+    list is the mandate. Expects `today` and `holdings`. -#}
+{% set held = holdings.held if holdings is defined and holdings else {} %}
 {% if today.symbol_source == 'watchlist' %}
   <ul class="flex flex-wrap gap-2" data-watchlist>
     {% for sym in today.symbols %}
       <li class="flex items-center rounded-full border border-slate-700 bg-slate-900 pl-3 text-sm font-mono text-slate-100">
         {{ sym }}
-        <button type="button" data-remove-symbol="{{ sym }}" aria-label="Remove {{ sym }}"
+        {% set qty = held.get(sym, 0) %}
+        {% set one = (qty | abs) == 1 %}
+        {% set shares = '%g share%s' | format(qty | abs, '' if one else 's') %}
+        {% if qty > 0 %}
+          {% set ask = 'Remove %s? You hold %s; the autopilot sells %s at its next pass.' | format(sym, shares, 'it' if one else 'them') %}
+        {% elif qty < 0 %}
+          {% set ask = 'Remove %s? You are short %s; the autopilot buys %s back at its next pass.' | format(sym, shares, 'it' if one else 'them') %}
+        {% else %}
+          {% set ask = 'Remove %s?' | format(sym) %}
+        {% endif %}
+        <button type="button" data-remove-symbol="{{ sym }}" data-remove-confirm="{{ ask }}"
+                aria-label="Remove {{ sym }}"
                 class="ml-1 min-h-[40px] min-w-[40px] rounded-full text-slate-400 hover:text-rose-300">&times;</button>
       </li>
     {% endfor %}
