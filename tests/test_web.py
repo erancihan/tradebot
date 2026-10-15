@@ -354,3 +354,22 @@ def test_tabbar_marks_the_current_page(client):
         body = client.get(path).text
         tabbar = body[body.index("data-tabbar"):]
         assert current.search(tabbar).group(1) == path, path
+
+
+def test_dashboard_on_a_phone_binds_the_account_and_fits_the_width(client):
+    # The account cells and the Live toggle read $store.live: Alpine only
+    # evaluates them inside an x-data scope, so the section carries one.
+    body = client.get("/").text
+    assert '<section class="space-y-6" x-data>' in body
+    # A grid without explicit columns sizes its one track to the orders
+    # table, which pushed the page to 427px at 390; minmax(0, 1fr) does not.
+    assert 'class="grid grid-cols-1 gap-6 lg:grid-cols-2"' in body
+    for page in ("/arena", "/seasons"):
+        assert 'class="grid grid-cols-1 gap-6 lg:grid-cols-3"' in client.get(page).text
+
+
+def test_secondary_pages_keep_their_controls_thumb_sized(client):
+    run = client.get("/run").text
+    assert run.count("min-h-[40px] w-full rounded") == 11
+    assert 'min-h-[40px] rounded bg-emerald-600' in run      # the Run button
+    assert client.get("/consortium").text.count("inline-flex min-h-[40px] items-center") == 2
