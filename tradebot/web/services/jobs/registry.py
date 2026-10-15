@@ -83,4 +83,16 @@ class JobRegistry:
                 raise ValueError(f"Unknown job kind: {kind!r}")
             self._update(job_id, state="done", **_as_fields(runner(params)))
         except Exception as exc:  # noqa: BLE001 - surface failures to the client
-            self._update(job_id, state="error", error=f"{type(exc).__name__}: {exc}")
+            self._update(job_id, state="error", error=_error_text(exc))
+
+
+#: Raised on purpose with a sentence for the person (no bars cached, a bad
+#: symbol): the sentence is the message. Anything else keeps its class name,
+#: because "KeyError: 'close'" is the whole clue.
+_EXPECTED = (RuntimeError, ValueError)
+
+
+def _error_text(exc: Exception) -> str:
+    if isinstance(exc, _EXPECTED) and str(exc):
+        return str(exc)
+    return f"{type(exc).__name__}: {exc}"
