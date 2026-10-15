@@ -1,7 +1,9 @@
 """Read-only pages of the order log and the proposal batches, newest first.
 
-Each page is keyed on the table's own id (``before_id``): ids only grow, so
-a page boundary never moves when new rows arrive while someone scrolls.
+Each page is a keyset on ``(time, id)``, both descending (``before`` is the
+last shown row's pair). Ids alone are not enough: a replay run restarts the
+clock, so ids can rise while times fall, and the timeline is merged by time.
+The id breaks ties, so a page boundary never moves when rows arrive.
 """
 
 from __future__ import annotations
@@ -9,30 +11,35 @@ from __future__ import annotations
 from ._db import _read
 
 
-def _page_clause(mode: str, before_id: int | None) -> tuple[str, tuple]:
-    if before_id is None:
+Cursor = tuple[str, int]
+
+
+def _page_clause(mode: str, ts_col: str, before: Cursor | None) -> tuple[str, tuple]:
+    if before is None:
         return "WHERE mode = ?", (mode,)
-    return "WHERE mode = ? AND id < ?", (mode, int(before_id))
+    ts, row_id = str(before[0]), int(before[1])
+    return (f"WHERE mode = ? AND ({ts_col} < ? OR ({ts_col} = ? AND id < ?))",
+            (mode, ts, ts, row_id))
 
 
-def orders_page(db_path: str, mode: str, before_id: int | None, limit: int) -> list[dict]:
+def orders_page(db_path: str, mode: str, before: Cursor | None, limit: int) -> list[dict]:
     """Orders for one mode, newest first. ``SELECT *`` on purpose: this reader
     is read-only and must not migrate, so a log written before ``price``
     existed comes back without it (the page then shows the quantity only)."""
-    where, args = _page_clause(mode, before_id)
-    rows = _read(db_path, f"SELECT * FROM orders {where} ORDER BY id DESC LIMIT ?",
+    where, args = _page_clause(mode, "ts", before)
+    rows = _read(db_path, f"SELECT * FROM orders {where} ORDER BY ts DESC, id DESC LIMIT ?",
                  (*args, int(limit)))
     for row in rows:
         row.setdefault("price", None)
     return rows
 
 
-def proposal_batches_page(db_path: str, mode: str, before_id: int | None,
+def proposal_batches_page(db_path: str, mode: str, before: Cursor | None,
                           limit: int) -> list[dict]:
     """Proposal batches for one mode, newest first, each with its lines."""
-    where, args = _page_clause(mode, before_id)
+    where, args = _page_clause(mode, "created_at", before)
     heads = _read(db_path, "SELECT id, created_at, mode, equity, cash FROM proposal_batches"
-                  f" {where} ORDER BY id DESC LIMIT ?", (*args, int(limit)))
+                  f" {where} ORDER BY created_at DESC, id DESC LIMIT ?", (*args, int(limit)))
     if not heads:
         return []
     marks = ", ".join("?" for _ in heads)

@@ -40,7 +40,7 @@ export function compareCurves(compare: WhatIfCompare): NamedCurve[] {
     .map((row) => ({
       name: row.name,
       curve: compare.curves[row.name],
-      highlight: row.name === compare.plan_strategy,
+      highlight: row.plan === true,
     }));
   const bench = compare.curves.benchmark;
   if (bench) lines.push({ name: BENCHMARK_LABEL, curve: bench, benchmark: true });
@@ -111,8 +111,10 @@ export function compareState() {
       return row.benchmark ? BENCHMARK_LABEL : row.name;
     },
 
-    isPlanRow(this: CompareHost, row: CompareRow): boolean {
-      return !row.benchmark && row.name === this.compare?.plan_strategy;
+    // The server flags the plan's row: a name match would also catch the
+    // same strategy run on default params.
+    isPlanRow(row: CompareRow): boolean {
+      return !row.benchmark && row.plan === true;
     },
 
     rowMoney(value: number): string {

@@ -74,7 +74,20 @@ def test_the_history_page_says_plainly_when_nothing_is_recorded(tmp_path):
     assert "No equity snapshots for paper yet" in body
     assert 'href="/history"' in body and 'aria-current="page"' in body
     assert "data-show-more" in body and 'data-next=""' in body
-    assert "data-equity-chart" not in body
+
+
+def test_the_chart_box_is_there_but_hidden_before_any_snapshot(tmp_path):
+    """The poll draws into the box once snapshots arrive, so it must exist
+    on a page that first loaded empty; it stays hidden until then."""
+    body = _client(tmp_path).get("/history").text
+    box = re.search(r'<div[^>]*data-equity-chart[^>]*>', body)
+    assert box is not None and 'x-ref="chart"' in box.group(0)
+    assert 'x-show="charted"' in box.group(0) and "x-cloak" in box.group(0)
+    assert 'data-charted="false"' in body
+    _seed(tmp_path)
+    shown = _client(tmp_path).get("/history").text
+    box = re.search(r'<div[^>]*data-equity-chart[^>]*>', shown).group(0)
+    assert "x-cloak" not in box and 'data-charted="true"' in shown
 
 
 def test_the_history_page_shows_performance_and_one_timeline(tmp_path):
@@ -158,7 +171,63 @@ def test_events_page_cursor_only_moves_past_shown_rows(tmp_path):
     first = history_service.events_page(repo, "paper", limit=2)
     assert [e["symbol"] for e in first["events"]] == ["O2", "O1"]
     # No batch was shown, so the batch cursor stays unset and the batch comes next.
-    assert first["next"] == "/partials/history?before_order=2"
-    second = history_service.events_page(repo, "paper", before_order=2, limit=2)
+    o1 = first["events"][-1]
+    assert first["next"] == history_service.next_url({"order": (o1["ts"], o1["id"])}, "paper")
+    assert "batch" not in first["next"]
+    second = history_service.events_page(repo, "paper", before_order=(o1["ts"], o1["id"]),
+                                         limit=2)
     assert [e["kind"] for e in second["events"]] == ["order", "proposal"]
     assert second["next"] is None
+
+
+def _walk(client, url: str) -> list[str]:
+    """Every event key the pages serve, following ``X-History-Next`` from ``url``."""
+    seen: list[str] = []
+    while url:
+        resp = client.get(url)
+        assert resp.status_code == 200
+        seen += re.findall(r'data-(?:symbol|batch)="(\w+)"', resp.text)
+        url = resp.headers["X-History-Next"]
+    return seen
+
+
+def test_show_more_pages_on_time_when_ids_and_times_disagree(tmp_path, monkeypatch):
+    """Two replay runs restart the clock: ids rise while times go d1 d2 d3 d1 d2 d3.
+    Paging on ids alone skipped rows; the (ts, id) keyset shows each exactly once."""
+    monkeypatch.setattr(history_service, "PAGE_SIZE", 2)
+    days = [T0 + timedelta(days=d) for d in (0, 1, 2, 0, 1, 2)]
+    with Storage(tmp_path / "t.db") as st:
+        _snapshot(st, T0, 10_000.0, "paper")
+        for i, day in enumerate(days):
+            st.record_proposal(dummy_proposal(created_at=day, lines=[_line()]), "paper")
+            _order(st, f"O{i}", 1, day + timedelta(hours=1), price=1.0)
+    seen = _walk(_client(tmp_path), "/partials/history")
+    batches = [k for k in seen if k.isdigit()]
+    orders = [k for k in seen if k.startswith("O")]
+    assert sorted(batches) == ["1", "2", "3", "4", "5", "6"]
+    assert sorted(orders) == [f"O{i}" for i in range(6)]
+    assert len(seen) == 12
+
+
+def test_the_account_stays_put_between_page_load_and_show_more(tmp_path, monkeypatch):
+    """A dry-run snapshot written after the page loaded makes dry_run the
+    newest account, but Show more and the poll keep serving the page's."""
+    monkeypatch.setattr(history_service, "PAGE_SIZE", 1)
+    with Storage(tmp_path / "t.db") as st:
+        _snapshot(st, T0, 10_000.0, "paper")
+        _order(st, "SPY", 1, T0, price=1.0)
+        _order(st, "QQQ", 1, T0 + timedelta(hours=1), price=1.0)
+        _order(st, "DIA", 1, T0, mode="dry_run", price=1.0)
+        _order(st, "IWM", 1, T0 + timedelta(hours=1), mode="dry_run", price=1.0)
+    client = _client(tmp_path)
+    page = client.get("/history").text
+    url = re.search(r'data-next="([^"]*)"', page).group(1).replace("&amp;", "&")
+    assert "mode=paper" in url
+    with Storage(tmp_path / "t.db") as st:
+        _snapshot(st, T0 + timedelta(days=1), 5_000.0, "dry_run")
+    assert re.findall(r'data-symbol="(\w+)"', client.get(url).text) == ["SPY"]
+    fresh = client.get("/partials/history?mode=paper").text
+    assert re.findall(r'data-symbol="(\w+)"', fresh) == ["QQQ"]
+    perf = client.get("/partials/history/performance?mode=paper").text
+    assert "$10,000.00" in perf and "5,000" not in perf
+    assert client.get("/partials/history?mode=bogus").status_code == 400

@@ -24,10 +24,13 @@ const curve = (v: number): EquityCurve => ({
   equity: [1000, v],
 });
 
-const names = ["momentum", "supertrend", "buy_and_hold", "rsi", "macd", "sma"];
+// A tuned plan: "rsi" is its default row, "rsi (your settings)" is the plan.
+const names = ["momentum", "rsi (your settings)", "buy_and_hold", "rsi", "macd", "sma"];
 const values = [1500, 1400, 1200, 1100, 1050, 900];
+const rows = names.map((n, i) => row(n, values[i]));
+rows[1].plan = true;
 const compare: WhatIfCompare = {
-  rows: names.map((n, i) => row(n, values[i])),
+  rows,
   benchmark: row("benchmark", 1200, true),
   curves: Object.fromEntries([
     ...names.slice(0, 5).map((n, i) => [n, curve(values[i])]),
@@ -50,7 +53,9 @@ check(compareTable(null).length === 0, "no comparison, no rows");
 const lines = compareCurves(compare);
 check(lines.length === 6, `five strategies and the benchmark, got ${lines.length}`);
 check(lines[5].name === BENCHMARK_LABEL && lines[5].benchmark === true, "benchmark last");
-check(lines.find((l) => l.name === "rsi")?.highlight === true, "the plan's line is highlighted");
+check(lines.find((l) => l.name === "rsi (your settings)")?.highlight === true,
+      "the plan's line is highlighted");
+check(!lines.find((l) => l.name === "rsi")?.highlight, "the default-params line is not");
 const option = multiCurveOption(lines);
 const series = Array.isArray(option.series) ? option.series : [];
 check(series.length === 6, `six series, got ${series.length}`);
@@ -68,8 +73,9 @@ const texts = whatIf();
 texts.compare = compare;
 check(texts.skippedText() === "Not run: follow_leader (needs a roster)", texts.skippedText());
 check(texts.errorsText() === "", "no failures, no failure line");
-check(texts.isPlanRow(compare.rows[3]) && !texts.isPlanRow(compare.benchmark),
-      "only the plan's own strategy row is highlighted");
+check(texts.isPlanRow(compare.rows[1]) && !texts.isPlanRow(compare.benchmark),
+      "the flagged plan row is highlighted");
+check(!texts.isPlanRow(compare.rows[3]), "the same strategy on default params is not the plan");
 check(!settleCompare(host, { id: "j", kind: "whatif_compare", state: "error", error: "boom" }),
       "an error job does not settle as done");
 check(host.state === "error" && host.error === "boom", "the job's error is the page's error");

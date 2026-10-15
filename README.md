@@ -135,7 +135,8 @@ cache coverage. An uncached range shows the exact `tradebot data pull` command.
 **Compare strategies**, next to Run, answers "which decision rule would have
 done best for this plan?" It replays the same plan once per strategy, each on
 its default settings, with your symbols, dates, cash, selector and allocator
-unchanged. The result is a table ranked by final value (your plan's strategy
+unchanged. A plan with its own strategy settings also gets a row of its own,
+"(your settings)". The result is a table ranked by final value (your plan
 highlighted, buy and hold in its place) and a chart of the best five plus buy
 and hold. Meta strategies need a roster from the config file and are listed
 as not run. A strategy that fails is listed with its error; the rest still run.

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field, fields
+from datetime import datetime
 from functools import partial
 
 from ..advisor import Proposal, ProposalLine
@@ -40,7 +41,8 @@ def record_pending(engine, proposal: Proposal) -> int | None:
                                           hold_status="suggested")
 
 
-def submit_stored(engine, line_ids: list[int]) -> list[RebalanceAction]:
+def submit_stored(engine, line_ids: list[int],
+                  now: datetime | None = None) -> list[RebalanceAction]:
     """Submit the given pending lines and mark each one ``submitted``.
 
     A line that is no longer pending (expired, rejected, already submitted,
@@ -54,7 +56,7 @@ def submit_stored(engine, line_ids: list[int]) -> list[RebalanceAction]:
         line = ProposalLine(**{name: row[name] for name in _LINE_FIELDS})
         mark = partial(engine.storage.set_line_status, [row["id"]], "submitted")
         try:
-            actions.append(orders.submit_line(engine, line, on_submitted=mark))
+            actions.append(orders.submit_line(engine, line, on_submitted=mark, now=now))
         except Exception:  # one bad symbol must not block the rest of the batch
             log.exception("Approved line %s (%s) failed to submit", row["id"], line.symbol)
     return actions

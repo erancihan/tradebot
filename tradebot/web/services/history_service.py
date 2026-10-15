@@ -2,14 +2,15 @@
 
 Two kinds of event share one timeline: an order the bot submitted and a
 proposal batch (what the advisor suggested, and what became of each line).
-Both tables are paged on their own ids and merged by time, so the cursor is a
-pair of ids; see ``events_page``.
+Each table is paged on its own ``(time, id)`` keyset and the two are merged
+by time, so the cursor is one ``(ts, id)`` pair per table; see ``events_page``.
 """
 
 from __future__ import annotations
 
 from urllib.parse import urlencode
 
+from ...config import VALID_MODES
 from ...storage.proposals import LINE_STATUSES
 
 PAGE_SIZE = 20
@@ -17,9 +18,19 @@ PAGE_SIZE = 20
 EQUITY_WINDOW = 2000
 
 
-def active_mode(repo, settings) -> str:
-    """The account History shows: the newest snapshot's mode (as the dashboard
-    does), else the configured mode, so a Today refresh before any pass shows."""
+#: Accounts an order log can hold: the settings' modes and the dry-run label.
+KNOWN_MODES = (*VALID_MODES, "dry_run")
+
+
+def active_mode(repo, settings, requested: str | None = None) -> str:
+    """The account History shows: the one the page loaded with (``requested``,
+    carried by Show more and the poll, so a newer snapshot elsewhere cannot
+    switch accounts mid-scroll), else the newest snapshot's mode (as the
+    dashboard does), else the configured mode. An unknown mode is a ValueError."""
+    if requested is not None:
+        if requested not in KNOWN_MODES:
+            raise ValueError(f"unknown account {requested!r}")
+        return requested
     return repo.default_mode() or settings.mode
 
 
@@ -54,14 +65,21 @@ def _batch_event(head: dict) -> dict:
             "counts": {s: n for s, n in counts.items() if n}}
 
 
-def events_page(repo, mode: str, before_order: int | None = None,
-                before_batch: int | None = None, limit: int = PAGE_SIZE) -> dict:
+Cursor = tuple[str, int]
+#: The query parameters that carry each table's cursor.
+_KEYS = {"order": ("order_ts", "order_id"), "proposal": ("batch_ts", "batch_id")}
+
+
+def events_page(repo, mode: str, before_order: Cursor | None = None,
+                before_batch: Cursor | None = None, limit: int | None = None) -> dict:
     """One page of the merged timeline and the cursor for the next, or None.
 
-    Each table gives ``limit + 1`` rows past its cursor; whatever is left
-    over after taking the newest ``limit`` proves a next page exists. A
-    cursor only moves past rows actually shown, so nothing is skipped.
+    Each table gives ``limit + 1`` rows past its ``(ts, id)`` cursor, newest
+    first; whatever is left over after taking the newest ``limit`` proves a
+    next page exists. The rows shown from a table are a prefix of that table's
+    order, so its next cursor is its last shown row and nothing is skipped.
     """
+    limit = PAGE_SIZE if limit is None else limit
     orders = [_order_event(r) for r in repo.orders_page(mode, before_order, limit + 1)]
     batches = [_batch_event(h)
                for h in repo.proposal_batches_page(mode, before_batch, limit + 1)]
@@ -70,17 +88,25 @@ def events_page(repo, mode: str, before_order: int | None = None,
     shown = merged[:limit]
     if len(merged) <= limit:
         return {"events": shown, "next": None}
-    cursor = {"before_order": before_order, "before_batch": before_batch}
-    for event in shown:
-        key = "before_order" if event["kind"] == "order" else "before_batch"
-        cursor[key] = event["id"] if cursor[key] is None else min(cursor[key], event["id"])
-    return {"events": shown, "next": next_url(cursor)}
+    cursor = {"order": before_order, "proposal": before_batch}
+    for event in shown:                        # newest first: the last one wins
+        cursor[event["kind"]] = (event["ts"], event["id"])
+    return {"events": shown, "next": next_url(cursor, mode)}
 
 
-def next_url(cursor: dict) -> str:
-    """The partial that serves the page after ``cursor``."""
-    query = {k: v for k, v in cursor.items() if v is not None}
-    return "/partials/history" + (f"?{urlencode(query)}" if query else "")
+def next_url(cursor: dict, mode: str) -> str:
+    """The partial that serves ``mode``'s page after ``cursor`` (kind -> (ts, id))."""
+    query: dict = {"mode": mode}
+    for kind, pair in cursor.items():
+        if pair is not None:
+            ts_key, id_key = _KEYS[kind]
+            query[ts_key], query[id_key] = pair
+    return f"/partials/history?{urlencode(query)}"
+
+
+def parse_cursor(ts: str | None, row_id: int | None) -> Cursor | None:
+    """A table's cursor from its two query parameters; half a pair is none."""
+    return None if ts is None or row_id is None else (ts, int(row_id))
 
 
 def view(repo, settings) -> dict:

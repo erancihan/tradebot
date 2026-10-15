@@ -6,7 +6,7 @@ markup is defined once and reused for both first paint and live refresh.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from ..dependencies import get_arena_repo, get_trading_repo, templates
@@ -101,14 +101,24 @@ def autopilot(request: Request):
     )
 
 
+def _history_mode(request: Request, repo: TradingRepository, mode: str | None) -> str:
+    try:
+        return history_service.active_mode(repo, request.app.state.settings, mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/history", response_class=HTMLResponse)
-def history(request: Request, before_order: int | None = None,
-            before_batch: int | None = None,
+def history(request: Request, mode: str | None = None, order_ts: str | None = None,
+            order_id: int | None = None, batch_ts: str | None = None,
+            batch_id: int | None = None,
             repo: TradingRepository = Depends(get_trading_repo)):
-    """One page of History's timeline. The next page's URL rides in the
-    ``X-History-Next`` header (empty on the last page), so the fragment stays
-    the same markup the page includes."""
-    mode = history_service.active_mode(repo, request.app.state.settings)
+    """One page of History's timeline for ``mode`` (the page's account). The
+    next page's URL rides in the ``X-History-Next`` header (empty on the last
+    page), so the fragment stays the same markup the page includes."""
+    mode = _history_mode(request, repo, mode)
+    before_order = history_service.parse_cursor(order_ts, order_id)
+    before_batch = history_service.parse_cursor(batch_ts, batch_id)
     page = history_service.events_page(repo, mode, before_order, before_batch)
     first = before_order is None and before_batch is None
     response = templates.TemplateResponse(
@@ -119,9 +129,9 @@ def history(request: Request, before_order: int | None = None,
 
 
 @router.get("/history/performance", response_class=HTMLResponse)
-def history_performance(request: Request,
+def history_performance(request: Request, mode: str | None = None,
                         repo: TradingRepository = Depends(get_trading_repo)):
-    mode = history_service.active_mode(repo, request.app.state.settings)
+    mode = _history_mode(request, repo, mode)
     return templates.TemplateResponse(
         request, "components/history_performance.html",
         {"history": {"performance": history_service.performance(repo, mode)}})

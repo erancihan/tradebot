@@ -173,9 +173,9 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   `settings.mode`, every order assumed filled), equity and cash from the newest
   snapshot, else `initial_cash`. Holdings use the same sum at the last cached
   close (unpriced = skipped, never guessed), or the paper broker with credentials.
-- **History** shows `default_mode()`, else `settings.mode`; orders and batches page on their own
-  ids (`X-History-Next`), holds counted apart. `orders.price` is the sizing price (NULL on a
-  flatten or old row); `schema.migrate` adds a later column on open, the read-only web never.
+- **History** shows `default_mode()`, else `settings.mode`, pinned by `?mode=` in its URLs; orders
+  and batches page on a `(ts, id)` keyset each (`X-History-Next`). `orders.price` is the sizing
+  price (NULL on a flatten or old row); `schema.migrate` adds a later column on open, the web never.
 - **The Today refresh** gives the selector the whole cached history and the
   strategy the last `required_history + 30` bars, so engine and web can differ
   when their histories start on different days.
@@ -188,8 +188,9 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   open and earns that bar. The arena never passes flows. What-if cash: month's first bar.
 - **What-if books are fully investable** (`whatif_risk()`). The benchmark is
   equal-weight buy and hold with the same cash, so a buy-and-hold plan ties it.
-- **Compare strategies** runs each strategy on default params with the plan's allocator and
-  selector. Meta strategies (a roster) are skipped, a raising one is an `errors` entry, 120 s cap.
+- **Compare strategies** runs each strategy on defaults with the plan's allocator and selector,
+  plus a tuned plan as `<name> (your settings)`; the server flags the plan's row (`plan`). Meta
+  strategies (a roster) are skipped, a raising one is an `errors` entry, 120 s cap.
 
 **Arena and season**
 - **Isolation:** `process` (POSIX default) forks with a hard kill and never
@@ -249,9 +250,9 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   Autopilot `RLock`. A line is `submitted` once the broker accepts it; later
   bookkeeping only logs. A mode switch wakes the loop.
 - **The web autopilot is paper or dry-run, never live** (`autopilot_build`); a
-  dry-run's virtual account dies with a restart. `tradebot run --autopilot` builds as
-  `run`, keeps its state in scope `cli_<account>` (never the web's mode), expires no
-  pending lines at start, and a replay's clock reads its bars.
+  dry-run's account dies with a restart. `tradebot run --autopilot` builds as `run`, keeps
+  state in scope `cli_<account>` (never the web's), expires no pending lines at start; a
+  replay's clock reads its bars. Orders carry the pass clock, as batches do (approval: the tap's).
 - **With a morning brief, "off" keeps the loop alive** to send briefs from
   `engine.propose` (nothing stored). `brief_for` prevents resends. A brief-only
   loop is `tradebot run --autopilot --mode off`.
@@ -277,9 +278,8 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   clients use `tests/web_client.local_client` (Host `localhost`).
 - **The login body is bounded twice** (declared `Content-Length` <= 4096 and the
   streamed body). `test_web_guard.py` drives raw ASGI because clients fix lying lengths.
-- **Chart axes drop the clock on daily data.** What-if presets are real when
-  daily bars are cached (`MIN_SHARED_DAYS`), else labelled synthetic.
-- **A green local suite is not a green CI.** Check the actual run.
+- **Chart axes drop the clock on daily data.** What-if presets are real when daily bars are
+  cached (`MIN_SHARED_DAYS`), else labelled synthetic. **A green local suite is not a green CI.**
 
 ## Docs policy
 

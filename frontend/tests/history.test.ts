@@ -7,7 +7,8 @@ import { check, stubFetch } from "./harness";
 const pages: Record<string, { html: string; next: string }> = {
   "/partials/history?before_order=5": { html: "<li>p2</li>", next: "/partials/history?before_order=2" },
   "/partials/history?before_order=2": { html: "<li>p3</li>", next: "" },
-  "/partials/history": { html: "<li>fresh</li>", next: "/partials/history?before_order=9" },
+  "/partials/history?mode=paper": { html: "<li>fresh</li>", next: "/partials/history?before_order=9" },
+  "/partials/history/performance?mode=paper": { html: "<p>perf</p>", next: "" },
 };
 const asked: string[] = [];
 stubFetch((url) => {
@@ -34,7 +35,7 @@ check(page.next === "/partials/history?before_order=2", `cursor advanced: ${page
 check(page.pages === 2, `two pages shown, got ${page.pages}`);
 
 await page.poll();
-check(!asked.includes("/partials/history"), "no poll once an older page is shown");
+check(!asked.some((u) => u.startsWith("/partials/history?mode")), "no poll once an older page is shown");
 
 await page.more();
 check(list.innerHTML.endsWith("<li>p3</li>"), "third page appended");
@@ -51,8 +52,13 @@ check(broken.error.includes("500"), `the error names the failure: "${broken.erro
 check(broken.next === "/partials/history?before_order=404", "cursor kept for a retry");
 check(!broken.busy, "not stuck busy");
 
-// On the first page the poll swaps in the newest page and its cursor.
-const fresh = Object.assign(history(), { $refs: { list } });
+// On the first page the poll swaps in the newest page and its cursor, for the
+// account the page loaded with (never whichever account is newest now).
+const performance = { innerHTML: "" };
+const fresh = Object.assign(history(), { $refs: { list, performance } });
+fresh.mode = "paper";
 await fresh.poll();
+check(asked.includes("/partials/history?mode=paper"), `the poll names the account: ${asked.join(", ")}`);
+check(performance.innerHTML === "<p>perf</p>", "the performance card follows the same account");
 check(list.innerHTML === "<li>fresh</li>", `newest page swapped in: ${list.innerHTML}`);
 check(fresh.next === "/partials/history?before_order=9", `cursor from the poll: ${fresh.next}`);

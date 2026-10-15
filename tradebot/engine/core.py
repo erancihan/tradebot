@@ -116,13 +116,14 @@ class Engine:
         # to be booked first, or sizing would be done against stale equity.
         self._check_brackets()
 
-        day = session.roll_session(self, now or utcnow())
+        now = now or utcnow()             # the pass clock: a replay's is its bar time
+        day = session.roll_session(self, now)
         acct = self.broker.account()
         if self._session_start_equity is None:
             self._session_start_equity = acct.equity
         if self.storage:
             self.storage.record_equity(acct.equity, acct.cash, self.mode)
-        if session.halt_on_daily_loss(self, acct.equity, day):
+        if session.halt_on_daily_loss(self, acct.equity, day, now):
             return PassOutcome(halted=True)
 
         proposal = self.propose(acct.equity, acct.cash, now=now)
@@ -132,11 +133,12 @@ class Engine:
         if not submit:
             return PassOutcome(proposal=proposal,
                                batch_id=pending.record_pending(self, proposal))
-        return PassOutcome(actions=self._submit_all(proposal), proposal=proposal)
+        return PassOutcome(actions=self._submit_all(proposal, now), proposal=proposal)
 
-    def submit_lines(self, line_ids: list[int]) -> list[RebalanceAction]:
-        """Submit stored pending lines (an approval); see ``engine.pending``."""
-        return pending.submit_stored(self, line_ids)
+    def submit_lines(self, line_ids: list[int],
+                     now: datetime | None = None) -> list[RebalanceAction]:
+        """Submit stored pending lines (an approval) stamped ``now``; see ``engine.pending``."""
+        return pending.submit_stored(self, line_ids, now)
 
     def reset_session(self, start_equity: float | None = None) -> None:
         """Start a daily-loss session: from a persisted same-day anchor, or
@@ -164,13 +166,13 @@ class Engine:
             now=now,
         )
 
-    def _submit_all(self, proposal: Proposal) -> list[RebalanceAction]:
+    def _submit_all(self, proposal: Proposal, now: datetime) -> list[RebalanceAction]:
         actions: list[RebalanceAction] = []
         for line in proposal.lines:
             if line.skipped:      # never sized: no bars, bad price, failed signal
                 continue
             try:
-                actions.append(orders.submit_line(self, line))
+                actions.append(orders.submit_line(self, line, now=now))
             except Exception:  # one bad symbol shouldn't kill the whole pass
                 log.exception("Rebalance failed for %s", line.symbol)
         return actions
