@@ -1,0 +1,24 @@
+{#- Today: what a fresh install still lacks, each with its one fix. Shown
+    only while something is missing. Expects `setup` (setup_service). -#}
+{% if not setup.ready %}
+  {% set labels = {"config": "Settings saved", "credentials": "Alpaca keys on the server",
+                   "bars": "Price history"} %}
+  <section class="space-y-2 rounded-lg border border-amber-800/70 bg-amber-950/20 p-3" data-setup-card>
+    <div class="flex items-baseline justify-between">
+      <h2 class="text-sm font-semibold text-amber-200">Finish setting up</h2>
+      <a href="/settings" class="text-sm font-medium text-emerald-400 hover:text-emerald-300">Settings</a>
+    </div>
+    <ul class="space-y-2 text-sm">
+      {% for key in ("config", "credentials", "bars") %}
+        {% set item = setup[key] %}
+        <li data-setup-item="{{ key }}" data-ok="{{ 'true' if item.ok else 'false' }}" class="flex gap-2">
+          <span aria-hidden="true" class="{{ 'text-emerald-400' if item.ok else 'text-amber-300' }}">{{ '✓' if item.ok else '•' }}</span>
+          <div class="min-w-0 space-y-1">
+            <p class="{{ 'text-slate-400' if item.ok else 'text-slate-100' }}">{{ labels[key] }}{{ '' if item.ok else ': missing' }}</p>
+            {% if item.hint %}<p class="break-words text-xs text-slate-400">{{ item.hint }}</p>{% endif %}
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endif %}

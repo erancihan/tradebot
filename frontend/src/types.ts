@@ -261,3 +261,48 @@ export interface NotifyTestResult {
   channels: string[];
   failed: string[];
 }
+
+// GET/POST /api/settings: the editable part of config.yaml, in its YAML shape.
+export type ParamValue = number | boolean | string;
+export type ParamMap = Record<string, unknown>;
+
+export interface NamedParams {
+  name: string;
+  params?: ParamMap;
+}
+
+export interface SettingsDoc {
+  symbols: string[];
+  timeframe: string;
+  poll_seconds: number;
+  initial_cash: number;
+  market: string;
+  autopilot: { brief_minutes_before_open: number | null };
+  strategy: NamedParams;
+  portfolio: {
+    selector: NamedParams | null;
+    allocation: string | null;
+    params: ParamMap;
+    overlays: NamedParams[];
+  };
+  risk: Record<string, number | boolean | null>;
+  notify: { webhook_url: string | null; ntfy_topic: string | null; ntfy_server: string | null };
+}
+
+export interface SettingsView {
+  settings: SettingsDoc;
+  mode: string;
+  credentials_present: boolean;
+  config_path: string;
+  config_exists: boolean;
+  webhook_configured: boolean;
+  ntfy_configured: boolean;
+  choices: { markets: string[]; timeframes: string[] };
+  notice: string | null;
+}
+
+// GET /api/stack: selectors and allocators a form can pick, with their params.
+export interface StackSpecs {
+  selectors: StrategySpec[];
+  allocators: StrategySpec[];
+}

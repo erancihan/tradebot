@@ -11,6 +11,8 @@
     </span>
   </div>
 
+  {% include "components/setup_card.html" %}
+
   <button type="button" @click="refresh()" :disabled="state === 'running'"
           class="min-h-[48px] w-full rounded-lg bg-emerald-600 text-base font-semibold text-white hover:bg-emerald-500 disabled:opacity-50">
     <span x-show="state !== 'running'">Refresh</span>

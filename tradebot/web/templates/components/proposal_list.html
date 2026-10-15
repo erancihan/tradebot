@@ -61,9 +61,9 @@
       {{ today.symbols | join(', ') }}
       ({{ 'your watchlist' if today.symbol_source == 'watchlist' else 'the config symbols' }}).</p>
     {% if today.config_hint %}
-      <p class="text-slate-500">No config file found, so the defaults are used. Create one
-        to choose symbols and a strategy:</p>
-      <code class="block overflow-x-auto rounded bg-slate-900 px-2 py-1 font-mono text-xs text-slate-300">{{ today.config_hint }}</code>
+      <p class="text-slate-500">No config file yet, so the defaults are used.
+        <a href="{{ today.config_hint }}" class="font-medium text-emerald-400 hover:text-emerald-300">Open Settings</a>
+        to choose symbols and a strategy.</p>
     {% endif %}
   </div>
   {% include "components/holdings.html" %}

@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Settings · tradebot{% endblock %}
+{% block content %}
+{#- One form over config.yaml's editable keys. The fields are bound by
+    settings.ts after it loads /api/settings; the server renders the frame
+    (what cannot be edited) and the overlays, which only the file edits. -#}
+{% set s = view.settings %}
+{% set input = "min-h-[48px] w-full rounded-lg border border-slate-700 bg-slate-950 px-3 text-base text-slate-100" %}
+{% macro section(title) -%}
+  <section class="space-y-3 rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+    <h2 class="text-sm font-semibold text-slate-200">{{ title }}</h2>
+    {{ caller() }}
+  </section>
+{%- endmacro %}
+{% macro field(label, hint="") -%}
+  <label class="block space-y-1">
+    <span class="text-xs text-slate-400">{{ label }}</span>
+    {{ caller() }}
+    {% if hint %}<span class="block text-xs text-slate-500">{{ hint }}</span>{% endif %}
+  </label>
+{%- endmacro %}
+<div class="mx-auto max-w-xl space-y-4" data-settings x-data="settings">
+  <h1 class="text-lg font-semibold text-slate-100">Settings</h1>
+
+  {% include "components/settings_status.html" %}
+
+  <p x-show="loading" class="text-sm text-slate-500">Loading…</p>
+
+  <template x-if="form">
+  <form class="space-y-4" @submit.prevent="save()">
+    {% call section("Symbols") %}
+      {% call field("Symbols to scan", "Separated by commas or spaces. A Today watchlist, when set, takes over.") %}
+        <textarea x-model="form.symbols" rows="2" autocapitalize="characters" autocomplete="off"
+                  class="{{ input }} py-2 font-mono uppercase" name="symbols"></textarea>
+      {% endcall %}
+      {% call field("Bar size") %}
+        <select x-model="form.timeframe" class="{{ input }}" name="timeframe">
+          <template x-for="tf in choices.timeframes" :key="tf">
+            <option :value="tf" x-text="tf" :selected="tf === form.timeframe"></option>
+          </template>
+        </select>
+      {% endcall %}
+    {% endcall %}
+
+    {% call section("Strategy") %}
+      {% set kind, pkey, allow_none = "strategy", "strategyParams", false %}
+      {% include "components/settings_picker.html" %}
+      <p class="text-xs text-slate-500">Picking a strategy resets its fields to its defaults.
+        A meta strategy's roster stays in the config file.</p>
+    {% endcall %}
+    {% call section("Portfolio") %}
+      <p class="text-xs text-slate-400">Selector: which symbols may be held</p>
+      {% set kind, pkey, allow_none = "selector", "selectorParams", true %}
+      {% include "components/settings_picker.html" %}
+      <p class="text-xs text-slate-400">Allocation: how much each held symbol gets
+        (none = the fixed max position per symbol from Risk)</p>
+      {% set kind, pkey, allow_none = "allocation", "allocationParams", true %}
+      {% include "components/settings_picker.html" %}
+      <p class="text-xs text-slate-500" data-overlays>Overlays:
+        {{ s.portfolio.overlays | map(attribute="name") | join(", ") or "none" }}
+        (edit in the config file).</p>
+    {% endcall %}
+    {% call section("Risk") %}
+      {% set pct_fields = [
+        ("max_position_pct", "Max per symbol, % of equity", ""),
+        ("max_gross_exposure", "Max invested, % of equity", ""),
+        ("max_daily_loss_pct", "Daily loss halt, %", "Flatten and halt after this drop in one day."),
+        ("rebalance_band_pct", "No-trade band, %", "Skip drift trades smaller than this; exits always run."),
+        ("stop_loss_pct", "Stop loss, % below entry", "Empty = none. Paper/live only: backtests do not model it."),
+        ("take_profit_pct", "Take profit, % above entry", "Empty = none."),
+      ] %}
+      <div class="grid grid-cols-2 gap-3">
+        {% for key, label, hint in pct_fields %}
+          {% call field(label, hint) %}
+            <input type="number" inputmode="decimal" step="any" min="0" max="100"
+                   x-model="form.riskPct.{{ key }}" name="{{ key }}" class="{{ input }}">
+          {% endcall %}
+        {% endfor %}
+      </div>
+      <label class="flex min-h-[44px] items-center gap-3 text-sm text-slate-200">
+        <input type="checkbox" x-model="form.allowFractional" name="allow_fractional"
+               class="h-6 w-6 rounded border-slate-700 bg-slate-950">
+        Allow fractional shares
+      </label>
+    {% endcall %}
+    {% call section("Autopilot") %}
+      <div class="grid grid-cols-2 gap-3">
+        {% call field("Pass every, seconds", "300 = every 5 minutes.") %}
+          <input type="number" inputmode="numeric" min="10" step="1"
+                 x-model.number="form.poll_seconds" name="poll_seconds" class="{{ input }}">
+        {% endcall %}
+        {% call field("Morning brief, minutes before open", "Empty = no brief.") %}
+          <input type="number" inputmode="numeric" min="0" max="720" step="1"
+                 x-model="form.brief" name="brief_minutes_before_open" class="{{ input }}">
+        {% endcall %}
+        {% call field("Starting cash", "Offline and dry-run accounts start here.") %}
+          <input type="number" inputmode="decimal" min="1" step="any"
+                 x-model.number="form.initial_cash" name="initial_cash" class="{{ input }}">
+        {% endcall %}
+      </div>
+      <p class="text-xs text-slate-500">Saving stops a running autopilot so it never trades on
+        old settings; start it again from Autopilot.</p>
+    {% endcall %}
+    {% call section("Alerts") %}
+      {% call field("ntfy topic", "Phone push through the ntfy app. Shown masked: leave it to keep it, type a new one to replace it.") %}
+        <input type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+               x-model="form.ntfyTopic" name="ntfy_topic" class="{{ input }} font-mono">
+      {% endcall %}
+      {% call field("ntfy server", "Empty = https://ntfy.sh. Changing it means typing the topic again.") %}
+        <input type="url" autocomplete="off" x-model="form.ntfyServer" name="ntfy_server" class="{{ input }}">
+      {% endcall %}
+      {% call field("Webhook URL", "Shown masked, like the topic. To remove a destination, edit the config file.") %}
+        <input type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
+               x-model="form.webhookUrl" name="webhook_url" class="{{ input }} font-mono">
+      {% endcall %}
+      <p class="text-xs text-slate-500">Send a test from the Autopilot page after saving.</p>
+    {% endcall %}
+    {% call section("Market") %}
+      {% call field("Exchange calendar", "When the autopilot and the brief wake. Orders still go to Alpaca (US).") %}
+        <select x-model="form.market" name="market" class="{{ input }}">
+          <template x-for="m in choices.markets" :key="m">
+            <option :value="m" x-text="m" :selected="m === form.market"></option>
+          </template>
+        </select>
+      {% endcall %}
+    {% endcall %}
+
+    <div x-show="error" x-cloak x-text="error" data-error
+         class="rounded-lg border border-rose-800 bg-rose-950/40 p-3 text-sm text-rose-300 break-words"></div>
+    <div x-show="notice" x-cloak x-text="notice" data-notice
+         class="rounded-lg border border-emerald-800 bg-emerald-950/40 p-3 text-sm text-emerald-300 break-words"></div>
+    <button type="submit" :disabled="saving" data-save
+            class="min-h-[48px] w-full rounded-lg bg-emerald-600 text-base font-semibold text-white hover:bg-emerald-500 disabled:opacity-50">
+      <span x-show="!saving">Save</span><span x-show="saving" x-cloak>Saving…</span>
+    </button>
+  </form>
+  </template>
+  <p x-show="!loading && !form && error" x-cloak x-text="error"
+     class="rounded-lg border border-rose-800 bg-rose-950/40 p-3 text-sm text-rose-300 break-words"></p>
+</div>
+{% endblock %}

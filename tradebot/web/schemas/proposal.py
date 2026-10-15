@@ -36,7 +36,7 @@ class ProposalEnvelope(BaseModel):
     """What the Today page needs, including how to get started when empty."""
 
     configured: bool                  # a config file was loaded
-    config_hint: str | None = None    # the command that creates one, when not
+    config_hint: str | None = None    # the Settings page link, when not
     symbols: list[str] = []
     symbol_source: str = "config"     # "watchlist" | "config": which list `symbols` is
     proposal: ProposalView | None = None

@@ -79,3 +79,14 @@ def test_no_package_module_exceeds_limit() -> None:
 def test_known_offenders_never_cover_the_cli() -> None:
     # The CLI was split to these limits outright; it gets no grace period.
     assert not {k for k in KNOWN_OFFENDERS if k.startswith("tradebot/cli/")}
+
+
+MAX_CLAUDE_MD_LINES = 300
+
+
+def test_claude_md_stays_short() -> None:
+    # An onboarding file nobody finishes reading onboards nobody: keep it to
+    # the rules and their reasons, and put history in docs/.
+    lines = len((ROOT / "CLAUDE.md").read_text().splitlines())
+    assert lines <= MAX_CLAUDE_MD_LINES, (
+        f"CLAUDE.md has {lines} lines (max {MAX_CLAUDE_MD_LINES}): compress, don't append")

@@ -101,6 +101,23 @@ def shutdown(app) -> None:
         pilot.stop()
 
 
+def reset(app) -> bool:
+    """After a settings save: stop the loop and drop the runner, so the next
+    command builds one from the new settings. Returns whether a loop was running.
+
+    The stored mode is left alone, so the page still shows what the user chose
+    and a restart resumes it; it simply is not running on stale settings.
+    """
+    with _BUILD_LOCK:
+        pilot = current(app)
+        app.state.autopilot = None
+    if pilot is None:
+        return False
+    was_running = pilot.running
+    pilot.stop()
+    return was_running
+
+
 def approve(app, line_ids: list[int]) -> dict:
     asked = len(set(line_ids))
     done = get(app).approve(line_ids)
