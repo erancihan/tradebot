@@ -190,6 +190,7 @@ export interface ProposalEnvelope {
 export interface WatchlistView {
   symbols: string[];
   source: string; // "watchlist" | "config"
+  notice?: string; // set when the edit stopped a running autopilot
 }
 
 export type WatchlistChange = { add: string[] } | { remove: string[] };

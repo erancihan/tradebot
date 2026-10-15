@@ -185,7 +185,7 @@ build on every push and PR, with no credentials.
   when their histories start on different days.
 - **One list for suggestions and the autopilot:** the watchlist when not empty,
   else `settings.symbols` (`symbols_service.with_active_symbols`, a copy). A
-  watchlist edit reaches a running autopilot only after a restart or a Settings save.
+  watchlist edit stops a running autopilot (`autopilot_service.reset`), as a Settings save does.
   Symbols match `^[A-Z.\-]{1,10}$` after upper-casing.
 - **Contributions are not returns.** With `cash_flows`, metrics run on the
   flow-free growth index (`backtest/flows.py`). `None` keeps the old path, and

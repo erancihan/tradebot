@@ -33,6 +33,8 @@
     <div x-ref="watchlist" class="space-y-2">
       {% include "components/watchlist.html" %}
     </div>
+    <div x-show="notice" x-cloak x-text="notice" data-notice
+         class="rounded-lg border border-amber-800 bg-amber-950/40 p-3 text-sm text-amber-300 break-words"></div>
     <form class="flex gap-2" @submit.prevent="addSymbol()">
       <input type="text" x-model="newSymbol" placeholder="Symbol, e.g. VTI" maxlength="10"
              autocapitalize="characters" autocomplete="off" aria-label="Symbol to add"

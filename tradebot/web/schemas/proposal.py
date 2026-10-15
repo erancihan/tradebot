@@ -51,6 +51,7 @@ class WatchlistChange(BaseModel):
 class WatchlistView(BaseModel):
     symbols: list[str]
     source: str                       # "watchlist" | "config"
+    notice: str | None = None         # set when an edit stopped the autopilot
 
 
 class HoldingRow(BaseModel):
