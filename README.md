@@ -132,6 +132,14 @@ Presets come from the cache, familiar index funds first. With an empty cache
 the presets are synthetic and labelled so. The date pickers are bounded by
 cache coverage. An uncached range shows the exact `tradebot data pull` command.
 
+**Compare strategies**, next to Run, answers "which decision rule would have
+done best for this plan?" It replays the same plan once per strategy, each on
+its default settings, with your symbols, dates, cash, selector and allocator
+unchanged. The result is a table ranked by final value (your plan's strategy
+highlighted, buy and hold in its place) and a chart of the best five plus buy
+and hold. Meta strategies need a roster from the config file and are listed
+as not run. A strategy that fails is listed with its error; the rest still run.
+
 ### 7. Phone alerts with ntfy
 
 [ntfy](https://ntfy.sh) pushes alerts to your phone as plain text, with no

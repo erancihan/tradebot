@@ -55,3 +55,10 @@ One new core concept, the proposal, feeds three flows.
   next mode tap rebuilds it from the new file.
 - A setup card on Today lists what is missing (config, keys, bars) with the
   fix for each.
+
+## Addendum 2026-10-15: compare strategies on a what-if plan
+- A comparison changes only the decision rule: every strategy runs on its
+  default params with the plan's symbols, cash flows, allocator and selector.
+  Tuned params stay a single-run affair; the window and benchmark run once.
+- Meta strategies are skipped (they need a configured roster). The phone gets
+  every row but only the top five curves plus the benchmark.

@@ -36,7 +36,7 @@ tradebot/
   universe/      screen (LiquidityScreen), alpaca     consortium/  voice, consensus, panel
   backtest/      result, runner (Backtester), steps (per-bar helpers shared by the
                  backtester and arena/simulation.py), flows (cash flows, growth index)
-  whatif/        plan, run (run_whatif, whatif_risk), compare (benchmark_plan)
+  whatif/        plan, run (run_whatif, whatif_risk, plan_window), compare, compare_many
   config.py      Settings (YAML), credentials.py (env only), config_io.py (EDITABLE_KEYS,
                  settings_to_dict, editable, write_settings: atomic, refuses secrets)
   notify.py      Notifier: Log, Null, Webhook, Ntfy, Multi, build_notifier
@@ -57,13 +57,13 @@ tradebot/
                    consortium, whatif_presets, notify_service, symbols_service,
                    holdings_service, settings_service (view, save), settings_validate,
                    settings_secrets (mask alert targets), setup_service (Today card),
-                   jobs/ {registry, frames, frames_many, backtest, dryrun, proposal,
-                   whatif, catalog (strategy_catalog, stack_specs)}
+                   jobs/ {registry, frames, frames_many, backtest, dryrun, proposal, whatif,
+                   whatif_compare, catalog (strategy_catalog, stack_specs)}
                  routes/ pages, partials, sse, api/ {trading, arena, jobs (+ /stack),
-                   proposal, whatif, autopilot, notify, watchlist, settings (+ /setup)}
+                   proposal, whatif (+ /compare), autopilot, notify, watchlist, settings (+ /setup)}
                  templates/ pages (today, whatif, autopilot, settings, ...),
                    components (proposal_list, watchlist, holdings, setup_card,
-                   settings_status, settings_picker, autopilot_panel, tabbar, ...)
+                   settings_status, settings_picker, autopilot_panel, whatif_compare, tabbar, ...)
                  static-src/ (PWA, committed), static/ (built, gitignored)
 algos/           12 contestants + canaries/ and consortium/ (both opt-in)
 scenarios/       regime library, factor library (xs_*), real_xs_* (+ sealed holdout), legacy real_*
@@ -190,6 +190,8 @@ build on every push and PR, with no credentials.
   open and earns that bar. The arena never passes flows. What-if cash: month's first bar.
 - **What-if books are fully investable** (`whatif_risk()`). The benchmark is
   equal-weight buy and hold with the same cash, so a buy-and-hold plan ties it.
+- **Compare strategies** runs each strategy on default params with the plan's allocator and
+  selector. Meta strategies (a roster) are skipped, a raising one is an `errors` entry, 120 s cap.
 
 **Arena and season**
 - **Isolation:** `process` (POSIX default) forks with a hard kill and never
@@ -281,13 +283,11 @@ build on every push and PR, with no credentials.
 - Documents state the final, expected state: once a question is answered, write the
   answer and what happens next, and delete the question. Keep only relevant documents.
 - An epic's plan folder under `docs/plans/` is deleted as the epic ships.
-  Durable decisions go to `docs/adr/`. Research results go to
-  `docs/research-record.md`.
+  Durable decisions go to `docs/adr/`. Research results go to `docs/research-record.md`.
 
 ## Git rules
 
-- Branch per epic: `feat/<epic>`. Merge into master with
-  `git merge --no-ff --no-gpg-sign`.
+- Branch per epic: `feat/<epic>`. Merge into master with `git merge --no-ff --no-gpg-sign`.
 - Every commit carries `--no-gpg-sign`. Never edit git config.
 
 ## Definition of done
