@@ -137,8 +137,14 @@ def test_headless_off_mode_runs_a_briefing_loop(tmp_path, capsys):
     assert rc == 0 and "morning brief 30 min" in out and "ticks=2 mode=off" in out
 
 
-@pytest.mark.parametrize("bad", [0, -5])
-def test_a_non_positive_lead_is_refused(tmp_path, bad):
+def test_a_negative_lead_is_refused(tmp_path):
     pilot, _, _, _ = build(tmp_path)
     with pytest.raises(ValueError):
-        Autopilot(pilot.engine, pilot.storage, poll_seconds=300, brief_minutes=bad)
+        Autopilot(pilot.engine, pilot.storage, poll_seconds=300, brief_minutes=-5)
+
+
+def test_a_zero_lead_means_no_brief(tmp_path):
+    """The Settings form offers 0 as "off"."""
+    pilot, _, _, _ = build(tmp_path)
+    assert Autopilot(pilot.engine, pilot.storage, poll_seconds=300,
+                     brief_minutes=0).brief is None

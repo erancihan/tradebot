@@ -49,7 +49,8 @@ class Autopilot(ApprovalsMixin, BriefMixin):
         self.notifier = notifier if notifier is not None else engine.notifier
         minutes = (brief_minutes if brief_minutes is not None
                    else getattr(engine.settings, "brief_minutes_before_open", None))
-        self.brief = MorningBrief(minutes, self.calendar) if minutes is not None else None
+        # 0 (or unset) means no brief: the Settings form offers 0 as "off".
+        self.brief = MorningBrief(minutes, self.calendar) if minutes else None
         self._lock = threading.RLock()
         self._stop = threading.Event()
         # The default sleep waits on `_wake`, so a mode switch or a stop ends

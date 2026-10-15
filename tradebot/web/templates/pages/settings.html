@@ -89,7 +89,7 @@
           <input type="number" inputmode="numeric" min="10" step="1"
                  x-model.number="form.poll_seconds" name="poll_seconds" class="{{ input }}">
         {% endcall %}
-        {% call field("Morning brief, minutes before open", "Empty = no brief.") %}
+        {% call field("Morning brief, minutes before open", "Empty or 0 = no brief.") %}
           <input type="number" inputmode="numeric" min="0" max="720" step="1"
                  x-model="form.brief" name="brief_minutes_before_open" class="{{ input }}">
         {% endcall %}

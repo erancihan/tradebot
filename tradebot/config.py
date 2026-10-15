@@ -176,6 +176,7 @@ class Settings:
             commission=float(raw.get("commission", 0.0)),
             slippage_bps=float(raw.get("slippage_bps", 1.0)),
             market=raw.get("market", "us_equities"),
+            # 0 reads as "no brief", the same as leaving it out.
             brief_minutes_before_open=(raw.get("autopilot", {}) or {}).get(
-                "brief_minutes_before_open"),
+                "brief_minutes_before_open") or None,
         )
