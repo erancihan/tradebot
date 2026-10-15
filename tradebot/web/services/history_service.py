@@ -12,6 +12,7 @@ from urllib.parse import urlencode
 
 from ...config import VALID_MODES
 from ...storage.proposals import LINE_STATUSES
+from . import benchmark
 
 PAGE_SIZE = 20
 #: The snapshots the performance card and its chart cover (the /api/equity default).
@@ -34,17 +35,21 @@ def active_mode(repo, settings, requested: str | None = None) -> str:
     return repo.default_mode() or settings.mode
 
 
-def performance(repo, mode: str) -> dict:
-    """Equity now against the first snapshot in the window."""
+def performance(repo, mode: str, settings=None, cache_dir: str | None = None) -> dict:
+    """Equity now against the first snapshot in the window and, given
+    ``settings`` and the bar cache, against holding the active list."""
     rows = repo.equity_series(mode=mode, limit=EQUITY_WINDOW)
     if not rows:
         return {"present": False, "mode": mode}
     first, last = float(rows[0]["equity"]), float(rows[-1]["equity"])
+    pct = (last / first - 1.0) if first else None
+    bench = (benchmark.for_snapshots(repo, settings, cache_dir, rows)
+             if settings is not None and cache_dir is not None else None)
     return {
         "present": True, "mode": mode, "points": len(rows),
-        "start": first, "now": last, "change": last - first,
-        "pct": (last / first - 1.0) if first else None,
+        "start": first, "now": last, "change": last - first, "pct": pct,
         "since": rows[0]["ts"], "as_of": rows[-1]["ts"],
+        "benchmark": benchmark.card(bench, first, pct),
     }
 
 
@@ -109,7 +114,7 @@ def parse_cursor(ts: str | None, row_id: int | None) -> Cursor | None:
     return None if ts is None or row_id is None else (ts, int(row_id))
 
 
-def view(repo, settings) -> dict:
+def view(repo, settings, cache_dir: str | None = None) -> dict:
     mode = active_mode(repo, settings)
-    return {"mode": mode, "performance": performance(repo, mode),
+    return {"mode": mode, "performance": performance(repo, mode, settings, cache_dir),
             **events_page(repo, mode)}

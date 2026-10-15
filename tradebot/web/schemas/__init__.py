@@ -46,6 +46,7 @@ from .season import (  # noqa: F401
     SeasonDetail,
 )
 from .trading import (  # noqa: F401
+    BenchmarkPoint,
     EquityPoint,
     EquitySeries,
     OrderRow,

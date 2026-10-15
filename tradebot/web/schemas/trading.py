@@ -12,9 +12,22 @@ class EquityPoint(BaseModel):
     mode: str
 
 
+class BenchmarkPoint(BaseModel):
+    ts: str                           # the session date of a cached daily close
+    value: float
+
+
 class EquitySeries(BaseModel):
     mode: str | None = None
     points: list[EquityPoint]
+    # Equal-weight buy and hold of the active list over the snapshots' window
+    # (services/benchmark.py); None, with a note, when no daily bars are cached.
+    benchmark: list[BenchmarkPoint] | None = None
+    benchmark_symbols: list[str] = []
+    benchmark_since: str | None = None
+    benchmark_until: str | None = None
+    benchmark_source: str | None = None   # "cache": never fetched
+    benchmark_note: str | None = None
 
 
 class OrderRow(BaseModel):
