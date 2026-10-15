@@ -755,6 +755,23 @@ pickers are bounded by cache coverage, and an uncached range shows the exact
 `tradebot data pull` command. API: `POST /api/whatif` (polled through
 `/api/jobs/{id}`) and `GET /api/whatif/presets`.
 
+The **Settings** page (`/settings`, under More on phones) edits `config.yaml`
+from the browser: symbols and bar size, the strategy, selector and allocator
+(dropdowns from the registries, their parameters as typed fields), risk limits
+(typed as percentages, stored as fractions), autopilot cadence and morning
+brief, alert destinations and the exchange calendar. Save validates by
+building every component the document names (a typo comes back as one
+readable sentence), writes the file atomically and reloads the server's
+settings; a running autopilot is stopped so it never trades on old settings
+(start it again from Autopilot). The page never shows or accepts a broker key
+(it only says whether `.env` has them), never changes `mode`, and shows alert
+destinations masked: leave a masked value as it is to keep it. A saved file
+has no comments; `config.example.yaml` documents every key, and overlays and a
+`universe:` block are kept but edited in the file. API: `GET/POST
+/api/settings`, `GET /api/stack`, and `GET /api/setup`, which feeds the
+**Finish setting up** card on Today (config saved, keys present, bars cached,
+each with its fix) until all three are ready.
+
 The **Chart** page (under More on phones) shows a
 candlestick of the bars the bot acted on, with buy/sell order pins overlaid. A
 live account header (equity/cash/buying-power/market status) and the equity curve
@@ -799,7 +816,10 @@ tradebot-web --host 0.0.0.0 --allow-host 192.168.1.20   # your LAN IP or hostnam
 Then open `http://192.168.1.20:8000/login` **once** on the phone and paste the
 token: it sets a long-lived, HttpOnly session cookie (holding an HMAC of the
 token, not the token) and redirects to the dashboard. Add it to the home screen
-from there. The token is posted from a form, never put in a URL, so it stays out
+from there. On a fresh install open **Settings** (`/settings`) first: pick your
+symbols and a strategy and Save, then go to Today and tap Refresh. The Today
+page's setup card says what is still missing (API keys in the server's `.env`,
+price history) and how to fix it. The token is posted from a form, never put in a URL, so it stays out
 of access logs and browser history. Scripts can send
 `Authorization: Bearer <token>` instead.
 
