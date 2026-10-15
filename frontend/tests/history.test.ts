@@ -9,6 +9,7 @@ const pages: Record<string, { html: string; next: string }> = {
   "/partials/history?before_order=2": { html: "<li>p3</li>", next: "" },
   "/partials/history?mode=paper": { html: "<li>fresh</li>", next: "/partials/history?before_order=9" },
   "/partials/history/performance?mode=paper": { html: "<p>perf</p>", next: "" },
+  "/partials/history/trades?mode=paper": { html: "<p>trades</p>", next: "" },
 };
 const asked: string[] = [];
 stubFetch((url) => {
@@ -55,10 +56,12 @@ check(!broken.busy, "not stuck busy");
 // On the first page the poll swaps in the newest page and its cursor, for the
 // account the page loaded with (never whichever account is newest now).
 const performance = { innerHTML: "" };
-const fresh = Object.assign(history(), { $refs: { list, performance } });
+const trades = { innerHTML: "" };
+const fresh = Object.assign(history(), { $refs: { list, performance, trades } });
 fresh.mode = "paper";
 await fresh.poll();
 check(asked.includes("/partials/history?mode=paper"), `the poll names the account: ${asked.join(", ")}`);
 check(performance.innerHTML === "<p>perf</p>", "the performance card follows the same account");
+check(trades.innerHTML === "<p>trades</p>", "the trades card follows the same account");
 check(list.innerHTML === "<li>fresh</li>", `newest page swapped in: ${list.innerHTML}`);
 check(fresh.next === "/partials/history?before_order=9", `cursor from the poll: ${fresh.next}`);

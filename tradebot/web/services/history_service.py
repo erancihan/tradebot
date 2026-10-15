@@ -12,7 +12,7 @@ from urllib.parse import urlencode
 
 from ...config import VALID_MODES
 from ...storage.proposals import LINE_STATUSES
-from . import benchmark_card
+from . import benchmark_card, history_trades
 
 PAGE_SIZE = 20
 #: The snapshots the performance card and its chart cover (the /api/equity default).
@@ -130,4 +130,4 @@ def parse_cursor(ts: str | None, row_id: int | None) -> Cursor | None:
 def view(repo, settings, cache_dir: str | None = None) -> dict:
     mode = active_mode(repo, settings)
     return {"mode": mode, "performance": performance(repo, mode, settings, cache_dir),
-            **events_page(repo, mode)}
+            "trades": history_trades.view(repo, mode), **events_page(repo, mode)}

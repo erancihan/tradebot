@@ -18,6 +18,10 @@
          class="h-40 w-full" data-equity-chart></div>
   </div>
 
+  <div x-ref="trades" class="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+    {% include "components/history_trades.html" %}
+  </div>
+
   <ol x-ref="list" class="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900/40" data-timeline>
     {% include "components/history_events.html" %}
   </ol>

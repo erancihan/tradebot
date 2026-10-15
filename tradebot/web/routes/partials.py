@@ -18,6 +18,7 @@ from ..services import (
     consortium_service,
     discover_service,
     history_service,
+    history_trades,
     holdings_service,
     metrics_service,
 )
@@ -144,6 +145,15 @@ def history_performance(request: Request, mode: str | None = None,
         request, "components/history_performance.html",
         {"history": {"performance": history_service.performance(
             repo, mode, request.app.state.settings, request.app.state.cache_dir)}})
+
+
+@router.get("/history/trades", response_class=HTMLResponse)
+def history_trades_card(request: Request, mode: str | None = None,
+                        repo: TradingRepository = Depends(get_trading_repo)):
+    mode = _history_mode(request, repo, mode)
+    return templates.TemplateResponse(
+        request, "components/history_trades.html",
+        {"history": {"trades": history_trades.view(repo, mode)}})
 
 
 @router.get("/leaderboard", response_class=HTMLResponse)

@@ -1,4 +1,5 @@
-// History page: the performance card, its equity chart, and the timeline of
+// History page: the performance card, its equity chart, the Trades card
+// (round trips and realised P&L), and the timeline of
 // orders and proposal batches. The markup is server-rendered
 // (components/history_*.html). "Show more" appends the next page; the poll
 // refreshes the newest page only while no older page has been appended, so
@@ -67,6 +68,8 @@ export function history() {
         this.next = page.next;
         const card = refs(this).performance;
         if (card) card.innerHTML = await getPartial(`/partials/history/performance${query}`);
+        const trades = refs(this).trades;
+        if (trades) trades.innerHTML = await getPartial(`/partials/history/trades${query}`);
         await this.drawChart();
       } catch (err) {
         console.error(err);
