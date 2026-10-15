@@ -135,8 +135,13 @@ One new core concept, the proposal, feeds three flows.
 - The bot asks about open orders of the last 7 days at three points only: the
   start of each autopilot pass, the Today refresh job (paper orders, with keys)
   and right after it submits. A page load never calls the broker for this. A
-  failed lookup is logged and never breaks a pass or a suggestion.
+  failed lookup is one warning per order id per process and never breaks a pass
+  or a suggestion. An answer that filled more than the row ordered is not stored
+  (the id names another order); dry-run ids carry a per-broker random prefix, so
+  a later process never claims an earlier one's order.
 - History shows the fill and the slippage against the sizing price over the
   filled shares (positive = it cost money). Positions summed from the order log
-  count the filled quantity when known: a cancelled, expired or rejected order
-  counts only what filled before it ended, and an order not yet reported counts in full.
+  count the filled quantity whenever one above zero is known, whatever the status;
+  a cancelled, expired or rejected order with nothing filled counts zero, and an
+  order not yet reported (or working with nothing filled) counts in full. Alpaca's
+  `replaced` maps to `canceled`; `done_for_day`, `stopped` and `suspended` stay `new`.
