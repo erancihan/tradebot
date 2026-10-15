@@ -1,3 +1,5 @@
+import re
+
 import pandas as pd
 import pytest
 
@@ -32,7 +34,7 @@ class StubData:
 def test_dryrun_broker_simulates_a_fill():
     broker = DryRunBroker(StubData({"SPY": 100.0}), initial_cash=10_000, slippage_bps=0)
     oid = broker.submit(Order("SPY", 10, Side.BUY))
-    assert oid == "dryrun-1"
+    assert re.fullmatch(r"dryrun-[0-9a-f]{8}-1", oid)
     assert broker.position("SPY").qty == 10
     acct = broker.account()
     assert acct.is_paper is True

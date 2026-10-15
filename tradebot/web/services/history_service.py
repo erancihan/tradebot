@@ -12,7 +12,7 @@ from urllib.parse import urlencode
 
 from ...config import VALID_MODES
 from ...storage.proposals import LINE_STATUSES
-from . import benchmark
+from . import benchmark_card
 
 PAGE_SIZE = 20
 #: The snapshots the performance card and its chart cover (the /api/equity default).
@@ -43,13 +43,13 @@ def performance(repo, mode: str, settings=None, cache_dir: str | None = None) ->
         return {"present": False, "mode": mode}
     first, last = float(rows[0]["equity"]), float(rows[-1]["equity"])
     pct = (last / first - 1.0) if first else None
-    bench = (benchmark.for_snapshots(repo, settings, cache_dir, rows)
+    bench = (benchmark_card.for_snapshots(repo, settings, cache_dir, rows)
              if settings is not None and cache_dir is not None else None)
     return {
         "present": True, "mode": mode, "points": len(rows),
         "start": first, "now": last, "change": last - first, "pct": pct,
         "since": rows[0]["ts"], "as_of": rows[-1]["ts"],
-        "benchmark": benchmark.card(bench, first, pct),
+        "benchmark": benchmark_card.card(bench, rows),
     }
 
 

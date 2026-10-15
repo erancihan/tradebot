@@ -14,6 +14,7 @@ Use it for a free, real-time forward-test of the full pipeline:
 from __future__ import annotations
 
 import logging
+from uuid import uuid4
 
 from ..models import Side
 from ..portfolio import Portfolio
@@ -42,6 +43,9 @@ class DryRunBroker(BracketsMixin, Broker):
         self.mark_lookback = mark_lookback
         self._marks: dict[str, float] = {}
         self._order_seq = 0
+        # Ids must not repeat across processes: the order log outlives this
+        # broker, and a reconcile matches rows by id alone.
+        self._id_prefix = f"dryrun-{uuid4().hex[:8]}"
         self._brackets: dict[str, _Bracket] = {}
         # Every order fills in full at once; kept so `order_status` can say so.
         self._orders: dict[str, OrderStatus] = {}
@@ -106,7 +110,7 @@ class DryRunBroker(BracketsMixin, Broker):
         self._track_bracket(order, before, fill_price)
 
         self._order_seq += 1
-        order_id = f"dryrun-{self._order_seq}"
+        order_id = f"{self._id_prefix}-{self._order_seq}"
         self._orders[order_id] = OrderStatus("filled", float(order.qty), fill_price,
                                              order.created_at)
         log.info(

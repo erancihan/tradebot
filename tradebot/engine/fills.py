@@ -27,6 +27,19 @@ def _row_changed(row: dict, status) -> bool:
                                       status.fill_price, filled_at)
 
 
+#: Order ids whose failed lookup was already logged: one warning per id per
+#: process, so a broker that keeps refusing one id does not flood the log.
+_WARNED: set[str] = set()
+
+#: A broker's filled quantity may exceed the logged one by this much (rounding).
+QTY_TOLERANCE = 1e-6
+
+
+def _overfilled(row: dict, status) -> bool:
+    """More shares filled than the row ordered: the id names another order."""
+    return float(status.filled_qty) > float(row["qty"]) + QTY_TOLERANCE
+
+
 def reconcile_orders(broker, storage, mode: str, *, now: datetime | None = None,
                      lookback_days: int = LOOKBACK_DAYS) -> int:
     """Ask ``broker`` about each open order of ``mode``; returns rows changed.
@@ -42,12 +55,27 @@ def reconcile_orders(broker, storage, mode: str, *, now: datetime | None = None,
             status = broker.order_status(row["broker_order_id"])
             if status is None or not _row_changed(row, status):
                 continue
+            if _overfilled(row, status):
+                log.warning("Order %s (%s) reports %s filled of %s ordered; not stored",
+                            row["broker_order_id"], row["symbol"], status.filled_qty,
+                            row["qty"])
+                continue
             storage.set_order_fill(row["id"], status)
             changed += 1
-        except Exception:  # noqa: BLE001 - one order must not hide the others
-            log.exception("Fill check failed for order %s (%s)",
-                          row["broker_order_id"], row["symbol"])
+        except Exception as exc:  # noqa: BLE001 - one order must not hide the others
+            _warn_once(row, exc)
     return changed
+
+
+def _warn_once(row: dict, exc: Exception) -> None:
+    """A failed lookup is usually the broker saying no (an SDK error): one
+    warning without a traceback, once per order id per process."""
+    oid = str(row["broker_order_id"])
+    if oid in _WARNED:
+        return
+    _WARNED.add(oid)
+    log.warning("Fill check failed for order %s (%s): %s: %s", oid, row["symbol"],
+                type(exc).__name__, exc)
 
 
 def reconcile(engine, *, now: datetime | None = None,

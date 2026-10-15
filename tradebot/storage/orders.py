@@ -17,12 +17,16 @@ UNFILLED_STATUSES = frozenset({"canceled", "expired", "rejected"})
 def effective_qty(row: dict) -> float:
     """The unsigned shares an order row really moved.
 
-    Filled or partly filled: the broker's ``filled_qty``. Cancelled, expired
-    or rejected: what filled before that (usually nothing). Not asked yet, or
-    still working: the ordered ``qty``, the log's old assumption."""
+    Any status with a known fill above zero (filled, partly filled, or a
+    cancel or unknown state after a partial fill): the broker's
+    ``filled_qty``. Cancelled, expired or rejected with nothing filled: 0.
+    Filled with a reported 0: 0. Not asked yet, or still working with
+    nothing filled: the ordered ``qty``, the log's old assumption."""
     status, filled = row.get("status"), row.get("filled_qty")
+    if filled is not None and float(filled) > 0:
+        return float(filled)
     if status in UNFILLED_STATUSES:
-        return float(filled or 0.0)
+        return 0.0
     if status in ("filled", "partially_filled") and filled is not None:
         return float(filled)
     return float(row["qty"])

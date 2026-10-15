@@ -37,6 +37,10 @@ class OrderRow(BaseModel):
     qty: float
     mode: str
     status: str | None = None       # the broker's last word; None = not asked yet
+    price: float | None = None      # the price the order was sized at (None: flatten, old row)
+    filled_qty: float | None = None
+    fill_price: float | None = None
+    filled_at: str | None = None
 
 
 class Candle(BaseModel):

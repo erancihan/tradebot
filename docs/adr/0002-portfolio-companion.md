@@ -108,12 +108,20 @@ One new core concept, the proposal, feeds three flows.
 - History's performance card answers "is the bot beating just holding the list?": it
   compares equity with equal-weight buy and hold of the active list (the watchlist, else
   `settings.symbols`, the list the autopilot trades) from the first snapshot's equity.
-- Each symbol gets an equal share at the last session close on or before the first
-  snapshot (the price the list could have been bought at that morning; the next close
-  when no earlier one is cached), so a bot's first day has a benchmark before that day's
-  close is cached; the benchmark is marked at each later close through the last snapshot's date,
-  ending at the last session every held name has. A name without a close at the start is
-  left out and named. The card shows the difference in percentage points.
+- Each symbol gets an equal share at the last session close completed at or before the
+  first snapshot (a snapshot taken mid-session buys at the previous close, so caching that
+  day's close later cannot move the start; the next close when no earlier one is cached),
+  so a bot's first day has a benchmark before that day's close is cached. The benchmark is
+  marked at each later completed close through the last snapshot, ending at the last
+  session every held name has (a one-name gap inside the window holds its last close). A
+  name without a close at the start is left out and named; a name whose cache ends early is
+  named with its last date ("QQQ bars stop at 2026-10-05").
+- The alpha compares one window: equity at the snapshot that reflects the benchmark's last
+  close (taken by then, or after it before the next open) against the benchmark there, and
+  the card says "through <date>". Without a `mode`, `/api/equity` rows of several accounts
+  get no benchmark ("pick one account to compare").
+- The benchmark holds TODAY's active list from the start: a hindsight bias (a name added
+  later counts from day one). The card's muted line says "today's list, held from the start".
 - Bars come from the cache only, never fetched, so the comparison needs no credentials;
   without cached daily bars the card names the `tradebot data pull` command instead.
 - `/api/equity` carries the daily points, the symbols, the window and the source
@@ -127,8 +135,13 @@ One new core concept, the proposal, feeds three flows.
 - The bot asks about open orders of the last 7 days at three points only: the
   start of each autopilot pass, the Today refresh job (paper orders, with keys)
   and right after it submits. A page load never calls the broker for this. A
-  failed lookup is logged and never breaks a pass or a suggestion.
+  failed lookup is one warning per order id per process and never breaks a pass
+  or a suggestion. An answer that filled more than the row ordered is not stored
+  (the id names another order); dry-run ids carry a per-broker random prefix, so
+  a later process never claims an earlier one's order.
 - History shows the fill and the slippage against the sizing price over the
   filled shares (positive = it cost money). Positions summed from the order log
-  count the filled quantity when known: a cancelled, expired or rejected order
-  counts only what filled before it ended, and an order not yet reported counts in full.
+  count the filled quantity whenever one above zero is known, whatever the status;
+  a cancelled, expired or rejected order with nothing filled counts zero, and an
+  order not yet reported (or working with nothing filled) counts in full. Alpaca's
+  `replaced` maps to `canceled`; `done_for_day`, `stopped` and `suspended` stay `new`.

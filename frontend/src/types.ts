@@ -31,6 +31,13 @@ export interface OrderRow {
   side: string;
   qty: number;
   mode: string;
+  /** The broker's last word; null until it has been asked. */
+  status?: string | null;
+  /** The price the order was sized at; null on a flatten or an old row. */
+  price?: number | null;
+  filled_qty?: number | null;
+  fill_price?: number | null;
+  filled_at?: string | null;
 }
 
 export interface Candle {

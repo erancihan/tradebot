@@ -85,7 +85,12 @@ def test_a_broker_that_cannot_report_says_none():
     ("partially_filled", "5", "767.0", OrderStatus("partially_filled", 5.0, 767.0, NOW)),
     ("pending_new", "0", None, OrderStatus("new", 0.0, None, NOW)),
     ("canceled", "0", None, OrderStatus("canceled", 0.0, None, NOW)),
-    ("done_for_day", "0", None, OrderStatus("unknown", 0.0, None, NOW)),
+    ("done_for_day", "0", None, OrderStatus("new", 0.0, None, NOW)),
+    ("stopped", "0", None, OrderStatus("new", 0.0, None, NOW)),
+    ("suspended", "0", None, OrderStatus("new", 0.0, None, NOW)),
+    ("pending_cancel", "2", "767.0", OrderStatus("new", 2.0, 767.0, NOW)),
+    ("replaced", "0", None, OrderStatus("canceled", 0.0, None, NOW)),
+    ("something_new", "0", None, OrderStatus("unknown", 0.0, None, NOW)),
 ])
 def test_alpaca_orders_map_onto_our_status(raw, qty, price, expected):
     sdk_order = SimpleNamespace(status=SimpleNamespace(value=raw), filled_qty=qty,
@@ -130,6 +135,9 @@ def test_open_orders_are_recent_unsettled_and_known_to_the_broker(tmp_path):
     ({"qty": 13, "status": "canceled", "filled_qty": 0.0}, 0.0),
     ({"qty": 13, "status": "canceled", "filled_qty": 4.0}, 4.0),
     ({"qty": 13, "status": "rejected", "filled_qty": None}, 0.0),
+    ({"qty": 13, "status": "new", "filled_qty": 5.0}, 5.0),       # pending_cancel, partly filled
+    ({"qty": 13, "status": "unknown", "filled_qty": 4.0}, 4.0),
+    ({"qty": 13, "status": "unknown", "filled_qty": 0.0}, 13.0),
     ({"qty": 13}, 13.0),                                         # an unmigrated row
 ])
 def test_effective_qty_counts_what_filled(row, expected):
@@ -220,7 +228,66 @@ def test_the_today_refresh_syncs_paper_fills_only(tmp_path):
     with Storage(db) as st:
         paper, dry = _log(st, "p"), _log(st, "d", mode="dry_run")
     broker = ScriptedBroker({"p": FILLED, "d": FILLED})
-    assert advisor_service.sync_fills(broker, db) == 1
+    assert advisor_service.sync_fills(broker, db, now=NOW) == 1
     assert broker.asked == ["p"]
     with Storage(db) as st:
         assert _row(st, paper)["status"] == "filled" and _row(st, dry)["status"] is None
+
+
+def test_the_today_sync_lookback_runs_from_the_given_now(tmp_path, monkeypatch):
+    """A fixed `now` pins the 7-day lookback: the wall clock a month later
+    must not age the order out (the test used to fail after 2026-10-22)."""
+    from tradebot.web.services import advisor_service
+
+    monkeypatch.setattr(fills, "utcnow", lambda: NOW + timedelta(days=30))
+    db = str(tmp_path / "t.db")
+    with Storage(db) as st:
+        paper = _log(st, "p")
+    assert advisor_service.sync_fills(ScriptedBroker({"p": FILLED}), db, now=NOW) == 1
+    with Storage(db) as st:
+        assert _row(st, paper)["status"] == "filled"
+
+
+# --- ids across processes -----------------------------------------------------
+
+def test_a_second_dry_run_broker_never_claims_an_earlier_ones_order(tmp_path):
+    """A dry-run account dies with its process, but the log does not: a new
+    broker's first order must not share an id with an old logged one."""
+    first = DryRunBroker(StubData({"SPY": 100.0}), initial_cash=10_000)
+    second = DryRunBroker(StubData({"SPY": 50.0}), initial_cash=10_000)
+    old_id = first.submit(Order("SPY", 3, Side.BUY, created_at=NOW))
+    second.submit(Order("SPY", 40, Side.BUY, created_at=NOW))
+    with Storage(tmp_path / "t.db") as st:
+        row_id = _log(st, old_id, qty=3, mode="dry_run")
+        engine = SimpleNamespace(broker=second, storage=st, mode="dry_run")
+        assert fills.reconcile(engine, now=NOW) == 0
+        assert _row(st, row_id)["status"] is None
+
+
+def test_reconcile_refuses_a_fill_larger_than_the_order(tmp_path, caplog):
+    with Storage(tmp_path / "t.db") as st:
+        row_id = _log(st, "x", qty=3)
+        engine = SimpleNamespace(broker=ScriptedBroker({"x": FILLED}), storage=st,
+                                 mode="paper")
+        with caplog.at_level("WARNING", logger="tradebot.fills"):
+            assert fills.reconcile(engine, now=NOW) == 0
+        assert _row(st, row_id)["status"] is None
+        assert "13.0 filled of 3.0 ordered" in caplog.text
+
+
+def test_a_failed_lookup_warns_once_per_order_without_a_traceback(tmp_path, caplog,
+                                                                   monkeypatch):
+    monkeypatch.setattr(fills, "_WARNED", set())
+    with Storage(tmp_path / "t.db") as st:
+        _log(st, "a")
+        _log(st, "b")
+        engine = SimpleNamespace(broker=ScriptedBroker({
+            "a": RuntimeError("order not found"), "b": RuntimeError("down")}),
+            storage=st, mode="paper")
+        with caplog.at_level("WARNING", logger="tradebot.fills"):
+            fills.reconcile(engine, now=NOW)
+            fills.reconcile(engine, now=NOW)
+    records = [r for r in caplog.records if r.name == "tradebot.fills"]
+    assert len(records) == 2 and all(r.levelname == "WARNING" for r in records)
+    assert all(r.exc_info is None for r in records)
+    assert "order not found" in records[0].getMessage()

@@ -289,7 +289,11 @@ def test_the_orders_api_and_table_carry_the_broker_status(tmp_path):
         _order(st, "QQQ", 2, T0, price=10.0)
         _fill(st, "SPY", "filled", 13, 767.24)
     client = _client(tmp_path)
-    rows = {r["symbol"]: r["status"] for r in client.get("/api/orders").json()}
-    assert rows == {"SPY": "filled", "QQQ": None}
+    rows = {r["symbol"]: r for r in client.get("/api/orders").json()}
+    assert {s: r["status"] for s, r in rows.items()} == {"SPY": "filled", "QQQ": None}
+    spy, qqq = rows["SPY"], rows["QQQ"]
+    assert spy["price"] == 766.85 and spy["filled_qty"] == 13.0
+    assert spy["fill_price"] == 767.24 and spy["filled_at"] is not None
+    assert qqq["price"] == 10.0 and qqq["filled_qty"] is None and qqq["fill_price"] is None
     table = client.get("/partials/orders").text
     assert "<td" in table and "filled" in table and "submitted" in table

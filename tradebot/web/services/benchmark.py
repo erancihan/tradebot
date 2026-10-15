@@ -1,27 +1,40 @@
 """History's yardstick: equal-weight buy and hold of the active symbol list.
 
 "Is the bot beating just holding the list?" The answer is a plain index of
-cached daily closes: at the last session close on or before ``since`` (the
-price the list could have been bought at that morning; the next close when
-no earlier one is cached) each symbol gets ``start_equity / n``, and every
-later close is worth ``start_equity * mean_i(close_i,t / close_i,t0)``. Pure and offline: the
-web layer reads the bar cache and never fetches, so without cached daily
-bars there is no benchmark and the note says why.
+cached daily closes: at the last session close completed at or before
+``since`` (the price the list could have been bought at when the first
+snapshot was taken; the next close when no earlier one is cached) each
+symbol gets ``start_equity / n``, and every later close is worth
+``start_equity * mean_i(close_i,t / close_i,t0)``. The list is today's
+active list, held from the start: a hindsight bias (a name added later
+counts from day one). Pure and offline: the web layer reads the bar cache and
+never fetches, so without cached daily bars there is no benchmark and the
+note says why. The History card around it is ``benchmark_card.py``.
 """
 
 from __future__ import annotations
 
 import math
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
 from ...data.cache import BarCache
-from . import symbols_service
+from ...market.us import last_completed_close
 
 #: Daily closes only: the benchmark is a session-by-session yardstick.
 TIMEFRAME = "1day"
 SOURCE = "cache"
+
+
+def as_utc(ts: datetime) -> datetime:
+    """Snapshot stamps are UTC; a naive one is read as UTC, never local time."""
+    return ts if ts.tzinfo is not None else ts.replace(tzinfo=timezone.utc)
+
+
+def completed_session(ts: datetime) -> date:
+    """The session date of the newest close completed at or before ``ts``."""
+    return last_completed_close(as_utc(ts)).date()
 
 
 def _clean_closes(df: pd.DataFrame | None) -> pd.Series | None:
@@ -36,19 +49,26 @@ def _clean_closes(df: pd.DataFrame | None) -> pd.Series | None:
     return closes[~closes.index.duplicated(keep="last")]
 
 
+def _series(frames: dict[str, pd.DataFrame], until: datetime) -> dict[str, pd.Series]:
+    """Each usable symbol's closes up to the last session completed by ``until``."""
+    end = completed_session(until)
+    series = {s: c for s, c in ((s, _clean_closes(f)) for s, f in frames.items())
+              if c is not None}
+    return {s: c[c.index <= end] for s, c in series.items()}
+
+
 def window_closes(frames: dict[str, pd.DataFrame], since: datetime,
                   until: datetime) -> tuple[pd.DataFrame, list[str], list[str]]:
     """``(closes, used, dropped)`` over the sessions from ``since`` to ``until``.
 
-    The start is the last session close on or before ``since``'s date (the
-    newest one any frame has), else the first session after it. A symbol is
-    used when it has a close at that start; one that lacks it (or has no bars
-    in the window) is dropped. The window ends at the last session every used
-    symbol has, so no point is a carried-forward guess.
+    The start is the last session close completed at or before ``since``
+    (the newest one any frame has), else the first session after it. A
+    symbol is used when it has a close at that start; one that lacks it (or
+    has no bars in the window) is dropped. The window ends at the last
+    session every used symbol has a close for; inside it a one-name gap holds
+    that name's last close (``ffill``).
     """
-    series = {s: c for s, c in ((s, _clean_closes(f)) for s, f in frames.items())
-              if c is not None}
-    series = {s: c[c.index <= until.date()] for s, c in series.items()}
+    series = _series(frames, until)
     t0 = _start(series, since)
     if t0 is None:
         return pd.DataFrame(), [], sorted(frames)
@@ -65,9 +85,11 @@ def window_closes(frames: dict[str, pd.DataFrame], since: datetime,
 
 
 def _start(series: dict[str, pd.Series], since: datetime):
-    """The session the list is bought at: the newest close on or before
-    ``since``'s date, else the earliest one after it; None without closes."""
-    day = since.date()
+    """The session the list is bought at: the newest close whose close
+    instant is at or before ``since`` (a snapshot taken mid-session buys at
+    the previous close, so caching that day's close later cannot move the
+    start), else the earliest one after it; None without closes."""
+    day = completed_session(since)
     before = [c.index[c.index <= day][-1] for c in series.values()
               if not c[c.index <= day].empty]
     if before:
@@ -95,20 +117,35 @@ def load_frames(cache_dir: str, symbols: list[str]) -> dict[str, pd.DataFrame | 
     return {s: cache.load(s, TIMEFRAME) for s in symbols}
 
 
+def _notes(series: dict[str, pd.Series], uncached: list[str], dropped: list[str],
+           closes: pd.DataFrame, until: datetime) -> list[str]:
+    """Why a name is missing, and which names end the window early."""
+    parts = [f"no cached daily bars for {', '.join(uncached)}"] if uncached else []
+    t0 = closes.index[0] if not closes.empty else None
+    ended = [s for s in dropped if t0 is not None and s in series
+             and not series[s].empty and series[s].index[-1] < t0]
+    late = [s for s in dropped if s not in ended]
+    parts += [f"bars for {s} end before the start (last {series[s].index[-1]})"
+              for s in ended]
+    if late:
+        parts.append(f"no close at the start for {', '.join(late)}")
+    latest = completed_session(until)
+    if t0 is not None and closes.index[-1] < latest:
+        short = [s for s in closes.columns if series[s].index[-1] < latest]
+        parts += [f"{s} bars stop at {series[s].index[-1]}" for s in short]
+    return parts
+
+
 def compare(cache_dir: str, symbols: list[str], start_equity: float,
             since: datetime, until: datetime) -> dict:
     """The benchmark and its provenance: ``{series, symbols, since, until,
     source, note}``; ``series`` is None (and ``note`` says why) without bars."""
     frames = load_frames(cache_dir, symbols)
     uncached = [s for s, f in frames.items() if f is None or f.empty]
-    closes, used, dropped = window_closes(
-        {s: f for s, f in frames.items() if s not in uncached}, since, until)
-    late = [s for s in dropped if s not in uncached]
-    parts = []
-    if uncached:
-        parts.append(f"no cached daily bars for {', '.join(uncached)}")
-    if late:
-        parts.append(f"no close at the start for {', '.join(late)}")
+    cached = {s: f for s, f in frames.items() if s not in uncached}
+    closes, used, dropped = window_closes(cached, since, until)
+    parts = _notes(_series(cached, until), uncached,
+                   [s for s in dropped if s not in uncached], closes, until)
     if not symbols:
         parts = ["no symbols to hold"]
     elif not used and not parts:
@@ -123,35 +160,8 @@ def compare(cache_dir: str, symbols: list[str], start_equity: float,
             "note": "; ".join(parts) or None}
 
 
-# --- History glue: the snapshots' window, the active list -------------------
-
-#: The card names at most this many symbols, then "+N more".
-SHOWN_SYMBOLS = 6
-
-
-def for_snapshots(repo, settings, cache_dir: str, rows: list[dict]) -> dict | None:
-    """The benchmark over equity snapshots ``rows`` (oldest first), starting
-    from the first one's equity, for the list the autopilot trades."""
-    if not rows:
-        return None
-    symbols = symbols_service.active_symbols(settings, repo)
-    return compare(cache_dir, symbols, float(rows[0]["equity"]),
-                   datetime.fromisoformat(rows[0]["ts"]),
-                   datetime.fromisoformat(rows[-1]["ts"]))
-
-
-def card(bench: dict | None, start: float, pct: float | None) -> dict:
-    """The performance card's third cell: alpha against holding the list."""
-    if bench is None or bench["series"] is None:
-        return {"present": False, "note": bench["note"] if bench else None,
-                "missing": bench["requested"] if bench else [],
-                "pull_start": bench["pull_start"] if bench else None}
-    now = float(bench["series"].iloc[-1])
-    bench_pct = now / start - 1.0 if start else None
-    shown = bench["symbols"][:SHOWN_SYMBOLS]
-    return {"present": True, "now": now, "pct": bench_pct,
-            "alpha": pct - bench_pct if pct is not None and bench_pct is not None else None,
-            "symbols": bench["symbols"], "shown": shown,
-            "more": len(bench["symbols"]) - len(shown),
-            "since": bench["since"], "until": bench["until"],
-            "source": bench["source"], "note": bench["note"]}
+def unavailable(symbols: list[str], since: datetime, note: str) -> dict:
+    """A ``compare`` result with no series, for a reason other than bars."""
+    return {"series": None, "symbols": [], "requested": list(symbols), "source": SOURCE,
+            "pull_start": (since - timedelta(days=7)).date().isoformat(),
+            "since": None, "until": None, "note": note}
