@@ -4,9 +4,8 @@
 mode, see ``brief``), and if the mode is on and the market is open it runs one
 engine pass (``auto`` submits, ``approve`` parks the trades as pending), then
 schedules the next pass. ``run_forever`` repeats ticks with an injected sleep,
-so the whole loop runs offline under a fake clock, the same pattern as the
-season daemon. Every engine call happens under one lock, because the loop
-thread and the web's approve taps share the engine and its SQLite connection.
+so the whole loop runs offline under a fake clock. Every engine call happens
+under one lock: the loop thread and the web's taps share the engine and SQLite.
 """
 
 from __future__ import annotations
@@ -53,6 +52,7 @@ class Autopilot(ApprovalsMixin, BriefMixin, SessionMixin):
         # 0 (or unset) means no brief: the Settings form offers 0 as "off".
         self.brief = MorningBrief(minutes, self.calendar) if minutes else None
         self._lock = threading.RLock()
+        self._start_lock = threading.Lock()
         self._stop = threading.Event()
         # The default sleep waits on `_wake`, so a mode switch or a stop ends
         # the nap at once instead of at the next scheduled pass or brief.
@@ -168,9 +168,8 @@ class Autopilot(ApprovalsMixin, BriefMixin, SessionMixin):
         self._wake.clear()
 
     def _safe_tick(self) -> AutopilotState | None:
-        """A tick that cannot kill the loop: a pass error is already recorded
-        by ``tick``; this catches what is left (e.g. the store itself failing),
-        which has nowhere to be recorded but the log."""
+        """A tick that cannot kill the loop: ``tick`` records pass errors; what
+        is left (e.g. the store failing) has nowhere to go but the log."""
         try:
             return self.tick()
         except Exception:  # noqa: BLE001
@@ -178,18 +177,21 @@ class Autopilot(ApprovalsMixin, BriefMixin, SessionMixin):
             return None
 
     def start(self) -> bool:
-        """Run the loop on a background thread, once. Returns whether it started."""
-        if self._thread is not None and self._thread.is_alive():
-            if not self._stop.is_set():
-                return False
-            self._thread.join()             # an "off" is winding down: let it finish
-        self._stop.clear()
-        self._wake.clear()
-        self._running = True
-        self._thread = threading.Thread(target=self.run_forever, name="autopilot",
-                                        daemon=True)
-        self._thread.start()
-        return True
+        """Run the loop on a background thread, once; returns whether it started.
+        Atomic, so two concurrent taps cannot start two loops. Its own lock, not
+        ``_lock``: the join below would deadlock on a tick waiting for that."""
+        with self._start_lock:
+            if self._thread is not None and self._thread.is_alive():
+                if not self._stop.is_set():
+                    return False
+                self._thread.join()         # an "off" is winding down: let it finish
+            self._stop.clear()
+            self._wake.clear()
+            self._running = True
+            self._thread = threading.Thread(target=self.run_forever, name="autopilot",
+                                            daemon=True)
+            self._thread.start()
+            return True
 
     def stop(self, timeout: float | None = 5.0) -> None:
         self._stop.set()

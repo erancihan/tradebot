@@ -434,3 +434,37 @@ def test_a_new_day_re_anchors_after_a_restart(tmp_path):
     pilot = _restarted(tmp_path, now=OPEN_NOW + timedelta(days=1), equity=9_500)
     assert pilot.tick().mode == "auto"         # yesterday's anchor no longer applies
     assert float(pilot.storage.autopilot_values("dry_run")["session_start_equity"]) == 9_500
+
+
+def test_concurrent_starts_run_one_loop(tmp_path, monkeypatch):
+    """Two mode taps at once must not both see "no thread" and start two loops."""
+    import time
+
+    import tradebot.autopilot.runner as runner
+
+    class SlowStart(threading.Thread):       # widens the check-then-start window
+        def start(self):
+            time.sleep(0.05)
+            super().start()
+
+    monkeypatch.setattr(runner.threading, "Thread", SlowStart)
+    shared = Storage(tmp_path / "t.db", check_same_thread=False)
+    pilot, _, _, _ = build(tmp_path, now=WEEKEND, storage=shared)
+    pilot._sleep = pilot._nap                 # a real nap, so the loop stays up
+    pilot.set_mode("auto")
+    gate = threading.Barrier(2)
+    started: list[bool] = []
+
+    def tap():
+        gate.wait()
+        started.append(pilot.start())
+
+    taps = [threading.Thread(target=tap) for _ in range(2)]
+    for t in taps:
+        t.start()
+    for t in taps:
+        t.join(5)
+    try:
+        assert sorted(started) == [False, True]
+    finally:
+        pilot.stop()
