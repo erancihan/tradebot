@@ -5,7 +5,7 @@
   <h1 class="text-lg font-semibold text-slate-100">Run a simulation</h1>
   <p class="text-sm text-slate-500">
     Backtest or dry-run a strategy on invented data (seeded, artificial calendar) or on
-    real bars already in the local cache. The dashboard never fetches from the network —
+    real bars already in the local cache. This page never fetches from the network —
     every result is labelled with the data it ran on.
   </p>
 
@@ -113,7 +113,7 @@
   <!-- Real mode with an empty cache: say how to fill it, never fetch for them -->
   <div x-show="form.source === 'real' && cache.length === 0" x-cloak
        class="rounded-lg border border-amber-800 bg-amber-950/40 p-4 text-sm text-amber-200">
-    Nothing is cached yet. The dashboard never downloads data — pull once from a
+    Nothing is cached yet. This page never downloads data — pull once from a
     terminal, then reload this page:
     <code class="mt-2 block rounded bg-slate-900 px-2 py-1 font-mono text-xs text-amber-100"
           x-text="pullHint()"></code>
