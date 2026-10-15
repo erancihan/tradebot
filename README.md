@@ -92,6 +92,17 @@ server-side Alpaca keys. Without them, an uncached symbol gets the exact
 same function the engine runs before it submits. A suggestion is exactly what
 a paper pass trades. Nothing on Today places an order.
 
+**Discover** answers "what else could I buy?". Tap **Find candidates** and the
+server ranks names you neither watch nor hold by 6-month momentum skipping the
+last month (the `momentum` selector's score) and lists the top 10 with the last
+close and a reason, for example `Up 34% over 6 months to last month; $42M a day
+traded.` With server-side Alpaca keys the pool is Alpaca's most-active
+shortlist after the liquidity screen (at most 20 names, whose bars land in the
+cache); without keys it is every symbol with cached daily bars, through the same
+screen. The card says which, with the as-of date and the bar window. **Add**
+puts a name on the watchlist and, like any watchlist edit, stops a running
+autopilot. The last run survives a restart. Discover never places an order.
+
 ### 5. Autopilot: let it trade
 
 **Autopilot** (`/autopilot`) is the second tab. Pick a mode:
