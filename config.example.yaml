@@ -75,8 +75,8 @@ commission: 0.0       # Alpaca US equities are commission-free
 slippage_bps: 1.0     # 1 bp = 0.01% slippage per fill
 
 # Where `tradebot` commands keep the SQLite log (orders, equity snapshots, the
-# watchlist `tradebot run` trades). `tradebot-web` ignores this key and uses
-# --trading-db (or TRADEBOT_DB, default tradebot.db): point both at one file.
+# watchlist `tradebot run` trades). `tradebot-web` uses this file too, unless
+# --trading-db (or TRADEBOT_DB) names another.
 db_path: tradebot.db
 
 # --- Strategy -----------------------------------------------------------------

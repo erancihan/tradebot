@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import mimetypes
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -39,6 +40,17 @@ def load_settings(settings_path: str | None) -> tuple[Settings, str | None]:
     return resolve_settings(settings_path)
 
 
+#: Names the trading database when no ``trading_db`` is passed (``--trading-db``).
+DB_ENV = "TRADEBOT_DB"
+
+
+def trading_db_path(explicit: str | None, settings: Settings) -> str:
+    """``explicit`` (``--trading-db``), else ``$TRADEBOT_DB``, else the config's
+    ``db_path``: the file ``tradebot run`` writes, so the CLI and the web on
+    one machine share one database unless told otherwise."""
+    return explicit or os.environ.get(DB_ENV) or settings.db_path
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     # The autopilot loop is a thread inside this process: resume it if the
@@ -50,14 +62,14 @@ async def _lifespan(app: FastAPI):
     autopilot_service.shutdown(app)
 
 
-def create_app(trading_db: str = "tradebot.db", arena_db: str = "arena.db",
+def create_app(trading_db: str | None = None, arena_db: str = "arena.db",
                season_db: str = "season.db", cache_dir: str = "data/cache",
                settings_path: str | None = None,
                allowed_hosts: list[str] | None = None,
                access_token: str | None = None) -> FastAPI:
     app = FastAPI(title="tradebot dashboard", docs_url="/api/docs", lifespan=_lifespan)
     app.state.settings, app.state.settings_path = load_settings(settings_path)
-    app.state.trading_db = trading_db
+    app.state.trading_db = trading_db_path(trading_db, app.state.settings)
     app.state.arena_db = arena_db
     app.state.season_db = season_db
     app.state.cache_dir = cache_dir

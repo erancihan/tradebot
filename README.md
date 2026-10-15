@@ -383,12 +383,12 @@ Every flow, from the Today page to a backtest, runs one pipeline:
 Install with `make install` (core), `make install-live` (adds Alpaca),
 `make install-web` (adds the web app) or `make install-all` (everything).
 `tradebot <command> --help` lists every flag. `--config PATH` defaults to
-`./config.yaml` when present, else SPY/QQQ defaults, for `tradebot` and
-`tradebot-web` alike (`tradebot-web` also reads `TRADEBOT_CONFIG`); each
-command prints the file it used. `tradebot` commands keep their log in the
-config's `db_path`; `tradebot-web` ignores `db_path` and uses `--trading-db`
-(`TRADEBOT_DB`, default `tradebot.db`). Point both at one file when you use
-both, so they share the watchlist and the parked trades.
+`TRADEBOT_CONFIG` when set, else `./config.yaml` when present, else SPY/QQQ
+defaults, for `tradebot` and `tradebot-web` alike; each command prints the
+file it used. `tradebot` commands keep their log in the config's `db_path`.
+`tradebot-web` uses the same `db_path` unless `--trading-db` or `TRADEBOT_DB`
+names another file, so by default both share the watchlist and the parked
+trades.
 
 ### Commands
 
