@@ -101,7 +101,9 @@ function merged(sameName: boolean, old: ParamMap | undefined, form: Record<strin
 }
 
 export function toDoc(form: SettingsForm, original: SettingsDoc): SettingsDoc {
-  const doc = structuredClone(original);
+  // A JSON copy, not structuredClone: Alpine hands us a reactive Proxy, which
+  // structuredClone refuses to clone.
+  const doc = JSON.parse(JSON.stringify(original)) as SettingsDoc;
   doc.symbols = parseSymbols(form.symbols);
   doc.timeframe = form.timeframe;
   doc.poll_seconds = Number(form.poll_seconds);

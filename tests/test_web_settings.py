@@ -321,3 +321,39 @@ def test_today_shows_the_setup_card_until_everything_is_ready(tmp_path, monkeypa
     monkeypatch.setattr("tradebot.config.AlpacaCredentials.from_env", lambda: object())
     _seed_bars(tmp_path, ["XLK", "XLE"])
     assert "data-setup-card" not in _client(tmp_path, path).get("/today").text
+
+
+# --- autopilot, alerts, market, risk ------------------------------------------------
+
+def test_settings_page_has_a_field_for_every_s5_setting(tmp_path):
+    body = _client(tmp_path, _config(tmp_path)).get("/settings").text
+    for name in ("poll_seconds", "brief_minutes_before_open", "ntfy_topic", "ntfy_server",
+                 "webhook_url", "market", "timeframe", "initial_cash", "max_position_pct",
+                 "max_gross_exposure", "max_daily_loss_pct", "rebalance_band_pct",
+                 "stop_loss_pct", "take_profit_pct", "allow_fractional"):
+        assert f'name="{name}"' in body, name
+
+
+def test_save_autopilot_alerts_market_and_risk(tmp_path):
+    path = _config(tmp_path)
+    client = _client(tmp_path, path)
+    doc = _doc(client)
+    doc.update(poll_seconds=900, market="bist", timeframe="1day", initial_cash=2500)
+    doc["autopilot"] = {"brief_minutes_before_open": 30}
+    doc["notify"] = {"ntfy_topic": "my-topic-123", "ntfy_server": None, "webhook_url": None}
+    doc["risk"].update(max_position_pct=0.25, stop_loss_pct=0.05, allow_fractional=True)
+    assert _post(client, doc).status_code == 200
+    raw = yaml.safe_load(open(path))
+    assert raw["poll_seconds"] == 900 and raw["market"] == "bist"
+    assert raw["autopilot"] == {"brief_minutes_before_open": 30}
+    assert raw["notify"] == {"ntfy_topic": "my-topic-123"}
+    assert raw["risk"]["max_position_pct"] == 0.25 and raw["risk"]["stop_loss_pct"] == 0.05
+    assert raw["risk"]["allow_fractional"] is True
+
+    doc = _doc(client)
+    doc["autopilot"] = {"brief_minutes_before_open": None}      # the brief switched off
+    doc["risk"]["stop_loss_pct"] = None
+    assert _post(client, doc).status_code == 200
+    raw = yaml.safe_load(open(path))
+    assert "autopilot" not in raw and "stop_loss_pct" not in raw["risk"]
+    assert raw["notify"]["ntfy_topic"] == "my-topic-123"         # masked in, kept
