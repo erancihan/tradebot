@@ -60,5 +60,6 @@ class JobView(BaseModel):
     summary: dict | None = None
     equity: EquityCurve | None = None
     benchmark: EquityCurve | None = None  # what-if only: the buy-and-hold curve
+    compare: dict | None = None       # whatif_compare only: rows, benchmark, curves, skipped
     provenance: dict | None = None    # what data the job ran on
     error: str | None = None
