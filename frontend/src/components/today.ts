@@ -5,11 +5,15 @@
 // chips are server-rendered too; an add or a remove posts, then reloads them
 // and the proposal list (whose empty state names the list in use). The
 // Discover card (./discover) adds names on its own and announces it with a
-// `watchlist-changed` event, which reloads the same panes.
+// `watchlist-changed` event, which reloads the same panes. The other way
+// round, an edit here fires `watchlist-edited` on the window so Discover
+// re-renders its rows ("on watchlist" / Add) to match.
 
 import { changeWatchlist, getJob, getPartial, getProposal, refreshProposal } from "../api/client";
 import type { WatchlistChange } from "../types";
-import { el, refs } from "../alpine";
+import { dispatch, el, refs } from "../alpine";
+
+export const WATCHLIST_EDITED = "watchlist-edited";
 
 const POLL_MS = 700;
 const TICK_MS = 30_000;
@@ -84,19 +88,28 @@ export function today() {
       this.notice = "";
       try {
         this.notice = (await changeWatchlist(change)).notice ?? "";
-        await this.reloadPanes();
-        return true;
       } catch (err) {
         this.state = "error";
         this.error = err instanceof Error ? err.message : String(err);
         return false;
       }
+      // Accepted: a pane that fails to reload shows its own error.
+      dispatch(this, WATCHLIST_EDITED, change);
+      await this.reloadPanes();
+      return true;
     },
 
+    // Also the handler for Discover's `watchlist-changed`, which nothing
+    // awaits: a failed reload must land on the page, not in the console.
     async reloadPanes() {
-      const panes = refs(this);
-      panes.watchlist.innerHTML = await getPartial("/partials/watchlist");
-      panes.list.innerHTML = await getPartial("/partials/proposal");
+      try {
+        const panes = refs(this);
+        panes.watchlist.innerHTML = await getPartial("/partials/watchlist");
+        panes.list.innerHTML = await getPartial("/partials/proposal");
+      } catch (err) {
+        this.state = "error";
+        this.error = err instanceof Error ? err.message : String(err);
+      }
     },
 
     // Resolves when the job is done; rejects with the server's message on error.

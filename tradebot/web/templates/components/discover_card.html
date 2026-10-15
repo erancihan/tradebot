@@ -1,9 +1,11 @@
 {#- Today: the Discover card, names the owner neither watches nor holds,
     ranked by 6-month momentum. Its own Alpine component (discover.ts): the
-    button runs the job, each row's Add posts to the watchlist. Expects
+    button runs the job, each row's Add posts to the watchlist, and a Today
+    watchlist edit (`watchlist-edited`) reloads the rows. Expects
     `discover`. -#}
-<div class="space-y-3 rounded-lg border border-slate-800 bg-slate-900/40 p-3"
-     x-data="discover" @click="onRowClick($event)" data-discover>
+<div class="space-y-3 rounded-lg border border-slate-800 bg-slate-900/40 p-3" data-discover
+     x-data="discover" @click="onRowClick($event)"
+     @watchlist-edited.window="onWatchlistEdited()">
   <div class="flex items-baseline justify-between gap-2">
     <h2 class="text-sm font-semibold text-slate-200">Discover</h2>
     <span class="text-xs text-slate-500">names you do not watch or hold</span>

@@ -4,6 +4,8 @@
 // posts to /api/discover/add (an empty watchlist is first seeded with the
 // active symbols, so they stay), re-renders the rows (that row now reads "on
 // watchlist") and fires `watchlist-changed` so the Today panes reload too.
+// A watchlist edit on the Today page fires `watchlist-edited` on the window,
+// and the card reloads its rows (`onWatchlistEdited`) so Add matches the list.
 
 import { addFromDiscover, getPartial, runDiscover, waitForJob } from "../api/client";
 import { dispatch, refs } from "../alpine";
@@ -64,6 +66,14 @@ export function discover() {
 
     async reloadRows() {
       refs(this).rows.innerHTML = await getPartial("/partials/discover");
+    },
+
+    async onWatchlistEdited() {
+      try {
+        await this.reloadRows();
+      } catch (err) {
+        this.error = message(err);
+      }
     },
   };
 }

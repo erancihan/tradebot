@@ -259,3 +259,9 @@ def test_a_second_search_while_one_runs_reuses_its_job(tmp_path, monkeypatch):
     third = client.post("/api/discover/run", headers=POST_HEADERS).json()["job_id"]
     assert third != first                      # finished: a new tap is a new search
     _wait(client, third)
+
+
+def test_the_card_listens_for_today_watchlist_edits(tmp_path):
+    body = _client(tmp_path, _config(tmp_path)).get("/today").text
+    card = body[body.index('x-data="discover"'):]
+    assert '@watchlist-edited.window="onWatchlistEdited()"' in card[:card.index(">")]
