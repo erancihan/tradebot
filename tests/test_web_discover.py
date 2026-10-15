@@ -265,3 +265,27 @@ def test_the_card_listens_for_today_watchlist_edits(tmp_path):
     body = _client(tmp_path, _config(tmp_path)).get("/today").text
     card = body[body.index('x-data="discover"'):]
     assert '@watchlist-edited.window="onWatchlistEdited()"' in card[:card.index(">")]
+
+
+def test_a_bar_dated_after_now_is_never_read(tmp_path, offline):
+    """The job's `as_of` (now's date) is a real cut, not just a label."""
+    from datetime import timezone
+
+    from tradebot.config import Settings
+
+    _seed_pool(tmp_path)
+    cache = BarCache(tmp_path / "cache")
+    full = cache.load("AAA", "1day")
+    now = full.index[-11].to_pydatetime().astimezone(timezone.utc)   # ten bars early
+    job = discover_job._run_discover({
+        "settings": Settings(symbols=["SPY", "QQQ"]), "trading_db": str(tmp_path / "t.db"),
+        "cache_dir": str(tmp_path / "cache"), "now": now})
+    prov = job["provenance"]
+    assert prov["as_of"] == now.date().isoformat()
+    assert pd.Timestamp(prov["end"]) == full.index[-11] < full.index[-1]
+    assert prov["bars"] == 3 * 290                       # ten later bars per name cut
+    with Storage(tmp_path / "t.db") as st:
+        rows = st.latest_discover_run()["rows"]
+    prices = {r["symbol"]: r["price"] for r in rows}
+    for sym, price in prices.items():
+        assert price == pytest.approx(float(cache.load(sym, "1day")["close"].iloc[-11]))
