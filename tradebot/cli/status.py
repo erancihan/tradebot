@@ -8,15 +8,17 @@ import sys
 
 def register(sub: argparse._SubParsersAction) -> None:
     s = sub.add_parser("status", help="print broker account snapshot")
-    s.add_argument("--config", required=True)
+    s.add_argument("--config", default=None,
+                   help="settings file (defaults to ./config.yaml when present)")
     s.set_defaults(func=cmd_status)
 
 
 def cmd_status(args: argparse.Namespace) -> int:
     from ..broker import get_broker
-    from ..config import AlpacaCredentials, Settings
+    from ..config import AlpacaCredentials
+    from .common import _load_settings
 
-    settings = Settings.from_yaml(args.config)
+    settings = _load_settings(args, "status")
     creds = AlpacaCredentials.from_env()
     if creds is None:
         print("Missing Alpaca credentials.", file=sys.stderr)

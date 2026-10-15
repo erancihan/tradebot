@@ -1,9 +1,12 @@
 """Command-line entrypoint.
 
-    tradebot backtest --config config.yaml [--plot out.csv]
+    tradebot backtest [--out out.csv]
     tradebot demo                         # offline backtest on synthetic data
-    tradebot run --config config.yaml     # paper/live loop (needs Alpaca creds)
-    tradebot status --config config.yaml  # account snapshot from the broker
+    tradebot run                          # paper/live loop (needs Alpaca creds)
+    tradebot status                       # account snapshot from the broker
+
+``--config PATH`` defaults to ./config.yaml when present, else SPY/QQQ defaults,
+exactly as ``tradebot-web`` resolves it (``config.resolve_settings``).
 
 Live trading additionally requires TRADEBOT_LIVE_CONFIRM=I_UNDERSTAND (see config).
 

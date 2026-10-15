@@ -10,15 +10,16 @@ def register(sub: argparse._SubParsersAction) -> None:
     u = sub.add_parser("universe",
                        help="resolve & print the screened candidate universe "
                             "(needs Alpaca creds)")
-    u.add_argument("--config", required=True)
+    u.add_argument("--config", default=None,
+                   help="settings file (defaults to ./config.yaml when present)")
     u.set_defaults(func=cmd_universe)
 
 
 def cmd_universe(args: argparse.Namespace) -> int:
     """Resolve and print the screened candidate universe (needs Alpaca creds)."""
-    from ..config import Settings
+    from .common import _load_settings
 
-    settings = Settings.from_yaml(args.config)
+    settings = _load_settings(args, "universe")
     uni = settings.build_universe()
     if uni is None:
         print("No `universe:` block in the config — the static `symbols` list "

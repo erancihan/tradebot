@@ -191,3 +191,6 @@ def _public_url(value: Any) -> Any:
     """No trailing slash, and empty means unset; a non-string is left for
     the Settings validation to refuse readably."""
     return (value.rstrip("/") or None) if isinstance(value, str) else value
+
+
+from .config_resolve import DEFAULT_SYMBOLS, resolve_settings  # noqa: E402,F401 - re-exported

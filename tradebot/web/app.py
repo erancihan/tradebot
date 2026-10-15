@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from ..autopilot.links import UsedLinks, link_secret
-from ..config import Settings
+from ..config import DEFAULT_SYMBOLS, Settings, resolve_settings  # noqa: F401 - re-exported
 from .access import AccessToken
 from .guard import SameOriginGuard
 from .routes import api, pages, partials, sse
@@ -33,22 +33,10 @@ log = logging.getLogger(__name__)
 #: rather than adding Starlette's ``testserver`` here.
 DEFAULT_ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]"]
 
-#: What the Today page advises on when no config file exists: a broad market
-#: pair, so a fresh install has something meaningful to show.
-DEFAULT_SYMBOLS = ["SPY", "QQQ"]
-
 
 def load_settings(settings_path: str | None) -> tuple[Settings, str | None]:
-    """The server's trading settings and the file they came from (None = defaults).
-
-    An explicit path must exist; the implicit ``config.yaml`` in the working
-    directory is used only when present, so the dashboard runs without one.
-    """
-    if settings_path is None and Path("config.yaml").exists():
-        settings_path = "config.yaml"
-    if settings_path is None:
-        return Settings(symbols=list(DEFAULT_SYMBOLS)), None
-    return Settings.from_yaml(settings_path), str(settings_path)
+    """The server's trading settings and their file (None = defaults); see ``resolve_settings``."""
+    return resolve_settings(settings_path)
 
 
 @asynccontextmanager

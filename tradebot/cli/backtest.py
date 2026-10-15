@@ -5,12 +5,13 @@ from __future__ import annotations
 import argparse
 import sys
 
-from .common import _print_summary
+from .common import _load_settings, _print_summary
 
 
 def register(sub: argparse._SubParsersAction) -> None:
     b = sub.add_parser("backtest", help="backtest a config against CSV or Alpaca data")
-    b.add_argument("--config", required=True)
+    b.add_argument("--config", default=None,
+                   help="settings file (defaults to ./config.yaml when present)")
     b.add_argument("--csv", help="backtest a single symbol from a local OHLCV CSV")
     b.add_argument("--symbol", help="symbol label when using --csv")
     b.add_argument("--lookback", type=int, default=365, help="days of history (Alpaca)")
@@ -24,12 +25,11 @@ def register(sub: argparse._SubParsersAction) -> None:
 
 def cmd_backtest(args: argparse.Namespace) -> int:
     from ..backtest import Backtester
-    from ..config import Settings
     from ..data.synthetic import load_csv
     from ..risk import RiskManager
     from ..strategies import build_strategy
 
-    settings = Settings.from_yaml(args.config)
+    settings = _load_settings(args, "backtest")
     strategy = build_strategy(settings.strategy_name, settings.strategy_params)
     risk = RiskManager(settings.risk)
     bt = Backtester(

@@ -66,3 +66,12 @@ def _format_standings(snap) -> str:
         f"{s.rank}.{s.name}({s.total_return:+.1%})" for s in snap.standings
     )
     return f"[{snap.step:>2}/{snap.total_steps} {snap.timestamp[:10]}] {parts}"
+
+
+def _load_settings(args, command: str):
+    """The command's settings, resolved as ``tradebot-web`` does, and one line naming the file."""
+    from ..config import resolve_settings
+
+    settings, source = resolve_settings(getattr(args, "config", None))
+    print(f"tradebot {command}: config={source or 'defaults'}")
+    return settings

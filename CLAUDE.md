@@ -130,9 +130,9 @@ config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])  deploy
 make install | install-web | install-all | test | demo | dryrun | arena | web  # :8000
 cd frontend && npm run typecheck | test | build | watch:js           # after install-web
 ```
-CLI: `tradebot {backtest,run,status,demo,arena,data,universe}`, `tradebot-web
-[--config PATH] [--check]` (default `./config.yaml`, else SPY/QQQ; a Settings save creates
-it; `--check` validates, prints the startup line, exits). `run --dry-run`/`--replay` forward-test.
+CLI: `tradebot {backtest,run,status,demo,arena,data,universe}`, `tradebot-web [--check]` (validates,
+prints the startup line, exits). `--config PATH` defaults to `./config.yaml` for both (`config.resolve_settings`),
+else SPY/QQQ; a Settings save creates it. `run --dry-run`/`--replay` forward-test.
 Arena: `arena {list,run,validate,history,show,league,season,gate,journal}`,
 `arena season {create,seed,list,standings,run}`. CI (`.github/workflows/ci.yml`)
 runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR, no credentials.
