@@ -45,10 +45,10 @@ demo:
 	$(PY) -m tradebot.cli demo --strategy rsi_reversion
 
 backtest:
-	$(PY) -m tradebot.cli backtest --config config.yaml --out equity.csv
+	$(PY) -m tradebot.cli backtest --out equity.csv
 
 dryrun:
-	$(PY) -m tradebot.cli run --config config.yaml --replay --replay-periods 300
+	$(PY) -m tradebot.cli run --replay --replay-periods 300
 
 arena:
 	$(PY) -m tradebot.cli arena run --algos ./algos --scenario scenarios/default.yaml --score sharpe
@@ -60,10 +60,10 @@ web: web-build
 	$(PY) -m tradebot.web.server
 
 run:
-	$(PY) -m tradebot.cli run --config config.yaml
+	$(PY) -m tradebot.cli run
 
 status:
-	$(PY) -m tradebot.cli status --config config.yaml
+	$(PY) -m tradebot.cli status
 
 clean:
 	rm -rf $(VENV) *.egg-info .pytest_cache __pycache__ */__pycache__ */*/__pycache__

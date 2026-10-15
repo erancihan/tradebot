@@ -148,3 +148,34 @@ def test_the_suite_never_sees_exported_credentials():
     for name in ("ALPACA_API_KEY", "ALPACA_API_SECRET", "ALPACA_DATA_FEED",
                  "TRADEBOT_WEB_TOKEN", "TRADEBOT_LIVE_CONFIRM"):
         assert name not in os.environ
+
+
+# --- one settings resolution for `tradebot` and `tradebot-web` ---------------
+
+def test_resolve_settings_without_a_file_gives_the_defaults(tmp_path, monkeypatch):
+    from tradebot.config import DEFAULT_SYMBOLS, resolve_settings
+
+    monkeypatch.chdir(tmp_path)
+    settings, source = resolve_settings(None)
+    assert source is None
+    assert settings.symbols == list(DEFAULT_SYMBOLS) == ["SPY", "QQQ"]
+
+
+def test_resolve_settings_picks_up_config_yaml_in_the_working_directory(tmp_path,
+                                                                         monkeypatch):
+    from tradebot.config import resolve_settings
+
+    (tmp_path / "config.yaml").write_text("symbols: [GLD]\n")
+    monkeypatch.chdir(tmp_path)
+    settings, source = resolve_settings(None)
+    assert source == "config.yaml"
+    assert settings.symbols == ["GLD"]
+
+
+def test_resolve_settings_refuses_an_explicit_missing_path(tmp_path, monkeypatch):
+    from tradebot.config import resolve_settings
+
+    (tmp_path / "config.yaml").write_text("symbols: [GLD]\n")
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(FileNotFoundError):
+        resolve_settings(str(tmp_path / "missing.yaml"))

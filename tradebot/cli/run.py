@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import argparse
 
-from .common import _resolve_universe
+from .common import _load_settings, _resolve_universe
 from .dryrun import _run_dry
 
 
 def register(sub: argparse._SubParsersAction) -> None:
     r = sub.add_parser("run", help="run the paper/live/dry-run trading loop")
-    r.add_argument("--config", required=True)
+    r.add_argument("--config", default=None,
+                   help="settings file (defaults to ./config.yaml when present)")
     r.add_argument("--once", action="store_true", help="single rebalance pass then exit")
     r.add_argument("--iterations", type=int, default=None, help="stop after N loops")
     r.add_argument(
@@ -82,9 +83,7 @@ def _build_paper_engine(settings):
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    from ..config import Settings
-
-    settings = Settings.from_yaml(args.config)
+    settings = _load_settings(args, "run")
 
     # Replaying data only makes sense as a (offline) dry-run; imply the flag.
     if getattr(args, "replay", False) or getattr(args, "replay_csv", None):

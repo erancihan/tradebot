@@ -26,7 +26,8 @@ make arena          # example competition leaderboard
 make web            # build frontend + serve the dashboard (needs [web])
 ```
 CLI: `tradebot {backtest,run,status,demo,arena,data,universe}`, `tradebot-web`
-(`--check` validates the config and exits). Service files for an always-on
+(`--check` validates the config and exits); `--config` defaults to
+`./config.yaml` when present for both. Service files for an always-on
 server live in `deploy/` (`deploy/README.md`).
 
 Frontend (`frontend/`): `npm run typecheck` (strict, CI gate), `npm test`

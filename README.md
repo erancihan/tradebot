@@ -335,7 +335,9 @@ Every flow, from the Today page to a backtest, runs one pipeline:
 
 Install with `make install` (core), `make install-live` (adds Alpaca),
 `make install-web` (adds the web app) or `make install-all` (everything).
-`tradebot <command> --help` lists every flag.
+`tradebot <command> --help` lists every flag. `--config PATH` defaults to
+`./config.yaml` when present, else SPY/QQQ defaults, for `tradebot` and
+`tradebot-web` alike; each command prints the file it used.
 
 ### Commands
 
@@ -343,15 +345,15 @@ The realism ladder runs backtest → dry-run → paper → live:
 
 ```bash
 tradebot demo [--strategy NAME] [--portfolio]              # offline, synthetic data
-tradebot backtest --config config.yaml --csv data/SPY.csv --symbol SPY
-tradebot backtest --config config.yaml --walk-forward 4    # Alpaca history, per-fold metrics
-tradebot run --config config.yaml --replay                 # offline forward-test
-tradebot run --config config.yaml --replay-csv data/SPY.csv  # replay your own CSV
-tradebot run --config config.yaml --dry-run                # live data, simulated fills
-tradebot run --config config.yaml --once                   # one paper pass
-tradebot run --config config.yaml                          # continuous paper loop
-tradebot status --config config.yaml                       # broker account snapshot
-tradebot universe --config config.yaml                     # screened universe (needs keys)
+tradebot backtest --csv data/SPY.csv --symbol SPY
+tradebot backtest --walk-forward 4    # Alpaca history, per-fold metrics
+tradebot run --replay                 # offline forward-test
+tradebot run --replay-csv data/SPY.csv  # replay your own CSV
+tradebot run --dry-run                # live data, simulated fills
+tradebot run --once                   # one paper pass
+tradebot run                          # continuous paper loop
+tradebot status                       # broker account snapshot
+tradebot universe                     # screened universe (needs keys)
 tradebot data pull --symbols SPY QQQ --start 2024-01-01 --end 2025-01-01
 tradebot-web [--host H] [--port P] [--config F] [--allow-host H] [--token T] [--trading-db F] [--check]
 ```
@@ -374,10 +376,10 @@ to luck or one regime.
 so `--dry-run`, `--replay` and the live gate all apply:
 
 ```bash
-tradebot run --config config.yaml --autopilot --mode auto       # paper, market hours
-tradebot run --config config.yaml --autopilot --mode approve    # park trades for the web page
-tradebot run --config config.yaml --autopilot --mode off        # morning brief only
-tradebot run --config config.yaml --replay --autopilot --mode auto --iterations 50   # offline
+tradebot run --autopilot --mode auto       # paper, market hours
+tradebot run --autopilot --mode approve    # park trades for the web page
+tradebot run --autopilot --mode off        # morning brief only
+tradebot run --replay --autopilot --mode auto --iterations 50   # offline
 ```
 
 Parked trades wait on the Autopilot page of a server with the same database.
