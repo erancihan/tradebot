@@ -88,6 +88,14 @@ def test_whatif_page_offers_compare_strategies(tmp_path):
     assert "data-compare-card" in text
 
 
+def test_the_compare_table_keeps_its_number_columns_apart_on_a_phone(tmp_path):
+    # At 390px "15,883" and "4,283" ran together; every number column is padded.
+    text = _client(tmp_path).get("/whatif").text
+    table = text.split("data-compare-card")[1].split("</table>")[0]
+    assert "tabular-nums" in table
+    assert table.count("pl-3 text-right") == 6         # three headers, three cells
+
+
 def test_a_tuned_plan_comes_back_as_its_own_flagged_row(tmp_path):
     client = _client(tmp_path)
     body = {**PLAN, "params": {"fast": 5, "slow": 12}}
