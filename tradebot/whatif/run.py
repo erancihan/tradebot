@@ -61,12 +61,22 @@ def plan_backtester(plan: WhatIfPlan, *, commission: float = 0.0,
                       selector=selector)
 
 
+def plan_window(plan: WhatIfPlan, frames: dict[str, pd.DataFrame]
+                ) -> tuple[dict[str, pd.DataFrame], dict[pd.Timestamp, float]]:
+    """The plan's bars and its contribution schedule, shared by every rule run on it.
+
+    Computed once per plan, so a comparison of many decision rules replays
+    each one over exactly the same bars and the same cash on the same days.
+    """
+    window = _window(plan, frames)
+    common, _ = align_frames(window, "run a what-if")
+    return window, monthly_cash_flows(common, plan.monthly_contribution)
+
+
 def run_whatif(plan: WhatIfPlan, frames: dict[str, pd.DataFrame], *,
                commission: float = 0.0, slippage_bps: float = 1.0) -> WhatIfResult:
     """Replay ``plan`` and its benchmark over ``frames`` with the same contributions."""
-    window = _window(plan, frames)
-    common, _ = align_frames(window, "run a what-if")
-    flows = monthly_cash_flows(common, plan.monthly_contribution)
+    window, flows = plan_window(plan, frames)
     costs = {"commission": commission, "slippage_bps": slippage_bps}
     result = plan_backtester(plan, **costs).run(window, cash_flows=flows)
     bench = plan_backtester(benchmark_plan(plan), **costs).run(window, cash_flows=flows)
