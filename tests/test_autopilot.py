@@ -52,7 +52,7 @@ class Recorder:
 
 
 def build(tmp_path, *, now=OPEN_NOW, poll=300, risk: RiskConfig | None = None,
-          storage: Storage | None = None):
+          storage: Storage | None = None, label: str = "dry_run"):
     frames = {s: synthetic_ohlcv(periods=80, drift=0.001, volatility=0.01, seed=i)
               for i, s in enumerate(SYMBOLS)}
     data = ReplayData(frames, warmup=60)
@@ -62,7 +62,7 @@ def build(tmp_path, *, now=OPEN_NOW, poll=300, risk: RiskConfig | None = None,
     storage = storage or Storage(tmp_path / "t.db")
     notifier = Recorder()
     engine = Engine(settings, broker, data, build_strategy("buy_and_hold", {}),
-                    RiskManager(risk), storage, mode_label="dry_run",
+                    RiskManager(risk), storage, mode_label=label,
                     enforce_live_ack=False, notifier=notifier)
     clock = FakeClock(now)
     pilot = Autopilot(engine, storage, poll_seconds=poll, clock=clock, sleep=clock.sleep)
@@ -378,6 +378,35 @@ def test_a_replay_autopilot_push_has_only_the_open_button(tmp_path, capsys, monk
                  "--autopilot", "--iterations", "2"]) == 0
     actions = {p.get_header("Actions") for p in pushes if p.get_header("Actions")}
     assert actions == {'view, Open, "http://192.168.1.20:8000/autopilot"'}
+
+
+def test_a_live_pilots_pending_push_carries_its_mode_and_no_approve(tmp_path, monkeypatch):
+    """End to end from ``Autopilot._notify``: the header's paper-only check
+    reads the event's ``mode``, so the runner must stamp it. Armed with a
+    signer on purpose: the event alone must keep Approve off a live push."""
+    from tradebot.autopilot.links import link_secret, link_signer
+    from tradebot.notify import NtfyNotifier
+
+    pushes: list = []
+    monkeypatch.setattr("tradebot.notify.urllib.request.urlopen",
+                        lambda req, timeout=None: (pushes.append(req), _Pushed())[1])
+    events: list = []
+
+    class Seen(NtfyNotifier):
+        def send(self, event: dict) -> None:
+            events.append(event)
+            super().send(event)
+
+    pilot, _, _, _ = build(tmp_path, label="live")
+    pilot.notifier = Seen("t0pic", server="http://127.0.0.1:9",
+                          public_url="http://192.168.1.20:8000",
+                          link_signer=link_signer(link_secret("t"), "live", 300))
+    pilot.set_mode("approve")
+    pilot.tick()
+    (event,) = [e for e in events if e["type"] == "pending_trades"]
+    assert event["mode"] == "live"
+    (push,) = [p for p in pushes if p.get_header("Title") == "tradebot: pending_trades"]
+    assert push.get_header("Actions") == 'view, Open, "http://192.168.1.20:8000/autopilot"'
 
 
 def test_the_cli_arms_links_only_for_paper():

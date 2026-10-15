@@ -302,3 +302,15 @@ def test_an_unready_autopilot_tells_a_link_nothing_about_the_setup(
     assert resp.json() == {"detail": "autopilot not ready"}
     assert "SPY" not in resp.text and "pull" not in resp.text
     assert any(_SETUP_DETAIL in r.getMessage() for r in caplog.records)
+
+
+def test_a_503_gives_the_link_back_and_a_retry_once_ready_acts(
+        tmp_path, pushes, monkeypatch):
+    app, client, pilot, links = _setup(tmp_path, pushes)
+    _unready(app, monkeypatch)
+    assert client.post(links["Approve all"], headers=POST_HEADERS).status_code == 503
+    assert len(_pending(pilot)) == 2                 # nothing acted
+    app.state.autopilot = pilot                      # ready again
+    resp = client.post(links["Approve all"], headers=POST_HEADERS)
+    assert resp.status_code == 200 and resp.json()["approved"] == 2
+    assert set(pilot.engine.broker.positions()) == {"SPY", "QQQ"}
