@@ -145,3 +145,22 @@ One new core concept, the proposal, feeds three flows.
   a cancelled, expired or rejected order with nothing filled counts zero, and an
   order not yet reported (or working with nothing filled) counts in full. Alpaca's
   `replaced` maps to `canceled`; `done_for_day`, `stopped` and `suspended` stay `new`.
+
+## Addendum 2026-10-15: the list is the mandate
+- The autopilot manages exactly the active list (the watchlist, else the config
+  `symbols`). A held, non-flat position whose symbol is not on the list gets a
+  closing line after the list's lines: `sell` (or `buy` for a short) to zero,
+  reason "not on your list: sell to flat". `advisor.propose` takes these as
+  `unlisted` (`symbol -> (signed qty, last price or None)`) and stays pure.
+- The engine reads them from `broker.positions()` minus the list and prices them
+  with one short fetch through its own data source. The Today refresh reads them
+  from the paper broker, or offline from the order log, priced at the last cached
+  close. Without a price the line is skipped ("not on your list; no price to size
+  it"), never guessed. Approve mode asks for the line like any other.
+- Removing a held name from the watchlist asks first and says the autopilot sells
+  it at its next pass; an unheld name gets the plain confirmation.
+- The product's no-trade band is 1% of equity: `Settings` uses it when the YAML
+  does not set `risk.rebalance_band_pct` (an explicit 0 turns it off), and Settings
+  edits it. `RiskConfig()` keeps 0, so backtests, the arena and the research
+  record keep their numbers. A banded hold says "within the 1% no-trade band".
+- Simulations are unchanged: their books never hold a name outside their list.

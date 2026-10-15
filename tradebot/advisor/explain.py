@@ -13,13 +13,13 @@ SIGNAL_WORDS = {1: "long", 0: "flat", -1: "short"}
 
 def explain(*, strategy: str, signal: int, action: str, selected: bool | None = None,
             rank: tuple[int, int] | None = None, weight: float | None = None,
-            capped: bool = False, banded: bool = False) -> str:
+            capped: bool = False, banded: bool = False, band: float = 0.0) -> str:
     """E.g. ``"sma_crossover signals long; rank 2 of 5, weight 23%, capped by
     the risk limit; buy."``
 
     ``selected`` is None without a selector; ``rank`` is ``(k, N)`` when the
     selector ranks its pool. ``banded`` means the delta was real but smaller
-    than the no-trade band, so the line holds.
+    than the no-trade band (``band``, a fraction of equity), so the line holds.
     """
     head = f"{strategy} signals {SIGNAL_WORDS.get(signal, str(signal))}"
     middle: list[str] = []
@@ -34,5 +34,8 @@ def explain(*, strategy: str, signal: int, action: str, selected: bool | None = 
         middle.append(f"weight {weight:.0%}")
     if active and capped:
         middle.append("capped by the risk limit")
-    outcome = "within band, hold" if banded else action
+    outcome = action
+    if banded:
+        outcome = (f"within the {band * 100:g}% no-trade band, hold" if band
+                   else "within band, hold")
     return "; ".join([head, *([", ".join(middle)] if middle else []), outcome]) + "."

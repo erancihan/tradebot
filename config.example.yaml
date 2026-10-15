@@ -136,9 +136,9 @@ risk:
   max_gross_exposure: 1.0     # at most 100% of equity deployed across all symbols
   max_daily_loss_pct: 0.03    # flatten + halt after a 3% daily drawdown
   allow_fractional: false     # whole shares only
-  rebalance_band_pct: 0.0     # no-trade band: skip drift trades smaller than
-                              # this fraction of equity (exits always execute);
-                              # try 0.01-0.02 with an allocator to cut churn
+  rebalance_band_pct: 0.01    # skip drift trades smaller than 1% of equity
+                              # (full exits always execute). The default when
+                              # unset; 0 disables the band.
   # Bracket exits attached to entries, as fractions of the entry price. Both are
   # optional; either can be set alone. LIVE-EXECUTION ONLY — the backtester does
   # not model them, so a backtest will not show their effect. A bracket protects

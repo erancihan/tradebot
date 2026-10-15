@@ -28,7 +28,7 @@ from ..notify import LogNotifier
 from ..risk import RiskManager
 from ..storage import Storage
 from ..strategies.base import Strategy
-from . import fills, orders, pending, session, signals
+from . import fills, orders, pending, session, signals, unlisted
 from .orders import RebalanceAction
 from .pending import PassOutcome
 
@@ -155,8 +155,8 @@ class Engine:
 
     def propose(self, equity: float, cash: float = 0.0,
                 now: datetime | None = None) -> Proposal:
-        """What this pass would trade: fetch bars and positions, then ask the
-        advisor. Submits nothing."""
+        """What this pass would trade: fetch bars and positions (held names off
+        the list too, to close them), then ask the advisor. Submits nothing."""
         frames = signals.fetch_frames(self)
         positions = orders.current_positions(self, frames)
         return advisor.propose(
@@ -165,7 +165,7 @@ class Engine:
             selector=self.selector, allocator=self.allocator, overlays=self.overlays,
             # Full stored history for a ranked selector (see `_selector_frames`).
             selector_frames=self._selector_frames(frames) if self.selector else None,
-            now=now,
+            now=now, unlisted=unlisted.read_unlisted(self),
         )
 
     def _submit_all(self, proposal: Proposal, now: datetime) -> list[RebalanceAction]:

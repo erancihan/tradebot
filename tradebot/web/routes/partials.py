@@ -90,7 +90,8 @@ def watchlist(request: Request, repo: TradingRepository = Depends(get_trading_re
     state = request.app.state
     return templates.TemplateResponse(
         request, "components/watchlist.html",
-        {"today": advisor_service.view(repo, state.settings, state.settings_path)},
+        {"today": advisor_service.view(repo, state.settings, state.settings_path),
+         "holdings": _holdings(state)},
     )
 
 

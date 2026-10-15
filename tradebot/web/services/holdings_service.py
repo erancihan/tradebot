@@ -10,17 +10,19 @@ cached close: the web layer reads the bar cache and never fetches here.
 from __future__ import annotations
 
 import logging
-import math
 
 from ...data.cache import BarCache
 from ..repository import TradingRepository
 from . import advisor_service
+from .unlisted_service import last_close as _last_close
 
 log = logging.getLogger("tradebot.web.holdings")
 
 
 def view(settings, *, trading_db: str, cache_dir: str) -> dict:
-    """``{source, equity, rows, skipped, note}``; rows are largest value first."""
+    """``{source, equity, rows, skipped, note, held}``; rows are largest value
+    first. ``held`` is every non-flat quantity, priced or not, so the
+    watchlist's Remove can say what the autopilot would sell."""
     positions, avg_cost, equity, source, note = _book(settings, trading_db)
     cache, rows, skipped = BarCache(cache_dir), [], []
     for symbol, qty in sorted(positions.items()):
@@ -37,7 +39,7 @@ def view(settings, *, trading_db: str, cache_dir: str) -> dict:
                      "weight": value / equity if equity > 0 else None, "as_of": as_of})
     rows.sort(key=lambda r: -abs(r["value"]))
     return {"source": source, "equity": equity, "rows": rows,
-            "skipped": skipped, "note": note}
+            "skipped": skipped, "note": note, "held": dict(positions)}
 
 
 def _book(settings, trading_db: str):
@@ -60,13 +62,3 @@ def _book(settings, trading_db: str):
     equity = float(latest["equity"]) if latest else float(settings.initial_cash)
     return repo.positions_from_orders(settings.mode), {}, equity, "log", note
 
-
-def _last_close(cache: BarCache, symbol: str, timeframe: str):
-    """(close, date) of the newest cached bar, or (None, None) when uncached."""
-    df = cache.load(symbol, timeframe)
-    if df is None or df.empty:
-        return None, None
-    close = float(df["close"].iloc[-1])
-    if not math.isfinite(close) or close <= 0:     # bad prices are flat, everywhere
-        return None, None
-    return close, df.index[-1].date().isoformat()

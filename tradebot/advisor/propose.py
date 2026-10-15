@@ -14,13 +14,15 @@ from datetime import datetime
 from ..models import utcnow
 from .explain import explain
 from .types import Proposal, ProposalLine
+from .unlisted import unlisted_lines
 
 log = logging.getLogger("tradebot.advisor")
 
 
 def propose(*, symbols, frames, equity, positions, strategy, risk, selector=None,
             allocator=None, overlays=(), provenance=None, cash: float = 0.0,
-            selector_frames=None, now: datetime | None = None) -> Proposal:
+            selector_frames=None, now: datetime | None = None,
+            unlisted: dict[str, tuple[float, float | None]] | None = None) -> Proposal:
     """The deltas one rebalance pass would submit, computed without submitting.
 
     Pure: reads only its arguments, never a broker or a store. ``frames`` are
@@ -52,6 +54,7 @@ def propose(*, symbols, frames, equity, positions, strategy, risk, selector=None
                  else weights.get(sym), "capped": capped.get(sym, False)}
         lines.append(_line(sym, targets[sym], current, desired[sym], prices[sym],
                            equity, risk, parts))
+    lines.extend(unlisted_lines(unlisted, symbols))
     return Proposal(created_at=now or utcnow(), equity=float(equity), cash=float(cash),
                     lines=lines, provenance=dict(provenance or {}), weights=weights)
 
@@ -137,7 +140,8 @@ def _line(sym, target, current, desired, price, equity, risk, parts) -> Proposal
     material = risk.material_delta(desired, current, price, equity)
     delta = material if risk.config.allow_fractional else float(round(material))
     action = "buy" if delta > 0 else "sell" if delta < 0 else "hold"
-    parts = {**parts, "banded": material == 0 and desired != current, "action": action}
+    parts = {**parts, "banded": material == 0 and desired != current, "action": action,
+             "band": risk.config.rebalance_band_pct}
     return ProposalLine(
         symbol=sym, action=action, target=target, current_qty=current,
         desired_qty=desired, order_qty=delta, price=price,
