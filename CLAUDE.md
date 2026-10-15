@@ -40,14 +40,14 @@ tradebot/
   whatif/        plan, run (run_whatif, whatif_risk, plan_window), compare, compare_many
   config.py      Settings (YAML), credentials.py (env only), config_io.py (EDITABLE_KEYS,
                  settings_to_dict, editable, write_settings: atomic, refuses secrets)
-  notify.py      Notifier: Log, Null, Webhook, Ntfy, Multi, build_notifier
+  notify.py      Notifier: Log, Null, Webhook, Ntfy, Multi, build_notifier; notify_actions (ntfy buttons)
   broker/        base (ABC), alpaca (lazy SDK), dryrun + brackets (BracketsMixin)
   data/          synthetic + factor_panel, cache + coverage, replay, csv, alpaca_data, stream
   market/        base (MarketCalendar, TableCalendar), us, bist, registry (CALENDARS)
   advisor/       propose (bars + account -> Proposal), explain, types
   engine/        core (Engine.step -> PassOutcome), signals, orders, pending
   autopilot/     state, schedule, runner (Autopilot, injected clock/sleep/calendar),
-                 approvals, background, brief (MorningBrief), session
+                 approvals, background, brief (MorningBrief), session, links (signed batch links)
   storage/       SQLite tradebot.db mixins: orders, bars, weights, proposals, autopilot, watchlist
   cli/           build_parser/main + one module per command
   arena/         api, loader, interfaces, adapters, simulation, scenario, runner +
@@ -96,8 +96,7 @@ config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])
   book to the gross cap order-independently, and is the only place weights
   become share quantities. The no-trade band is `RiskManager.material_delta`
   (full exits always execute). `RiskManager.bracket_prices` sets bracket
-  levels. `models.opens_exposure` decides what counts as an entry, for both
-  the engine and `DryRunBroker`.
+  levels. `models.opens_exposure` decides what counts as an entry, for both the engine and `DryRunBroker`.
 - **Backtest == live.** `Backtester`, arena `simulate` and live `Engine` share
   `Strategy` and `RiskManager` and size the whole book in one `allocate` pass.
   `tests/test_arena_simulation.py` keeps the backtester and arena in lockstep.
@@ -108,15 +107,12 @@ config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])
 - **Import isolation.** The Alpaca SDK and `python-dotenv` load lazily inside
   functions. The trading core never imports `tradebot.web`.
 - **Offline-first.** Everything except the literal Alpaca call runs and tests
-  offline (synthetic data, fake fetchers). Every feature keeps a
-  credential-free path and offline tests.
+  offline (synthetic data, fake fetchers). Every feature keeps a credential-free path and offline tests.
 - **Credentials stay on the server.** The browser never receives them, and no
   config file holds them (`write_settings` refuses credential-looking keys). The
   web fetches bars only through `BarCache` and only with credentials in the
-  server environment. Without them it uses cached bars and says so
-  (`docs/adr/0001-server-side-refresh.md`).
-- **Every result carries provenance:** source, symbols, window and bar count.
-  Synthetic dates are axis labels, not forecasts.
+  server environment. Without them it uses cached bars and says so (`docs/adr/0001-server-side-refresh.md`).
+- **Every result carries provenance:** source, symbols, window and bar count. Synthetic dates are labels, not forecasts.
 - **No inline JS in templates.** All browser code is type-checked TypeScript
   bundled by esbuild. Templates only present data.
 
@@ -168,8 +164,7 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   `exit_rank`: a held name stays droppable in any pool larger than `top_k`.
 - **Cache coverage is a manifest** (`*.coverage.json`, gaps included), and it
   records the requested bounds: give `tradebot data pull` explicit `--start`/`--end`.
-  Ranges are half-open (`_slice` drops the end date's 04:00/05:00 UTC session).
-  Changing that needs a manifest migration.
+  Ranges are half-open (`_slice` drops the end date's 04:00/05:00 UTC session); changing that needs a migration.
 - **Cost model differs from production:** raw (not dividend-adjusted) bars, no
   daily-loss halt in simulation, 1 bp slippage, and synthetic `open(t) ==
   close(t-1)` hides signal-to-fill decay. Label this beside any quoted backtest.
@@ -240,6 +235,11 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   errors. `deliver() -> bool` is only for the test-alert button ("not delivered").
 - **A pending batch expires, never executes late:** the next pass, an approval
   older than one `poll_seconds`, and switching off all expire it.
+- **Signed batch links** (`autopilot/links.py`; ntfy buttons when `notify.public_url` is set)
+  approve or reject only that batch's still-pending lines via `Autopilot.approve`/`reject`, never
+  the mode or a live account (no Approve button either). HMAC key from `TRADEBOT_WEB_TOKEN`, else
+  random per process; 2 x poll (min 10 min); single use (replay = 409); skip the cookie gate, not
+  the guard. **The ntfy topic then grants approval:** self-host ntfy or use its access control.
 - **The daily-loss breaker is per session day and flattens** (`engine/session.py`):
   each pass rolls the anchor when `now`'s exchange date changes (a replay's `now` is
   its newest bar); a breach closes every position and stays out that day. The
@@ -273,7 +273,7 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
 - **State-changing requests need `X-Requested-With: tradebot`** (`web/guard.py`).
   Tests send `POST_HEADERS`, the TS client adds it in `postJson`. Middleware,
   outermost first: trusted host -> optional `TRADEBOT_WEB_TOKEN` gate -> guard.
-  `POST /login` is the only exemption, and the token never rides in a URL. Test
+  `POST /login` and signed batch links are the exemptions; the token never rides in a URL. Test
   clients use `tests/web_client.local_client` (Host `localhost`).
 - **The login body is bounded twice** (declared `Content-Length` <= 4096 and the
   streamed body). `test_web_guard.py` drives raw ASGI because clients fix lying lengths.

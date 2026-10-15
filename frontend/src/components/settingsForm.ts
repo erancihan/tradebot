@@ -38,6 +38,7 @@ export interface SettingsForm {
   webhookUrl: string;
   ntfyTopic: string;
   ntfyServer: string;
+  publicUrl: string;
 }
 
 export function toPercent(fraction: unknown): string {
@@ -92,6 +93,7 @@ export function toForm(doc: SettingsDoc): SettingsForm {
     webhookUrl: doc.notify.webhook_url ?? "",
     ntfyTopic: doc.notify.ntfy_topic ?? "",
     ntfyServer: doc.notify.ntfy_server ?? "",
+    publicUrl: doc.notify.public_url ?? "",
   };
 }
 
@@ -133,6 +135,8 @@ export function toDoc(form: SettingsForm, original: SettingsDoc): SettingsDoc {
     webhook_url: form.webhookUrl.trim(),
     ntfy_topic: form.ntfyTopic.trim(),
     ntfy_server: form.ntfyServer.trim() || null,
+    // Not a secret: sent as typed, empty means none, a trailing "/" is dropped.
+    public_url: form.publicUrl.trim().replace(/\/+$/, "") || null,
   };
   return doc;
 }

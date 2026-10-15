@@ -166,6 +166,28 @@ BUY 38 QQQ (buy_and_hold signals long; buy.)
 The brief is a preview. It stores, parks and submits nothing. It fires once
 per session in any mode while the loop runs.
 
+**Approve from the notification.** In autopilot mode **Approve first**, set
+**Public URL** on Settings (`notify.public_url`) to the address your phone
+opens the app at, for example `http://192.168.1.20:8000`. The push for each
+pending batch then carries three buttons: **Approve all** submits that
+batch's pending trades, **Skip** rejects them, **Open** opens Autopilot. The
+server must be reachable from the phone: the same setup as
+[Reach it over the network](#8-reach-it-over-the-network), including
+`--allow-host` for that host. Approve and Skip are signed links, each good for
+one batch and one action, for twice the poll interval (at least 10 minutes).
+They work without the login cookie. The signing key comes from
+`TRADEBOT_WEB_TOKEN`; without a token it is random per server process, so a
+restart kills old links (the batch expires at the next pass anyway). Each link
+works once: a second tap is refused (409). A tap after the next pass replaced
+the batch does nothing. A live account's push never carries Approve.
+
+**With `public_url` set, the ntfy topic itself grants approval** of the bot's
+own pending paper trades: anyone who can read the topic sees the links. Use a
+self-hosted ntfy server or ntfy access control (an access token on the topic),
+and a long random topic name. Links from
+`tradebot run --autopilot` are served by `tradebot-web` on the same database
+and need the same `TRADEBOT_WEB_TOKEN` in both processes.
+
 ### 8. Reach it over the network
 
 By default the server listens on loopback and needs no login. For a phone on
@@ -351,6 +373,7 @@ portfolio:
 notify:
   webhook_url: https://hooks.example.com/tradebot
   ntfy_topic: tradebot-pick-a-long-random-name
+  public_url: http://192.168.1.20:8000   # Approve/Skip buttons on the push
 autopilot:
   brief_minutes_before_open: 30
 market: us_equities           # or bist

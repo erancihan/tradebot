@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from ..autopilot.links import UsedLinks, link_secret
 from ..config import Settings
 from .access import AccessToken
 from .guard import SameOriginGuard
@@ -70,6 +71,10 @@ def create_app(trading_db: str = "tradebot.db", arena_db: str = "arena.db",
     app.state.season_db = season_db
     app.state.cache_dir = cache_dir
     app.state.jobs = JobRegistry()
+    # Signs the phone push's Approve/Skip links: from the token, else random
+    # for this process (links then die with a restart, as the batch does).
+    app.state.link_secret = link_secret(access_token)
+    app.state.used_links = UsedLinks()          # each link acts once
 
     static_dir = Path(__file__).parent / "static"
     static_dir.mkdir(parents=True, exist_ok=True)

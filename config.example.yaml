@@ -154,3 +154,12 @@ risk:
 #   webhook_url: https://hooks.example.com/tradebot
 #   ntfy_topic: tradebot-pick-a-long-random-name   # phone alerts via the ntfy app
 #   ntfy_server: https://ntfy.sh                   # optional; default shown
+#   # The address your phone opens the app at (http or https, a host, no query).
+#   # When set, the push for a pending batch (autopilot "approve" mode) carries
+#   # Approve all / Skip / Open buttons. Approve and Skip POST short-lived signed
+#   # links for that one batch; the server must be reachable from the phone
+#   # (README "Reach it over the network"). Not a secret itself, BUT with it set
+#   # the ntfy topic grants approval of the bot's own pending paper trades: use a
+#   # self-hosted ntfy or ntfy access control, and a long random topic. Each
+#   # link works once; a live account's push never carries Approve.
+#   public_url: http://192.168.1.20:8000

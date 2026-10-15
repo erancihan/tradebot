@@ -308,7 +308,12 @@ export interface SettingsDoc {
     overlays: NamedParams[];
   };
   risk: Record<string, number | boolean | null>;
-  notify: { webhook_url: string | null; ntfy_topic: string | null; ntfy_server: string | null };
+  notify: {
+    webhook_url: string | null;
+    ntfy_topic: string | null;
+    ntfy_server: string | null;
+    public_url?: string | null;
+  };
 }
 
 export interface SettingsView {

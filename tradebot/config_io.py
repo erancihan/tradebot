@@ -44,7 +44,8 @@ def settings_to_dict(settings: Settings) -> dict[str, Any]:
         "risk": asdict(settings.risk),
         "notify": {"webhook_url": settings.notify_webhook_url,
                    "ntfy_topic": settings.notify_ntfy_topic,
-                   "ntfy_server": settings.notify_ntfy_server},
+                   "ntfy_server": settings.notify_ntfy_server,
+                   "public_url": settings.notify_public_url},
     }
     if settings.universe_name is not None:
         doc["universe"] = {"source": settings.universe_name,

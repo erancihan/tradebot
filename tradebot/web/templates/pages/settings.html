@@ -109,6 +109,11 @@
       {% call field("ntfy server", "Empty = https://ntfy.sh. Changing it means typing the topic again.") %}
         <input type="url" autocomplete="off" x-model="form.ntfyServer" name="ntfy_server" class="{{ input }}">
       {% endcall %}
+      {% call field("Public URL", "Lets the phone push carry Approve and Skip buttons. Use the address your phone opens the app at.") %}
+        <input type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
+               placeholder="http://192.168.1.20:8000"
+               x-model="form.publicUrl" name="public_url" class="{{ input }}">
+      {% endcall %}
       {% call field("Webhook URL", "Shown masked, like the topic. Clear it to remove it.") %}
         <input type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
                x-model="form.webhookUrl" name="webhook_url" class="{{ input }} font-mono">
