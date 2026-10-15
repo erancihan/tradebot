@@ -17,6 +17,7 @@ from ..services import (
     advisor_service,
     autopilot_service,
     consortium_service,
+    history_service,
     holdings_service,
     metrics_service,
     settings_service,
@@ -66,6 +67,15 @@ def autopilot_page(request: Request):
     return templates.TemplateResponse(
         request, "pages/autopilot.html",
         {"autopilot": autopilot_service.view(request.app), "active": "autopilot"})
+
+
+@router.get("/history", response_class=HTMLResponse)
+def history_page(request: Request, repo: TradingRepository = Depends(get_trading_repo)):
+    """Phone-first: what the bot ordered and suggested, newest first, for one account."""
+    view = history_service.view(repo, request.app.state.settings)
+    return templates.TemplateResponse(
+        request, "pages/history.html",
+        {"history": {**view, "first_page": True}, "active": "history"})
 
 
 @router.get("/settings", response_class=HTMLResponse)

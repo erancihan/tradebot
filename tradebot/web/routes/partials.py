@@ -16,6 +16,7 @@ from ..services import (
     advisor_service,
     autopilot_service,
     consortium_service,
+    history_service,
     holdings_service,
     metrics_service,
 )
@@ -98,6 +99,32 @@ def autopilot(request: Request):
         request, "components/autopilot_panel.html",
         {"autopilot": autopilot_service.view(request.app)},
     )
+
+
+@router.get("/history", response_class=HTMLResponse)
+def history(request: Request, before_order: int | None = None,
+            before_batch: int | None = None,
+            repo: TradingRepository = Depends(get_trading_repo)):
+    """One page of History's timeline. The next page's URL rides in the
+    ``X-History-Next`` header (empty on the last page), so the fragment stays
+    the same markup the page includes."""
+    mode = history_service.active_mode(repo, request.app.state.settings)
+    page = history_service.events_page(repo, mode, before_order, before_batch)
+    first = before_order is None and before_batch is None
+    response = templates.TemplateResponse(
+        request, "components/history_events.html",
+        {"history": {**page, "first_page": first}})
+    response.headers["X-History-Next"] = page["next"] or ""
+    return response
+
+
+@router.get("/history/performance", response_class=HTMLResponse)
+def history_performance(request: Request,
+                        repo: TradingRepository = Depends(get_trading_repo)):
+    mode = history_service.active_mode(repo, request.app.state.settings)
+    return templates.TemplateResponse(
+        request, "components/history_performance.html",
+        {"history": {"performance": history_service.performance(repo, mode)}})
 
 
 @router.get("/leaderboard", response_class=HTMLResponse)

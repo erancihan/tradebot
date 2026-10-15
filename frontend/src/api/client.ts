@@ -111,6 +111,16 @@ export async function getPartial(url: string): Promise<string> {
   return response.text();
 }
 
+// One page of History's timeline: the fragment, and the next page's URL from
+// the `X-History-Next` header ("" on the last page).
+export async function getHistoryPage(url: string): Promise<{ html: string; next: string }> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Partial failed (${response.status}): ${url}`);
+  }
+  return { html: await response.text(), next: response.headers.get("X-History-Next") ?? "" };
+}
+
 export function getStrategies(): Promise<StrategySpec[]> {
   return getJson<StrategySpec[]>("/api/strategies");
 }

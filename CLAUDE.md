@@ -13,8 +13,9 @@ The goal is a phone-first portfolio companion with three flows. **Suggestions**
 say what to buy or sell today, with a reason. **Autopilot** runs the paper
 account, with an approve-first mode. **What-if** replays a past plan against
 buy and hold (decisions: `docs/adr/0002-portfolio-companion.md`). **Settings**
-edits `config.yaml` from the phone. Research results: `docs/research-record.md`.
-New work starts a new plan folder under `docs/plans/<slug>/` (see Docs policy).
+edits `config.yaml` from the phone. **History** shows what the bot ordered and
+suggested. Research: `docs/research-record.md`. New work starts a new plan
+folder under `docs/plans/<slug>/` (see Docs policy).
 
 ## Agent skills
 
@@ -54,20 +55,20 @@ tradebot/
                  season/, panel, market, contestant, store + journal
   web/           app (create_app, load_settings), server, guard, access, repository/, schemas/,
                  services/ account, advisor, autopilot (+ reset), autopilot_build, cache,
-                   consortium, whatif_presets, notify_service, symbols_service,
+                   consortium, whatif_presets, notify_service, symbols_service, history_service,
                    holdings_service, settings_service (view, save), settings_validate,
                    settings_secrets (mask alert targets), setup_service (Today card),
                    jobs/ {registry, frames, frames_many, backtest, dryrun, proposal,
                    whatif, catalog (strategy_catalog, stack_specs)}
-                 routes/ pages, partials, sse, api/ {trading, arena, jobs (+ /stack),
+                 routes/ pages, partials (+ history), sse, api/ {trading, arena, jobs (+ /stack),
                    proposal, whatif, autopilot, notify, watchlist, settings (+ /setup)}
-                 templates/ pages (today, whatif, autopilot, settings, ...),
+                 templates/ pages (today, whatif, autopilot, history, settings, ...),
                    components (proposal_list, watchlist, holdings, setup_card,
-                   settings_status, settings_picker, autopilot_panel, tabbar, ...)
+                   settings_status, settings_picker, autopilot_panel, history_*, tabbar, ...)
                  static-src/ (PWA, committed), static/ (built, gitignored)
 algos/           12 contestants + canaries/ and consortium/ (both opt-in)
 scenarios/       regime library, factor library (xs_*), real_xs_* (+ sealed holdout), legacy real_*
-frontend/        TypeScript, Tailwind, Alpine, ECharts, esbuild (settings.ts + settingsForm.ts)
+frontend/        TypeScript, Tailwind, Alpine, ECharts, esbuild (settings[Form].ts, history.ts)
 tests/  docs/ (research-record.md, adr/, plans/)  data/cache/ (gitignored)  Makefile
 config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])
 ```
@@ -178,6 +179,9 @@ build on every push and PR, with no credentials.
   `settings.mode`, every order assumed filled), equity and cash from the newest
   snapshot, else `initial_cash`. Holdings use the same sum at the last cached
   close (unpriced = skipped, never guessed), or the paper broker with credentials.
+- **History** shows `default_mode()`, else `settings.mode`; orders and batches page on their own
+  ids (`X-History-Next`), holds counted apart. `orders.price` is the sizing price (NULL on a
+  flatten or old row); `schema.migrate` adds a later column on open, the read-only web never.
 - **The Today refresh** gives the selector the whole cached history and the
   strategy the last `required_history + 30` bars, so engine and web can differ
   when their histories start on different days.
@@ -280,21 +284,17 @@ build on every push and PR, with no credentials.
 
 - Documents state the final, expected state: once a question is answered, write the
   answer and what happens next, and delete the question. Keep only relevant documents.
-- An epic's plan folder under `docs/plans/` is deleted as the epic ships.
-  Durable decisions go to `docs/adr/`. Research results go to
-  `docs/research-record.md`.
+- An epic's plan folder under `docs/plans/` is deleted as the epic ships. Durable
+  decisions go to `docs/adr/`. Research results go to `docs/research-record.md`.
 
 ## Git rules
 
-- Branch per epic: `feat/<epic>`. Merge into master with
-  `git merge --no-ff --no-gpg-sign`.
+- Branch per epic: `feat/<epic>`. Merge into master with `git merge --no-ff --no-gpg-sign`.
 - Every commit carries `--no-gpg-sign`. Never edit git config.
 
 ## Definition of done
 
-- [ ] Tests added or updated. The suite is green, and `npm run typecheck` too
-      for frontend changes.
-- [ ] `tests/test_code_shape.py` passes.
-- [ ] The offline, credential-free path still works.
+- [ ] Tests added or updated; the suite and (for frontend changes) `npm run typecheck` are green.
+- [ ] `tests/test_code_shape.py` passes. The offline, credential-free path still works.
 - [ ] Every invariant above holds.
 - [ ] This file (at most 300 lines), `README.md` and the skills reflect the change.
