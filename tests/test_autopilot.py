@@ -354,6 +354,54 @@ def test_run_autopilot_headless_replay_ends_when_the_tape_does(tmp_path, capsys)
     assert "ticks=" in capsys.readouterr().out          # no cap, still terminated
 
 
+def _down_then_up(path, bars=60) -> str:
+    """One daily bar per day: 30 bars falling 1% each, then 30 rising 1% each."""
+    import pandas as pd
+
+    index = pd.date_range("2024-01-02 21:00", periods=bars, freq="D", tz="UTC")
+    closes, price = [], 100.0
+    for i in range(bars):
+        price *= 0.99 if i < bars // 2 else 1.01
+        closes.append(price)
+    opens = [100.0, *closes[:-1]]
+    frame = pd.DataFrame({"timestamp": index, "open": opens, "close": closes,
+                          "high": [max(o, c) for o, c in zip(opens, closes)],
+                          "low": [min(o, c) for o, c in zip(opens, closes)],
+                          "volume": 1e6})
+    frame.to_csv(path, index=False)
+    return str(path)
+
+
+def test_a_replay_autopilot_takes_one_session_day_per_bar(tmp_path, capsys):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        "mode: paper\nsymbols: [X]\ntimeframe: 1day\ninitial_cash: 10000\n"
+        f"db_path: {tmp_path / 'auto.db'}\n"
+        "strategy:\n  name: buy_and_hold\n  params: {}\n"
+        "risk:\n  max_position_pct: 1.0\n  max_daily_loss_pct: 0.03\n")
+    tape = _down_then_up(tmp_path / "tape.csv")
+    rc = main(["run", "--config", str(cfg), "--replay-csv", tape,
+               "--autopilot", "--mode", "auto"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    # A 1% bar never breaches a 3% daily limit; a 26% fall over 30 sessions
+    # is not a daily loss, so the run ticks to the end of the tape.
+    assert "ticks=58 mode=auto" in out and "last_error=None" in out
+
+
+def test_the_replay_clock_follows_the_bars():
+    from tradebot.autopilot.schedule import session_day
+    from tradebot.cli.autopilot import _ReplayClock
+
+    df = synthetic_ohlcv(periods=5, start="2024-03-04", freq="B")
+    data = ReplayData({"X": df}, warmup=2)
+    clock = _ReplayClock(data, speed=0)
+    assert clock() == df.index[1]
+    clock.sleep(300)
+    assert clock() == df.index[2]
+    assert session_day(clock(), timezone.utc) == df.index[2].date()
+
+
 # --- exchange calendars ------------------------------------------------------------
 
 def test_an_autopilot_on_bist_sleeps_until_the_istanbul_open(tmp_path):

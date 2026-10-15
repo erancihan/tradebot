@@ -42,5 +42,10 @@ class ReplayData:
         return self.cursor
 
     @property
+    def timestamp(self) -> pd.Timestamp:
+        """When the newest visible bar printed: a replay's simulated "now"."""
+        return max(df.index[self.cursor - 1] for df in self._frames.values())
+
+    @property
     def progress(self) -> tuple[int, int]:
         return (self.cursor, self._max)
