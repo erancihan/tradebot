@@ -15,16 +15,22 @@ LIVE_ENDPOINT = "https://api.alpaca.markets"
 
 #: Alpaca states that mean "still working": accepted but not yet done.
 _OPEN_STATES = frozenset({"accepted", "pending_new", "accepted_for_bidding", "held",
-                          "calculated", "pending_cancel", "pending_replace"})
+                          "calculated", "pending_cancel", "pending_replace",
+                          # Paused, not over: the order may still trade later.
+                          "done_for_day", "stopped", "suspended"})
+#: Alpaca states that end the order: ``replaced`` means a new order took over.
+_GONE_STATES = {"replaced": "canceled"}
 
 
 def map_order_status(order) -> OrderStatus:
     """An SDK ``Order`` as our :class:`OrderStatus` (duck-typed: no SDK import).
 
     Alpaca's status is an enum whose ``value`` is the wire string; one of ours
-    passes through, a working state is ``new``, anything else ``unknown``."""
+    passes through, a working or paused state is ``new``, ``replaced`` is
+    ``canceled`` (the original order is gone), anything else ``unknown``."""
     raw = str(getattr(order.status, "value", order.status) or "").lower()
-    status = raw if raw in ORDER_STATUSES else "new" if raw in _OPEN_STATES else "unknown"
+    status = (raw if raw in ORDER_STATUSES else "new" if raw in _OPEN_STATES
+              else _GONE_STATES.get(raw, "unknown"))
     filled = float(order.filled_qty or 0.0)
     price = order.filled_avg_price
     return OrderStatus(status=status, filled_qty=filled,
