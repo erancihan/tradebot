@@ -271,3 +271,6 @@ def test_a_failed_delivery_never_logs_the_secret(caplog):
     for secret in ("abcdSECRET", "very-private", "user:pw"):
         assert secret not in text
     assert "http://127.0.0.1:1/…wxyz" in text
+    # Only the error class and a code reach the log, never the message text,
+    # which urllib builds from the full URL.
+    assert "URLError" in text and "Connection refused" not in text
