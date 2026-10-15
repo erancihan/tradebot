@@ -7,7 +7,7 @@
 import * as echarts from "echarts";
 
 import { getEquity, getHistoryPage, getPartial } from "../api/client";
-import { el, refs } from "../alpine";
+import { el, nextTick, refs } from "../alpine";
 import { equityOption } from "../charts/equityChart";
 
 const POLL_MS = 30_000;
@@ -22,6 +22,9 @@ export function history() {
   return {
     mode: "",
     next: "",
+    // The chart box shows once there is a snapshot to draw; the page may
+    // have loaded before the first one, and the poll then reveals it.
+    charted: false,
     pages: 1,
     busy: false,
     error: "",
@@ -30,12 +33,9 @@ export function history() {
       const data = el(this).dataset;
       this.mode = data.mode ?? "";
       this.next = data.next ?? "";
-      const box = refs(this).chart;
-      if (box) {
-        chart = echarts.init(box);
-        window.addEventListener("resize", () => chart?.resize());
-        void this.drawChart();
-      }
+      this.charted = data.charted === "true";
+      window.addEventListener("resize", () => chart?.resize());
+      if (this.charted) void this.drawChart();
       window.setInterval(() => void this.poll(), POLL_MS);
     },
 
@@ -74,9 +74,17 @@ export function history() {
     },
 
     async drawChart() {
-      if (!chart) return;
+      const box = refs(this).chart;
+      if (!box) return;
       const series = await getEquity(this.mode || undefined);
+      if (!series.points.length) return;
+      if (!this.charted) {
+        this.charted = true;
+        await nextTick(this);           // sized only once shown
+      }
+      if (!chart) chart = echarts.init(box);
       chart.setOption(equityOption(series), true);
+      chart.resize();
     },
   };
 }

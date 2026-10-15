@@ -74,7 +74,20 @@ def test_the_history_page_says_plainly_when_nothing_is_recorded(tmp_path):
     assert "No equity snapshots for paper yet" in body
     assert 'href="/history"' in body and 'aria-current="page"' in body
     assert "data-show-more" in body and 'data-next=""' in body
-    assert "data-equity-chart" not in body
+
+
+def test_the_chart_box_is_there_but_hidden_before_any_snapshot(tmp_path):
+    """The poll draws into the box once snapshots arrive, so it must exist
+    on a page that first loaded empty; it stays hidden until then."""
+    body = _client(tmp_path).get("/history").text
+    box = re.search(r'<div[^>]*data-equity-chart[^>]*>', body)
+    assert box is not None and 'x-ref="chart"' in box.group(0)
+    assert 'x-show="charted"' in box.group(0) and "x-cloak" in box.group(0)
+    assert 'data-charted="false"' in body
+    _seed(tmp_path)
+    shown = _client(tmp_path).get("/history").text
+    box = re.search(r'<div[^>]*data-equity-chart[^>]*>', shown).group(0)
+    assert "x-cloak" not in box and 'data-charted="true"' in shown
 
 
 def test_the_history_page_shows_performance_and_one_timeline(tmp_path):

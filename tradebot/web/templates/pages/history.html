@@ -2,7 +2,8 @@
 {% block title %}History · tradebot{% endblock %}
 {% block content %}
 <section class="mx-auto max-w-xl space-y-4" x-data="history"
-         data-mode="{{ history.mode }}" data-next="{{ history.next or '' }}">
+         data-mode="{{ history.mode }}" data-next="{{ history.next or '' }}"
+         data-charted="{{ 'true' if history.performance.present else 'false' }}">
   <div class="flex items-baseline justify-between">
     <h1 class="text-lg font-semibold text-slate-100">History</h1>
     <span class="text-xs text-slate-500">account {{ history.mode }}</span>
@@ -12,9 +13,9 @@
     <div x-ref="performance" class="space-y-2">
       {% include "components/history_performance.html" %}
     </div>
-    {% if history.performance.present %}
-      <div x-ref="chart" class="h-40 w-full" data-equity-chart></div>
-    {% endif %}
+    {#- Always there: a page that loaded before any snapshot shows it once the poll finds some. #}
+    <div x-ref="chart" x-show="charted" {% if not history.performance.present %}x-cloak{% endif %}
+         class="h-40 w-full" data-equity-chart></div>
   </div>
 
   <ol x-ref="list" class="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900/40" data-timeline>
