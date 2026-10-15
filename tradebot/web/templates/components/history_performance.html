@@ -1,5 +1,5 @@
 {#- History: equity now against the first snapshot in the window, and against
-    holding the active list (services/benchmark.py). Expects
+    holding the active list (services/benchmark.py, benchmark_card.py). Expects
     `history.performance` (services/history_service.performance). -#}
 {% set perf = history.performance %}
 {% if perf.present %}
@@ -22,19 +22,24 @@
     {% if compared %}
       {% set ahead = bench.alpha >= 0 %}
       <div class="col-span-2 sm:col-span-1" data-benchmark>
-        <div class="text-xs uppercase tracking-wide text-slate-500">vs holding the list</div>
+        <div class="text-xs uppercase tracking-wide text-slate-500">vs holding the list
+          <span class="normal-case tracking-normal" data-through>through {{ bench.until }}</span></div>
         <div class="text-base font-semibold {{ 'text-emerald-400' if ahead else 'text-rose-400' }}" data-alpha>
           {{ '+' if ahead else '−' }}{{ (bench.alpha | abs) | pct }}
         </div>
         <div class="text-xs text-slate-500 break-words" data-benchmark-basis>
           equal-weight buy and hold of {{ bench.shown | join(', ') }}
           {%- if bench.more %} +{{ bench.more }} more{% endif %} since {{ bench.since }}
-          (the list {{ '+' if bench.pct >= 0 else '−' }}{{ (bench.pct | abs) | pct }}), cached daily closes
+          (today's list, held from the start: {{ '+' if bench.pct >= 0 else '−' }}{{ (bench.pct | abs) | pct }};
+          the account {{ '+' if bench.equity_pct >= 0 else '−' }}{{ (bench.equity_pct | abs) | pct }}
+          through {{ bench.until }}), cached daily closes
         </div>
       </div>
     {% endif %}
   </div>
-  {% if bench and not bench.present %}
+  {% if bench and not bench.present and bench.mixed %}
+    <p class="text-xs text-slate-500 break-words" data-no-benchmark>No comparison with holding the list: {{ bench.note }}.</p>
+  {% elif bench and not bench.present %}
     <p class="text-xs text-slate-500 break-words" data-no-benchmark>
       No comparison with holding the list{% if bench.note %}: {{ bench.note }}{% endif %}.
       Pull daily bars with <code>tradebot data pull --symbols {{ bench.missing | join(' ') or 'SPY' }} --timeframe 1day --start {{ bench.pull_start }} --end {{ perf.as_of[:10] }}</code>

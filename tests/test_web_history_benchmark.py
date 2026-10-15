@@ -27,6 +27,8 @@ def _seed(tmp_path, *, bars: bool = True) -> None:
 
 
 def test_equity_api_carries_the_benchmark_with_its_provenance(tmp_path):
+    # The first snapshot (Oct 1, 14:30) is before Oct 1's close; Sep 30 is not
+    # cached, so the list is bought at the next session's close, Oct 1.
     _seed(tmp_path)
     data = _client(tmp_path).get("/api/equity?mode=paper").json()
     assert len(data["points"]) == 2 and data["points"][0]["equity"] == 10_000.0
@@ -35,6 +37,19 @@ def test_equity_api_carries_the_benchmark_with_its_provenance(tmp_path):
     assert data["benchmark_symbols"] == ["SPY", "QQQ"]
     assert data["benchmark_since"] == "2026-10-01" and data["benchmark_until"] == "2026-10-02"
     assert data["benchmark_source"] == "cache" and data["benchmark_note"] is None
+
+
+def test_mixed_accounts_have_no_benchmark_until_one_is_picked(tmp_path):
+    _seed(tmp_path)
+    with Storage(tmp_path / "t.db") as st:
+        _snapshot(st, T0 + timedelta(hours=1), 3_000.0, "dry_run")
+    client = _client(tmp_path)
+    mixed = client.get("/api/equity").json()
+    assert len(mixed["points"]) == 3
+    assert mixed["benchmark"] is None
+    assert mixed["benchmark_note"] == "pick one account to compare"
+    paper = client.get("/api/equity?mode=paper").json()
+    assert paper["benchmark"] is not None and paper["benchmark_note"] is None
 
 
 def test_equity_api_without_bars_says_why(tmp_path):
@@ -68,6 +83,8 @@ def test_the_card_shows_alpha_against_holding_the_list(tmp_path):
         assert alpha == "+3.00%"                           # +5% against +2%
         assert "text-emerald-400\" data-alpha" in body
         assert "equal-weight buy and hold of SPY, QQQ since 2026-10-01" in body
+        assert "today's list, held from the start" in body
+        assert "through 2026-10-02" in body
         assert "cached daily closes" in body and "data-no-benchmark" not in body
 
 

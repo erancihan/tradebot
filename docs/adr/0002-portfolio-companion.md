@@ -108,12 +108,20 @@ One new core concept, the proposal, feeds three flows.
 - History's performance card answers "is the bot beating just holding the list?": it
   compares equity with equal-weight buy and hold of the active list (the watchlist, else
   `settings.symbols`, the list the autopilot trades) from the first snapshot's equity.
-- Each symbol gets an equal share at the last session close on or before the first
-  snapshot (the price the list could have been bought at that morning; the next close
-  when no earlier one is cached), so a bot's first day has a benchmark before that day's
-  close is cached; the benchmark is marked at each later close through the last snapshot's date,
-  ending at the last session every held name has. A name without a close at the start is
-  left out and named. The card shows the difference in percentage points.
+- Each symbol gets an equal share at the last session close completed at or before the
+  first snapshot (a snapshot taken mid-session buys at the previous close, so caching that
+  day's close later cannot move the start; the next close when no earlier one is cached),
+  so a bot's first day has a benchmark before that day's close is cached. The benchmark is
+  marked at each later completed close through the last snapshot, ending at the last
+  session every held name has (a one-name gap inside the window holds its last close). A
+  name without a close at the start is left out and named; a name whose cache ends early is
+  named with its last date ("QQQ bars stop at 2026-10-05").
+- The alpha compares one window: equity at the snapshot that reflects the benchmark's last
+  close (taken by then, or after it before the next open) against the benchmark there, and
+  the card says "through <date>". Without a `mode`, `/api/equity` rows of several accounts
+  get no benchmark ("pick one account to compare").
+- The benchmark holds TODAY's active list from the start: a hindsight bias (a name added
+  later counts from day one). The card's muted line says "today's list, held from the start".
 - Bars come from the cache only, never fetched, so the comparison needs no credentials;
   without cached daily bars the card names the `tradebot data pull` command instead.
 - `/api/equity` carries the daily points, the symbols, the window and the source

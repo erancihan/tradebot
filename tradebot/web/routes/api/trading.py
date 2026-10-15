@@ -21,7 +21,7 @@ from ...schemas import (
     OrderRow,
     PositionView,
 )
-from ...services import account_service, benchmark, consortium_service
+from ...services import account_service, benchmark_card, consortium_service
 
 router = APIRouter()
 
@@ -29,14 +29,15 @@ router = APIRouter()
 @router.get("/equity", response_model=EquitySeries)
 def equity(request: Request, mode: str | None = None, limit: int = 2000,
            repo: TradingRepository = Depends(get_trading_repo)):
-    """Snapshots oldest first, plus holding the active list over their window."""
+    """Snapshots oldest first, plus holding the active list over their window
+    (none, with a note, when no ``mode`` is given and the rows mix accounts)."""
     rows = repo.equity_series(mode=mode, limit=limit)
     points = [
         EquityPoint(ts=r["ts"], equity=float(r["equity"]),
                     cash=float(r["cash"]), mode=r["mode"])
         for r in rows
     ]
-    bench = benchmark.for_snapshots(repo, request.app.state.settings,
+    bench = benchmark_card.for_snapshots(repo, request.app.state.settings,
                                     request.app.state.cache_dir, rows)
     if bench is None:
         return EquitySeries(mode=mode, points=points)

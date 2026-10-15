@@ -57,7 +57,7 @@ tradebot/
   web/           app (create_app, load_settings), server, startup, guard, access, repository/,
                  schemas/, services/ account, advisor, autopilot (+ reset), autopilot_build, cache,
                    consortium, whatif_presets, notify_service, symbols_service, history_service,
-                   benchmark, holdings_service, discover_service, settings_service (view, save),
+                   benchmark (+ _card), holdings_service, discover_service, settings_service (view, save),
                    settings_validate, settings_secrets (mask alert targets), setup_service,
                    jobs/ {registry, frames, frames_many, backtest, dryrun, proposal, whatif,
                    whatif_compare, discover, catalog (strategy_catalog, stack_specs)}
@@ -173,9 +173,9 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
 - **History** shows `default_mode()`, else `settings.mode`, pinned by `?mode=` in its URLs; orders
   and batches page on a `(ts, id)` keyset each (`X-History-Next`). `orders.price` is the sizing
   price (NULL on a flatten or old row); `schema.migrate` adds a later column on open, the web never.
-  The performance card compares with equal-weight buy and hold of the active list from cached daily
-  closes (`services/benchmark.py`, bought at the last close before the first snapshot), no fetch;
-  absent (with a note) without bars.
+  The performance card compares with equal-weight buy and hold of today's active list from cached daily
+  closes (`services/benchmark.py`, bought at the last close completed before the first snapshot; `benchmark_card.py`:
+  alpha from the snapshot at the benchmark's last close), no fetch; absent (noted) without bars or mixed accounts.
 - **The Today refresh** gives the selector the whole cached history and the strategy the last
   `required_history + 30` bars, so engine and web can differ when their histories start on different days.
 - **One list for suggestions and the autopilot:** the watchlist when not empty,
