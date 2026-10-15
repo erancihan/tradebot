@@ -68,16 +68,41 @@ def _format_standings(snap) -> str:
     return f"[{snap.step:>2}/{snap.total_steps} {snap.timestamp[:10]}] {parts}"
 
 
-def _load_settings(args, command: str):
-    """The command's settings, resolved as ``tradebot-web`` does."""
-    return _load_settings_from(args, command)[0]
+def _load_settings(args, command: str, *, active_list: bool = False):
+    """The command's settings, resolved as ``tradebot-web`` does; with
+    ``active_list`` its symbols are the active list (``_active_list``)."""
+    return _load_settings_from(args, command, active_list=active_list)[0]
 
 
-def _load_settings_from(args, command: str):
-    """``(settings, source)``, and one line on stderr naming the file (stdout
-    stays the command's own output, so ``tradebot universe`` pipes cleanly)."""
+def _load_settings_from(args, command: str, *, active_list: bool = False):
+    """``(settings, source)``, and one line on stderr naming the file and,
+    for a trading command, the list (stdout stays the command's own output,
+    so ``tradebot universe`` pipes cleanly)."""
     from ..config import resolve_settings
 
     settings, source = resolve_settings(getattr(args, "config", None))
-    print(f"tradebot {command}: config={source or 'defaults'}", file=sys.stderr)
+    line = f"tradebot {command}: config={source or 'defaults'}"
+    if active_list:
+        settings, label = _active_list(settings)
+        line += f" symbols={label}"
+    print(line, file=sys.stderr)
     return settings, source
+
+
+def _active_list(settings):
+    """``(settings, label)``: the same list the web trades. A non-empty
+    watchlist in the trading db replaces the config symbols and any universe
+    screen, so a CLI pass never sells what the web list buys."""
+    from dataclasses import replace
+    from pathlib import Path
+
+    from ..storage import Storage
+    from ..storage.watchlist import resolve_active
+
+    if Path(settings.db_path).exists():
+        with Storage(settings.db_path) as store:
+            active = resolve_active(settings, store)
+        if active["source"] == "watchlist":
+            settings = replace(settings, symbols=active["symbols"], universe_name=None)
+            return settings, f"watchlist({len(settings.symbols)})"
+    return settings, f"config({len(settings.symbols)})"

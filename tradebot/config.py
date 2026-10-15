@@ -1,8 +1,6 @@
 """Configuration: YAML for strategy/risk knobs, environment for secrets.
 
-Secrets (API keys) are read from the environment only and never live in YAML,
-so a config file is safe to commit. A `.env` file is loaded if python-dotenv is
-installed, but it is optional.
+Secrets (API keys) come from the environment only, never YAML (``credentials``).
 
 Trading mode is one of: ``backtest``, ``paper`` (default), ``live``. Live is
 intentionally awkward to enable: it requires both ``mode: live`` *and* the
@@ -53,8 +51,7 @@ class Settings:
     overlays: list[dict[str, Any]] = field(default_factory=list)
     #: The product's 1% no-trade band unless the YAML sets one (``product_risk``).
     risk: RiskConfig = field(default_factory=product_risk)
-    #: Optional webhook for order/halt events (see tradebot.notify). None keeps
-    #: notifications log-only.
+    #: Optional webhook for order/halt events (tradebot.notify); None = log-only.
     notify_webhook_url: str | None = None
     notify_ntfy_topic: str | None = None    #: phone push via ntfy (see README)
     notify_ntfy_server: str | None = None   #: None means https://ntfy.sh
@@ -68,6 +65,8 @@ class Settings:
     market: str = "us_equities"
     #: YAML `autopilot: {brief_minutes_before_open: N}`; None = no brief.
     brief_minutes_before_open: int | None = None
+    #: Sell held names off the list (``engine/unlisted.py``). Live never does.
+    manage_unlisted: bool = True
 
     def __post_init__(self) -> None:
         if self.mode not in VALID_MODES:
@@ -160,7 +159,8 @@ class Settings:
         portfolio = raw.get("portfolio", {}) or {}
         return cls(
             mode=raw.get("mode", "paper"),
-            symbols=list(raw.get("symbols", ["SPY"])),
+            # Upper-case, as the broker reports them: `spy` must not read as off-list.
+            symbols=[str(s).strip().upper() for s in raw.get("symbols", ["SPY"])],
             timeframe=raw.get("timeframe", "1day"),
             initial_cash=float(raw.get("initial_cash", 10_000.0)),
             poll_seconds=int(raw.get("poll_seconds", 300)),
@@ -185,6 +185,7 @@ class Settings:
             # 0 reads as "no brief", the same as leaving it out.
             brief_minutes_before_open=(raw.get("autopilot", {}) or {}).get(
                 "brief_minutes_before_open") or None,
+            manage_unlisted=bool(raw.get("manage_unlisted", True)),
         )
 
 

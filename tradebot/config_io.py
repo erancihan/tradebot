@@ -22,7 +22,7 @@ from .config import Settings
 #: db_path, costs, universe) is kept as it is.
 EDITABLE_KEYS = ("symbols", "timeframe", "poll_seconds", "initial_cash",
                  "strategy", "portfolio", "risk", "notify", "market",
-                 "autopilot")
+                 "autopilot", "manage_unlisted")
 
 
 def settings_to_dict(settings: Settings) -> dict[str, Any]:
@@ -34,6 +34,7 @@ def settings_to_dict(settings: Settings) -> dict[str, Any]:
         "poll_seconds": settings.poll_seconds,
         "market": settings.market,
         "autopilot": {"brief_minutes_before_open": settings.brief_minutes_before_open},
+        "manage_unlisted": settings.manage_unlisted,
         "initial_cash": settings.initial_cash,
         "commission": settings.commission,
         "slippage_bps": settings.slippage_bps,

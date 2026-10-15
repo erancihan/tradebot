@@ -1,8 +1,9 @@
 """Watchlist: the symbols the owner picked on the Today page.
 
-When it is not empty, the advisor refresh and the web autopilot scan these
-instead of the config's ``symbols`` (``web/services/symbols_service.py``).
-Symbols are stored already validated and upper-case; order is insertion.
+When it is not empty, the advisor refresh, the web autopilot and ``tradebot
+run`` all trade these instead of the config's ``symbols``: ``resolve_active``
+is the one resolver. Symbols are stored validated and upper-case, in
+insertion order.
 """
 
 from __future__ import annotations
@@ -30,3 +31,20 @@ class WatchlistMixin:
         self._conn.executemany("DELETE FROM watchlist WHERE symbol = ?",
                                [(s,) for s in symbols])
         self._conn.commit()
+
+
+def resolve_active(settings, store) -> dict:
+    """``{symbols, source}``: the watchlist when it has any, else the config.
+
+    ``store`` is anything with ``watchlist()``: the read-only web repository
+    or a ``Storage``.
+    """
+    watched = store.watchlist()
+    if watched:
+        return {"symbols": watched, "source": "watchlist"}
+    return {"symbols": list(settings.symbols), "source": "config"}
+
+
+def active_symbols(settings, store) -> list[str]:
+    """The active list: what Today suggests over and every loop trades."""
+    return resolve_active(settings, store)["symbols"]

@@ -19,11 +19,25 @@ log = logging.getLogger("tradebot.engine")
 PRICE_LOOKBACK = 10
 
 
-def read_unlisted(engine) -> dict[str, tuple[float, float | None]]:
-    """``symbol -> (signed qty, last close or None)`` for held names off the list.
+def manages_unlisted(engine) -> bool:
+    """Whether this engine closes held names off the list.
+
+    Part of the live gate: live trades only the list and never sells what it
+    did not buy, whatever ``manage_unlisted`` says. Elsewhere the flag decides.
+    """
+    if engine.mode == "live" or engine.settings.is_live:
+        return False
+    return bool(engine.settings.manage_unlisted)
+
+
+def read_unlisted(engine) -> dict[str, tuple[float, float | None]] | None:
+    """``symbol -> (signed qty, last close or None)`` for held names off the
+    list; ``None`` when this engine does not manage them (``manages_unlisted``).
 
     A failed positions read yields nothing: the list's own pass goes on.
     """
+    if not manages_unlisted(engine):
+        return None
     try:
         held = {s: float(p.qty) for s, p in engine.broker.positions().items()}
     except Exception:  # noqa: BLE001 - an off-list read never kills the pass
@@ -38,17 +52,18 @@ def read_unlisted(engine) -> dict[str, tuple[float, float | None]]:
 
 def _prices(engine, symbols: list[str]) -> dict[str, float]:
     """The newest valid close per symbol: one batched fetch when the data
-    source has one, else one short fetch each. A miss is simply absent."""
+    source has one, else (or when the batch fails) one short fetch each, so
+    one unpriceable name never unprices the rest. A miss is simply absent."""
     tf = engine.settings.timeframe
     many = getattr(engine.data, "history_many", None)
-    try:
-        if many is not None:
+    frames = None
+    if many is not None:
+        try:
             frames = many(symbols, timeframe=tf, lookback=PRICE_LOOKBACK)
-        else:
-            frames = {s: _one(engine, s, tf) for s in symbols}
-    except Exception:  # noqa: BLE001 - no price means a skipped line, not a crash
-        log.exception("Price fetch failed for off-list holdings %s", symbols)
-        return {}
+        except Exception:  # noqa: BLE001 - fall back to one fetch per name
+            log.warning("Batched price fetch failed for %s; fetching each", symbols)
+    if frames is None:
+        frames = {s: _one(engine, s, tf) for s in symbols}
     out: dict[str, float] = {}
     for sym, bars in frames.items():
         if bars is None or len(bars) == 0:

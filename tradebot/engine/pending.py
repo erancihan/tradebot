@@ -52,8 +52,9 @@ def submit_stored(engine, line_ids: list[int],
     """
     rows = engine.storage.proposal_lines(line_ids, engine.mode, status="pending")
     actions: list[RebalanceAction] = []
-    for row in rows:
-        line = ProposalLine(**{name: row[name] for name in _LINE_FIELDS})
+    pairs = [(ProposalLine(**{name: row[name] for name in _LINE_FIELDS}), row) for row in rows]
+    # Exits first, as an automatic pass does: a swap's sell funds its buy.
+    for line, row in orders.exits_first(pairs, line=lambda pair: pair[0]):
         mark = partial(engine.storage.set_line_status, [row["id"]], "submitted")
         try:
             actions.append(orders.submit_line(engine, line, on_submitted=mark, now=now))

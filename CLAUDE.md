@@ -78,6 +78,7 @@ config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])  deploy
 
 - **Paper by default.** Live trading needs `mode: live` and the env var `TRADEBOT_LIVE_CONFIRM=I_UNDERSTAND`
   (`Settings.require_live_ack`). Never weaken this gate or default anything to live. The web never sets `mode`.
+  Live trades only the list and never sells what it did not buy (`engine/unlisted.manages_unlisted`).
 - **No look-ahead.** Targets shift one bar: decide on `t`, fill on `t+1`. The arena feeds a growing
   window. The allocator at fill bar `t+1` sees bars `<= t` only. Selector membership is computed over
   the full frame and shifted one bar. The sizing mark uses the fill bar's open (previous close as
@@ -176,12 +177,13 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   alpha from the snapshot at the benchmark's last close), no fetch; absent (noted) without bars or mixed accounts.
 - **The Today refresh** gives the selector the whole cached history and the strategy the last
   `required_history + 30` bars, so engine and web can differ when their histories start on different days.
-- **One list for suggestions and the autopilot:** the watchlist when not empty, else `settings.symbols`
-  (`symbols_service.with_active_symbols`, a copy). A watchlist edit stops a running autopilot
-  (`autopilot_service.reset`), as a Settings save does. Symbols match `^[A-Z.\-]{1,10}$` after upper-casing.
-- **The autopilot manages exactly the list:** a held name off the list gets a sell-to-flat line (`unlisted`
-  in `advisor.propose`; engine `engine/unlisted.py`, web `unlisted_service`; no price = skipped). The product's
-  no-trade band defaults to 1% (`Settings`, `risk.product_risk`); `RiskConfig` keeps 0 for simulations.
+- **One list everywhere:** the watchlist when not empty, else `settings.symbols` (`storage/watchlist.resolve_active`;
+  web `with_active_symbols`, a copy; `tradebot run` too, printing `symbols=watchlist(N)`). A watchlist edit stops a running
+  autopilot (`autopilot_service.reset`), as a Settings save does. Symbols match `models.SYMBOL_RE` after upper-casing.
+- **The autopilot manages exactly the list:** a held equity off the list gets a sell-to-flat line (`unlisted` in
+  `advisor.propose`; `engine/unlisted.py`, web `unlisted_service`; no price = skipped; exits submit first). Never live;
+  `manage_unlisted: false` turns it off. The 1% band is the product's (`Settings`, `risk.product_risk`, so a `tradebot
+  backtest` of a Settings file uses it); the arena, what-if and the research record keep `RiskConfig()`'s 0.
 - **Discover** ranks by the `MomentumSelector` score over the cached or Alpaca pool, excludes
   held and watched names, persists in `discover_runs`; Add seeds an empty watchlist first.
 - **Contributions are not returns.** With `cash_flows` metrics use the growth
@@ -220,11 +222,9 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   bars. Seed a new season (`arena season seed`). Backfilled standings are not a
   live-forward claim (`seeded_through`). Expensive fields need `--isolation
   process --time-budget N`. Hardening derives from isolation.
-- **Consortium:** obeys every decision-rule invariant (guarded by
-  `test_the_consortium_cannot_see_the_future`, `test_the_consensus_is_prefix_stable`).
-  Convex blend, voice floor. Opt-in, run with `--time-budget 200`.
-  `prepare` is idempotent on a frame fingerprint. `EqualVoice` is the default.
-  State `eta` with any `HedgeVoice` result.
+- **Consortium:** obeys every decision-rule invariant (guarded by `test_the_consortium_cannot_see_the_future`,
+  `test_the_consensus_is_prefix_stable`). Convex blend, voice floor. Opt-in, run with `--time-budget 200`.
+  `prepare` is idempotent on a frame fingerprint. `EqualVoice` is the default. State `eta` with any `HedgeVoice` result.
 
 **Live execution and autopilot**
 - **A bracket protects between passes, it does not veto a signal:** the next
@@ -283,8 +283,7 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
 
 ## Docs policy
 
-- Documents state the final, expected state: once a question is answered, write the
-  answer and what happens next, and delete the question. Keep only relevant documents.
+- Documents state the final, expected state: once a question is answered, write the answer and what happens next, and delete the question. Keep only relevant documents.
 - An epic's plan folder under `docs/plans/` is deleted as the epic ships. Durable
   decisions go to `docs/adr/`. Research results go to `docs/research-record.md`.
 

@@ -98,6 +98,13 @@
                  x-model.number="form.initial_cash" name="initial_cash" class="{{ input }}">
         {% endcall %}
       </div>
+      <label class="flex min-h-[44px] items-center gap-3 text-sm text-slate-200">
+        <input type="checkbox" x-model="form.manageUnlisted" name="manage_unlisted"
+               class="h-6 w-6 rounded border-slate-700 bg-slate-950">
+        Sell names that leave the list
+      </label>
+      <p class="text-xs text-slate-500">On: a holding not on your list gets a sell-to-flat line.
+        Off: the autopilot leaves it alone. Live trading never sells what it did not buy.</p>
       <p class="text-xs text-slate-500">Saving stops a running autopilot so it never trades on
         old settings; start it again from Autopilot.</p>
     {% endcall %}

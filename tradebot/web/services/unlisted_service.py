@@ -3,23 +3,39 @@
 The list is the mandate (``advisor/unlisted.py``): the refresh hands the
 advisor every holding the list does not name, so Today shows the same
 sell-to-flat line the autopilot would submit. Prices are the last cached
-close; an uncached name gets no price and its line is skipped, never guessed.
+close, after pulling the engine's short window when a fetcher is available
+(so Today prices what the next pass would). Offline, an uncached name gets no
+price and its line is skipped, never guessed.
 """
 
 from __future__ import annotations
 
+import logging
 import math
+from datetime import datetime, timedelta, timezone
 
 from ...advisor.unlisted import off_list
 from ...data.cache import BarCache
+from ...engine.unlisted import PRICE_LOOKBACK
+
+log = logging.getLogger("tradebot.web")
 
 
-def unlisted(positions: dict[str, float], symbols, *, cache_dir: str,
-             timeframe: str) -> dict[str, tuple[float, float | None]]:
+def unlisted(positions: dict[str, float], symbols, *, cache_dir: str, timeframe: str,
+             fetcher=None, now: datetime | None = None,
+             ) -> dict[str, tuple[float, float | None]]:
     """``symbol -> (signed qty, last cached close or None)`` off the list."""
     cache = BarCache(cache_dir)
-    return {s: (q, last_close(cache, s, timeframe)[0])
-            for s, q in off_list(positions, symbols).items()}
+    extra = off_list(positions, symbols)
+    if fetcher is not None:
+        now = now or datetime.now(timezone.utc)
+        for sym in extra:
+            try:
+                cache.get(sym, timeframe, start=now - timedelta(days=PRICE_LOOKBACK),
+                          end=now, fetcher=fetcher)
+            except Exception:  # noqa: BLE001 - unfetchable means unpriced, not a failed refresh
+                log.warning("No bars for off-list holding %s; its line is skipped", sym)
+    return {s: (q, last_close(cache, s, timeframe)[0]) for s, q in extra.items()}
 
 
 def last_close(cache: BarCache, symbol: str, timeframe: str):

@@ -72,3 +72,39 @@ def test_remove_confirmation_names_the_shares_only_when_held(tmp_path, offline):
         body = client.get(url).text
         assert held in body, url
         assert 'data-remove-confirm="Remove SPY?"' in body, url
+
+
+def _online(monkeypatch, broker):
+    fetcher = _FakeFetcher()
+    monkeypatch.setattr(advisor_service, "_credentials",
+                        lambda: AlpacaCredentials(api_key="k", api_secret="s"))
+    monkeypatch.setattr(advisor_service, "build_default_fetcher", lambda: fetcher)
+    monkeypatch.setattr(advisor_service, "_paper_broker", lambda creds: broker)
+    return fetcher
+
+
+def test_refresh_fetches_an_uncached_off_list_name_as_the_engine_would(tmp_path, monkeypatch):
+    fetcher = _online(monkeypatch, _HoldsIwm())       # IWM held, never cached
+    client = _client(tmp_path, _config(tmp_path))
+    assert _refresh(client)["state"] == "done"
+    iwm = _lines(client)["IWM"]
+    assert (iwm["action"], iwm["order_qty"]) == ("buy", 3.0) and iwm["price"] > 0
+    assert "IWM" in [c[0] for c in fetcher.calls]
+
+
+def test_refresh_offline_still_skips_an_uncached_off_list_name(tmp_path, offline):
+    _seed_cache(tmp_path)
+    with Storage(tmp_path / "t.db") as st:
+        st.record_order(Order(symbol="IWM", qty=5, side=Side.BUY), None, "paper")
+    client = _client(tmp_path, _config(tmp_path))
+    assert _refresh(client)["state"] == "done"
+    assert _lines(client)["IWM"]["reason"] == "not on your list; no price to size it"
+
+
+def test_manage_unlisted_false_keeps_today_off_off_list_names(tmp_path, offline):
+    _seed_cache(tmp_path, ("SPY", "QQQ", "IWM"))
+    with Storage(tmp_path / "t.db") as st:
+        st.record_order(Order(symbol="IWM", qty=5, side=Side.BUY), None, "paper")
+    client = _client(tmp_path, _config(tmp_path, extra="manage_unlisted: false\n"))
+    assert _refresh(client)["state"] == "done"
+    assert list(_lines(client)) == ["SPY", "QQQ"]

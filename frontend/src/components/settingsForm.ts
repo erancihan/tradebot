@@ -27,6 +27,7 @@ export interface SettingsForm {
   initial_cash: number;
   market: string;
   brief: string;
+  manageUnlisted: boolean;
   strategy: string;
   strategyParams: Record<string, ParamValue>;
   selector: string;
@@ -82,6 +83,8 @@ export function toForm(doc: SettingsDoc): SettingsForm {
     initial_cash: doc.initial_cash,
     market: doc.market,
     brief: brief === null || brief === undefined ? "" : String(brief),
+    // Missing means on: the server's default.
+    manageUnlisted: doc.manage_unlisted !== false,
     strategy: doc.strategy.name,
     strategyParams: scalars(doc.strategy.params),
     selector: doc.portfolio.selector?.name ?? "",
@@ -112,6 +115,7 @@ export function toDoc(form: SettingsForm, original: SettingsDoc): SettingsDoc {
   doc.initial_cash = Number(form.initial_cash);
   doc.market = form.market;
   doc.autopilot = { brief_minutes_before_open: form.brief.trim() === "" ? null : Number(form.brief) };
+  doc.manage_unlisted = form.manageUnlisted;
   doc.strategy = {
     name: form.strategy,
     params: merged(form.strategy === original.strategy.name, original.strategy.params, form.strategyParams),

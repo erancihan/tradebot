@@ -27,3 +27,11 @@ check(toDoc(form, doc).notify.public_url === null, "empty means none");
 
 const bare = toForm({ ...doc, notify: { webhook_url: null, ntfy_topic: null, ntfy_server: null } });
 check(bare.publicUrl === "", "an older document without the key shows an empty field");
+
+// "Sell names that leave the list": missing means on, and the box round-trips.
+check(toForm(doc).manageUnlisted === true, "an older document without the key shows it on");
+const off = toForm({ ...doc, manage_unlisted: false });
+check(off.manageUnlisted === false, "a stored false shows the box unticked");
+check(toDoc(off, doc).manage_unlisted === false, "unticked saves false");
+off.manageUnlisted = true;
+check(toDoc(off, doc).manage_unlisted === true, "ticked saves true");

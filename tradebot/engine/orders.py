@@ -73,6 +73,14 @@ def _after_send(action: RebalanceAction, step) -> None:
                       action.symbol, action.submitted_id)
 
 
+def exits_first(items: list, line=lambda item: item) -> list:
+    """Items whose ``line(item)`` does not open exposure (exits, reductions)
+    before entries, each group in its original order (``sorted`` is stable).
+    The proposal itself keeps its display order."""
+    return sorted(items, key=lambda it: opens_exposure(line(it).current_qty,
+                                                       line(it).order_qty))
+
+
 def submit_line(engine, line, on_submitted=None,
                 now: datetime | None = None) -> RebalanceAction:
     """Submit one proposal line's delta. The advisor already applied the band
