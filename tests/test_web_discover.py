@@ -180,3 +180,56 @@ def test_add_stops_a_running_autopilot(tmp_path, offline):
     assert autopilot_service.current(client.app) is None
     pilot._thread.join(5)
     assert not pilot.running
+
+
+def _alpaca_client(tmp_path, monkeypatch, fetcher):
+    monkeypatch.setattr(advisor_service, "_credentials",
+                        lambda: AlpacaCredentials(api_key="k", api_secret="s"))
+    monkeypatch.setattr(advisor_service, "build_default_fetcher", lambda: fetcher)
+    monkeypatch.setattr(advisor_service, "_paper_broker", lambda creds: _FakeBroker())
+    monkeypatch.setattr(discover_job, "_universe", _FakeUniverse)
+    return _client(tmp_path, _config(tmp_path))
+
+
+def test_a_search_where_every_fetch_fails_errors_and_keeps_the_last_run(tmp_path,
+                                                                        monkeypatch):
+    calls: list[str] = []
+    good = _window_fetcher(calls)
+    state = {"down": False}
+
+    def fetch(symbol, timeframe, start, end):
+        if state["down"]:
+            raise ConnectionError("network unreachable")
+        return good(symbol, timeframe, start, end)
+
+    client = _alpaca_client(tmp_path, monkeypatch, fetch)
+    assert _run(client)["state"] == "done"
+    before = client.get("/api/discover").json()["run"]
+    for sym in ("AAA", "BBB", "VTI"):             # nothing cached: every name refetches
+        for p in (tmp_path / "cache" / "1day").glob(f"{sym}.*"):
+            p.unlink()
+    state["down"] = True
+    job = _run(client)
+    assert job["state"] == "error"
+    assert "could be fetched" in job["error"] and "ConnectionError" in job["error"]
+    after = client.get("/api/discover").json()["run"]
+    assert after["id"] == before["id"] and after["rows"] == before["rows"]
+
+
+def test_a_search_where_some_fetches_fail_says_how_many(tmp_path, monkeypatch):
+    calls: list[str] = []
+    good = _window_fetcher(calls)
+
+    def fetch(symbol, timeframe, start, end):
+        if symbol == "VTI":
+            raise TimeoutError("slow")
+        return good(symbol, timeframe, start, end)
+
+    client = _alpaca_client(tmp_path, monkeypatch, fetch)
+    job = _run(client)
+    assert job["state"] == "done", job["error"]
+    assert job["provenance"]["failed"] == 1
+    assert job["provenance"]["failed_error"] == "TimeoutError"
+    body = client.get("/partials/discover").text
+    assert "1 name could not be fetched" in body and "data-discover-failed" in body
+    assert sorted(_rows(body)) == ["AAA", "BBB"]

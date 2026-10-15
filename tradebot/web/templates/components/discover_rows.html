@@ -13,6 +13,9 @@
     {%- if prov.pool is defined %} · {{ prov.ranked }} of {{ prov.pool }} ranked{% endif %}
     · computed {{ run.created_at[:16] | replace('T', ' ') }} UTC
   </p>
+  {% if prov.failed %}
+    <p class="text-xs text-amber-300" data-discover-failed>{{ prov.failed }} name{{ '' if prov.failed == 1 else 's' }} could not be fetched ({{ prov.failed_error }}), so the ranking leaves {{ 'it' if prov.failed == 1 else 'them' }} out.</p>
+  {% endif %}
   {% if run.rows %}
     <ul class="divide-y divide-slate-800 rounded-lg border border-slate-800">
       {% for row in run.rows %}

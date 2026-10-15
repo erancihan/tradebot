@@ -28,21 +28,40 @@ def _universe():
     return AlpacaLiquidityUniverse()
 
 
-def _alpaca_pool(cache, fetcher, now: datetime):
+def _alpaca_pool(cache, fetcher, now: datetime, failures: dict):
+    """The pool and its frame loader; ``failures`` collects every failed fetch
+    (``{"tried": n, "failed": n, "first_error": "ClassName"}``) so the run can
+    say so, or refuse to store a ranking built from nothing."""
     pool = [str(r["symbol"]) for r in _universe().resolve_details()]
     start = now - timedelta(days=math.ceil(FETCH_BARS * 1.5) + 10)
 
     def frames_for(symbols: list[str]) -> dict:
         frames = {}
         for sym in symbols:
+            failures["tried"] = failures.get("tried", 0) + 1
             try:
                 frames[sym] = cache.get(sym, TIMEFRAME, start=start, end=now,
                                         fetcher=fetcher)
             except Exception as exc:  # noqa: BLE001 - one bad name never sinks the run
                 log.warning("Discover skipped %s: %s", sym, exc)
+                failures["failed"] = failures.get("failed", 0) + 1
+                failures.setdefault("first_error", type(exc).__name__)
         return frames
 
     return pool, frames_for
+
+
+def _check_failures(failures: dict) -> dict:
+    """Provenance fields for failed fetches; every fetch failing is an error,
+    so a dead connection never replaces a good stored run with an empty one."""
+    failed = failures.get("failed", 0)
+    if not failed:
+        return {}
+    if failed >= failures.get("tried", 0):
+        raise RuntimeError(f"none of the {failed} candidate names could be fetched "
+                           f"({failures['first_error']}); the last search is kept. "
+                           "Try again later.")
+    return {"failed": failed, "failed_error": failures["first_error"]}
 
 
 def _cache_pool(cache, cache_dir: str):
@@ -71,10 +90,11 @@ def _run_discover(params: dict) -> dict:
 
     settings, trading_db = params["settings"], params["trading_db"]
     now = params.get("now") or datetime.now(timezone.utc)
-    cache = BarCache(params["cache_dir"])
+    cache, failures = BarCache(params["cache_dir"]), {}
     if advisor_service._credentials() is not None:
         source = "alpaca"
-        pool, frames_for = _alpaca_pool(cache, advisor_service.build_default_fetcher(), now)
+        pool, frames_for = _alpaca_pool(cache, advisor_service.build_default_fetcher(),
+                                        now, failures)
     else:
         source = "cache"
         pool, frames_for = _cache_pool(cache, params["cache_dir"])
@@ -88,7 +108,8 @@ def _run_discover(params: dict) -> dict:
         exclude = _excluded(settings, store, trading_db)
         result = discover(frames_for, pool, exclude=exclude, as_of=now.date(),
                           source=source)
-        provenance = {**result.provenance, "computed_at": now.isoformat()}
+        provenance = {**result.provenance, **_check_failures(failures),
+                      "computed_at": now.isoformat()}
         run_id = store.record_discover_run(source=source, as_of=provenance["as_of"],
                                            provenance=provenance, rows=result.row_dicts())
     return {"summary": {"run_id": run_id, "rows": len(result.rows), "source": source},
