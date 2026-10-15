@@ -9,6 +9,7 @@ import * as echarts from "echarts";
 
 import { getCache, getStrategies, submitWhatIf, waitForJob } from "../api/client";
 import { el, nextTick, refs } from "../alpine";
+import { fitToBox } from "../charts/fit";
 import { comparisonOption } from "../charts/equityChart";
 import { compareState } from "./whatifCompare";
 import type {
@@ -240,7 +241,11 @@ export function whatIf() {
 
     async render(curve: EquityCurve, benchmark: EquityCurve | null) {
       await nextTick(this);
-      if (!chart) chart = echarts.init(refs(this).chart);
+      if (!chart) {
+        const box = refs(this).chart;
+        chart = echarts.init(box);
+        fitToBox(box, () => chart);
+      }
       chart.setOption(comparisonOption(curve, benchmark), true);
       chart.resize();
     },
