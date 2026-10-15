@@ -131,16 +131,17 @@ class _PickyData:
 
 
 class _Holds:
-    def __init__(self, held):
-        self.held = held
+    def __init__(self, held, kinds=None):
+        self.held, self.kinds = held, kinds or {}
 
     def positions(self):
-        return {s: type("P", (), {"qty": q})() for s, q in self.held.items()}
+        return {s: type("P", (), {"qty": q, "asset_class": self.kinds.get(s, "us_equity")})()
+                for s, q in self.held.items()}
 
 
 class _FakeEngine:
-    def __init__(self, held, data, symbols=("SPY",)):
-        self.broker, self.data, self.mode = _Holds(held), data, "paper"
+    def __init__(self, held, data, symbols=("SPY",), kinds=None):
+        self.broker, self.data, self.mode = _Holds(held, kinds), data, "paper"
         self.settings = Settings(mode="paper", symbols=list(symbols))
 
 
@@ -155,6 +156,31 @@ def test_a_crypto_position_is_ignored_and_the_rest_are_priced(caplog):
     # "BTCUSD" looks like a ticker, so the batch fails on it; the fallback
     # fetches each name, so it alone goes unpriced (a skipped line).
     assert got == {"IWM": (5.0, 12.0), "BRK.B": (2.0, 12.0), "BTCUSD": (0.5, None)}
+
+
+def test_a_position_of_another_asset_class_is_not_an_off_list_holding():
+    """Alpaca names crypto `BTCUSD`, a valid-looking ticker: the asset class,
+    not the symbol, keeps it out, so it is never fetched or skipped again."""
+    data = _PickyData()
+    engine = _FakeEngine({"IWM": 5.0, "BTCUSD": 0.5}, data, kinds={"BTCUSD": "crypto"})
+    assert read_unlisted(engine) == {"IWM": (5.0, 12.0)}
+    assert "BTCUSD" not in data.asked
+
+
+def test_alpaca_positions_carry_the_asset_class():
+    from tradebot.broker.alpaca_broker import AlpacaBroker
+
+    class _Enum:
+        value = "crypto"
+
+    raw = [type("P", (), {"symbol": "BTCUSD", "qty": "0.5", "avg_entry_price": "60000",
+                          "asset_class": _Enum()})(),
+           type("P", (), {"symbol": "SPY", "qty": "13", "avg_entry_price": "767.24"})()]
+    broker = AlpacaBroker.__new__(AlpacaBroker)
+    broker._client = type("C", (), {"get_all_positions": staticmethod(lambda: raw)})()
+    got = broker.positions()
+    assert got["BTCUSD"].asset_class == "crypto"
+    assert got["SPY"].asset_class == "us_equity"
 
 
 def test_off_list_ignores_non_equity_symbols():

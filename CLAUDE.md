@@ -181,7 +181,8 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   web `with_active_symbols`, a copy; `tradebot run` too, printing `symbols=watchlist(N)`). A watchlist edit stops a running
   autopilot (`autopilot_service.reset`), as a Settings save does. Symbols match `models.SYMBOL_RE` after upper-casing.
 - **The autopilot manages exactly the list:** a held equity off the list gets a sell-to-flat line (`unlisted` in
-  `advisor.propose`; `engine/unlisted.py`, web `unlisted_service`; no price = skipped; exits submit first). Never live;
+  `advisor.propose`; `engine/unlisted.py`, web `unlisted_service`; no price = skipped; exits submit first; only
+  `Position.asset_class == "us_equity"`, so crypto and options are left alone). Never live;
   `manage_unlisted: false` turns it off. The 1% band is the product's (`Settings`, `risk.product_risk`, so a `tradebot
   backtest` of a Settings file uses it); the arena, what-if and the research record keep `RiskConfig()`'s 0.
 - **Discover** ranks by the `MomentumSelector` score over the cached or Alpaca pool, excludes

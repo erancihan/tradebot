@@ -7,7 +7,7 @@ The SDK is imported lazily so the package imports fine without it.
 
 from __future__ import annotations
 
-from ..models import Order, OrderType, Position, Side, TimeInForce
+from ..models import EQUITY, Order, OrderType, Position, Side, TimeInForce
 from .base import ORDER_STATUSES, AccountSnapshot, Broker, OrderStatus
 
 PAPER_ENDPOINT = "https://paper-api.alpaca.markets"
@@ -58,10 +58,12 @@ class AlpacaBroker(Broker):
     def positions(self) -> dict[str, Position]:
         out: dict[str, Position] = {}
         for p in self._client.get_all_positions():
+            kind = getattr(p, "asset_class", None)
             out[p.symbol] = Position(
                 symbol=p.symbol,
                 qty=float(p.qty),
                 avg_price=float(p.avg_entry_price),
+                asset_class=str(getattr(kind, "value", kind) or EQUITY),
             )
         return out
 
