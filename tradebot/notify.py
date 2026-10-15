@@ -61,6 +61,10 @@ class WebhookNotifier:
         self.timeout = timeout
 
     def send(self, event: dict) -> None:
+        self.deliver(event)
+
+    def deliver(self, event: dict) -> bool:
+        """Send one event; True when the endpoint accepted it."""
         payload = json.dumps(event).encode("utf-8")
         req = urllib.request.Request(
             self.url, data=payload,
@@ -70,11 +74,13 @@ class WebhookNotifier:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 if resp.status >= 400:
                     log.warning("Webhook %s returned HTTP %s", self.url, resp.status)
+                return resp.status < 400
         except (urllib.error.URLError, OSError, ValueError) as exc:
             # One line, no traceback: an unattended bot with a dead endpoint
             # emits one of these per order, and a stack trace per event would
             # bury the trading log that actually matters.
             log.warning("Webhook delivery to %s failed: %s", self.url, exc)
+            return False
 
 
 class MultiNotifier:
@@ -91,12 +97,69 @@ class MultiNotifier:
                 log.warning("Notifier %r failed", n, exc_info=True)
 
 
-def build_notifier(webhook_url: str | None = None) -> Notifier:
-    """The configured notifier: log-only by default, log+webhook when set.
+class NtfyNotifier:
+    """Phone push through ntfy: POSTs plain text to ``{server}/{topic}``.
 
-    Both, not webhook-only: the log line is the local audit trail and stays
-    useful when the remote endpoint is down.
+    ntfy shows the body as the notification text and the ``Title`` header as
+    its heading, so the event is flattened to one readable line instead of
+    JSON. Failures are logged and swallowed, as for the webhook.
     """
-    if not webhook_url:
-        return LogNotifier()
-    return MultiNotifier([LogNotifier(), WebhookNotifier(webhook_url)])
+
+    def __init__(self, topic: str, server: str = "https://ntfy.sh",
+                 timeout: float = 5.0) -> None:
+        self.url = f"{server.rstrip('/')}/{topic.strip('/')}"
+        self.timeout = timeout
+
+    def send(self, event: dict) -> None:
+        self.deliver(event)
+
+    def deliver(self, event: dict) -> bool:
+        """Send one event; True when the server accepted it."""
+        title = f"tradebot: {event.get('type', 'event')}"
+        req = urllib.request.Request(
+            self.url, data=ntfy_text(event).encode("utf-8"), method="POST",
+            # A header must be latin-1; a symbol or reason never needs more.
+            headers={"Title": title.encode("latin-1", "replace").decode("latin-1"),
+                     "Content-Type": "text/plain; charset=utf-8"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                return resp.status < 400
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            log.warning("ntfy delivery to %s failed: %s", self.url, exc)
+            return False
+
+
+def ntfy_text(event: dict) -> str:
+    """One line a person can read on a lock screen."""
+    if "message" in event:
+        return str(event["message"])
+    rest = " ".join(f"{k}={v}" for k, v in event.items()
+                    if k not in ("type", "lines") and v is not None)
+    lines = [f"{ln.get('action', '')} {ln.get('qty', '')} {ln.get('symbol', '')}".strip()
+             for ln in event.get("lines") or []]
+    return "\n".join([rest, *lines]).strip() or str(event.get("type", "event"))
+
+
+def notifier_channels(webhook_url: str | None = None, ntfy_topic: str | None = None,
+                      ntfy_server: str | None = None) -> list[tuple[str, Notifier]]:
+    """(name, notifier) for every configured channel, the log always first."""
+    channels: list[tuple[str, Notifier]] = [("log", LogNotifier())]
+    if webhook_url:
+        channels.append(("webhook", WebhookNotifier(webhook_url)))
+    if ntfy_topic:
+        channels.append(("ntfy", NtfyNotifier(ntfy_topic, ntfy_server or "https://ntfy.sh")))
+    return channels
+
+
+def build_notifier(webhook_url: str | None = None, ntfy_topic: str | None = None,
+                   ntfy_server: str | None = None) -> Notifier:
+    """The configured notifier: log-only by default, plus webhook and ntfy when set.
+
+    The log is always included, never replaced: the log line is the local
+    audit trail and stays useful when a remote endpoint is down.
+    """
+    channels = notifier_channels(webhook_url, ntfy_topic, ntfy_server)
+    if len(channels) == 1:
+        return channels[0][1]
+    return MultiNotifier(n for _, n in channels)

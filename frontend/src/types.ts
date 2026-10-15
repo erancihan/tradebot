@@ -245,3 +245,10 @@ export interface AutopilotView {
   pending: ProposalLine[];
   notice?: string | null;
 }
+
+// POST /api/notify/test: every configured channel, and the ones that refused.
+export interface NotifyTestResult {
+  sent: boolean;
+  channels: string[];
+  failed: string[];
+}

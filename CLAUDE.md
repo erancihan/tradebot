@@ -41,7 +41,8 @@ tradebot/
                  (cash flows + the flow-free growth index)
   whatif/        plan (WhatIfPlan, WhatIfResult, monthly_cash_flows), run (run_whatif,
                  plan_backtester, whatif_risk), compare (benchmark_plan, comparison)
-  walkforward.py portfolio.py  models.py  notify.py  config.py
+  walkforward.py portfolio.py  models.py  config.py
+  notify.py      Notifier: Log, Null, Webhook, Ntfy (phone push), Multi; build_notifier
   consortium/    voice, consensus, panel
   broker/        base (Broker ABC), alpaca (lazy SDK), dryrun + brackets (BracketsMixin)
   data/          synthetic + factor_panel, cache + coverage, replay, csv, alpaca_data, stream
@@ -71,12 +72,12 @@ tradebot/
                  advisor (Today view + build_inputs), autopilot (one Autopilot per
                  process: view, set_mode, approve, reject, resume, shutdown),
                  autopilot_build (paper broker or dry-run over cached bars), cache,
-                 consortium, whatif_presets,
+                 consortium, whatif_presets, notify_service (test alert),
                  jobs/ {registry, frames, frames_many, backtest, dryrun, proposal, whatif,
                  catalog}), schemas/ (+ proposal, whatif), routes/ (pages incl. /today
                  /whatif and /autopilot, partials incl. /partials/proposal and
                  /partials/autopilot, sse, api/ {trading, arena, jobs, proposal, whatif,
-                 autopilot}), templates/ (pages/today.html, pages/whatif.html,
+                 autopilot, notify}), templates/ (pages/today.html, pages/whatif.html,
                  pages/autopilot.html, components/proposal_list.html,
                  components/autopilot_panel.html, components/pending_trades.html,
                  components/tabbar.html), app lifespan resumes/stops the autopilot,
@@ -303,8 +304,11 @@ build on every push and PR, with no credentials.
 - **Streaming only speeds arrival.** `StreamSeasonFeed` buffers pushed bars into
   the pull-shaped feed. The `Engine` keeps polling on purpose.
 - **A notifier never breaks a trade.** `Engine._notify` wraps every send and
-  `WebhookNotifier` swallows network errors. `build_notifier` always includes
-  the log notifier.
+  `WebhookNotifier` / `NtfyNotifier` swallow network errors. `build_notifier`
+  always includes the log notifier (`notifier_channels` lists log, webhook,
+  ntfy as configured). Both remote notifiers also have `deliver() -> bool`,
+  used only by the test-alert button (`notify_service.send_test`), so a
+  mistyped topic reads "not delivered" instead of a silent "sent".
 
 **Consortium**
 - **It obeys every decision-rule invariant.** `prepare()` sees the whole frame,

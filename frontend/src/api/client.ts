@@ -10,6 +10,7 @@ import type {
   EquitySeries,
   JobRequest,
   JobView,
+  NotifyTestResult,
   OrderRow,
   ProposalEnvelope,
   SeasonDetail,
@@ -113,4 +114,8 @@ export function getAutopilot(): Promise<AutopilotView> {
 
 export function commandAutopilot(body: AutopilotCommand): Promise<AutopilotView> {
   return postJson<AutopilotView>("/api/autopilot", body);
+}
+
+export function sendTestAlert(): Promise<NotifyTestResult> {
+  return postJson<NotifyTestResult>("/api/notify/test", {});
 }

@@ -78,6 +78,8 @@ class Settings:
     #: Optional webhook for order/halt events (see tradebot.notify). None keeps
     #: notifications log-only.
     notify_webhook_url: str | None = None
+    notify_ntfy_topic: str | None = None    #: phone push via ntfy (see README)
+    notify_ntfy_server: str | None = None   #: None means https://ntfy.sh
     db_path: str = "tradebot.db"
     commission: float = 0.0
     slippage_bps: float = 1.0
@@ -136,10 +138,11 @@ class Settings:
         return build_universe(self.universe_name, self.universe_params)
 
     def build_notifier(self):
-        """Instantiate the configured notifier (log-only unless a webhook is set)."""
+        """Instantiate the configured notifier (log-only unless a channel is set)."""
         from .notify import build_notifier
 
-        return build_notifier(self.notify_webhook_url)
+        return build_notifier(self.notify_webhook_url, self.notify_ntfy_topic,
+                              self.notify_ntfy_server)
 
     def build_overlays(self) -> list:
         """Instantiate the configured overlay chain (empty list when unset)."""
@@ -182,6 +185,8 @@ class Settings:
             overlays=list(portfolio.get("overlays", []) or []),
             risk=RiskConfig(**risk_raw),
             notify_webhook_url=(raw.get("notify", {}) or {}).get("webhook_url"),
+            notify_ntfy_topic=(raw.get("notify", {}) or {}).get("ntfy_topic"),
+            notify_ntfy_server=(raw.get("notify", {}) or {}).get("ntfy_server"),
             db_path=raw.get("db_path", "tradebot.db"),
             commission=float(raw.get("commission", 0.0)),
             slippage_bps=float(raw.get("slippage_bps", 1.0)),

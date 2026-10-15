@@ -12,6 +12,14 @@
     {% include "components/autopilot_panel.html" %}
   </div>
 
+  <div class="space-y-2 rounded-lg border border-slate-800 bg-slate-900/40 p-3" data-test-alert>
+    <button type="button" @click.stop="testAlert()"
+            class="min-h-[48px] w-full rounded-lg border border-slate-700 bg-slate-900 text-base font-semibold text-slate-200 hover:bg-slate-800">
+      Send test alert
+    </button>
+    <p class="text-xs text-slate-400" x-show="alert" x-cloak x-text="alert"></p>
+  </div>
+
   <p class="text-xs text-slate-600">Paper account only. Live trading stays behind the
     config file and the confirmation latch; this page cannot reach it.</p>
 </section>

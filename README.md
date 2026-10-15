@@ -238,6 +238,25 @@ notify:
 Delivery failures are logged and swallowed. An unreachable endpoint slows a pass
 by at most the 5s timeout; it never halts trading.
 
+### Phone alerts (ntfy)
+
+[ntfy](https://ntfy.sh) pushes the same events to your phone as plain text,
+with no account:
+
+1. Install the ntfy app (Android or iOS).
+2. Pick a long, hard-to-guess topic name and subscribe to it in the app (a
+   topic on ntfy.sh is public to anyone who knows its name).
+3. Set it in the config and restart `tradebot-web`:
+
+```yaml
+notify:
+  ntfy_topic: tradebot-pick-a-long-random-name
+  # ntfy_server: https://ntfy.example.com    # optional, for a self-hosted server
+```
+
+Tap **Send test alert** on the Autopilot page (or `POST /api/notify/test`) to
+check it: the page says which channels accepted the message.
+
 ## Portfolio: selection + allocation
 
 By default every symbol gets the same fixed `max_position_pct` slug of equity.
@@ -621,8 +640,8 @@ Open `/autopilot` (the second tab on a phone) and pick one of three modes:
   **Approve all**. Only the approved trades are submitted. A batch is sized at
   the prices of its pass, so it expires when the next pass replaces it, or when
   you approve it more than one poll interval later; it is never executed late.
-  Each new batch sends a `pending_trades` notification (point
-  `notify.webhook_url` at an ntfy topic to get it on your phone).
+  Each new batch sends a `pending_trades` notification (set
+  `notify.ntfy_topic` to get it on your phone, see Phone alerts).
 - **Automatic**: every pass submits its trades. Each order is notified.
 
 The status card shows the mode, whether the loop is running, the account,
