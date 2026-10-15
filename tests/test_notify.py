@@ -24,6 +24,7 @@ from tradebot.notify import (
     NullNotifier,
     WebhookNotifier,
     build_notifier,
+    masked_url,
 )
 from tradebot.risk import RiskConfig, RiskManager
 from tradebot.strategies import build_strategy
@@ -256,3 +257,17 @@ def test_config_reads_the_ntfy_topic():
     assert built.notifiers[1].url == "http://127.0.0.1:9/abc"
     default = Settings.from_dict({"notify": {"ntfy_topic": "abc"}}).build_notifier()
     assert default.notifiers[1].url == "https://ntfy.sh/abc"
+
+
+def test_a_failed_delivery_never_logs_the_secret(caplog):
+    """A webhook path and an ntfy topic are bearer secrets: logs get the mask."""
+    caplog.set_level("WARNING", logger="tradebot.notify")
+    WebhookNotifier("http://127.0.0.1:1/services/T0/abcdSECRETwxyz",
+                    timeout=1).send({"type": "order"})
+    NtfyNotifier("very-private-topic", server="http://127.0.0.1:1",
+                 timeout=1).send({"type": "x"})
+    text = caplog.text
+    assert "failed" in text
+    for secret in ("abcdSECRET", "very-private", "user:pw"):
+        assert secret not in text
+    assert "http://127.0.0.1:1/…wxyz" in text
