@@ -175,7 +175,7 @@ build on every push and PR, with no credentials.
 - **Cost model differs from production:** raw (not dividend-adjusted) bars, no
   daily-loss halt in simulation, 1 bp slippage, and synthetic `open(t) ==
   close(t-1)` hides signal-to-fill decay. Label this beside any quoted backtest.
-- **Window selection is a bias.** The sealed holdout is the only mitigation. Run it once, last.
+- **Window selection is a bias.** The sealed holdout is the only mitigation; run it once, last.
 - **Offline positions come from the order log** (signed sum per symbol for
   `settings.mode`, every order assumed filled), equity and cash from the newest
   snapshot, else `initial_cash`. Holdings use the same sum at the last cached
@@ -187,9 +187,9 @@ build on every push and PR, with no credentials.
   else `settings.symbols` (`symbols_service.with_active_symbols`, a copy). A
   watchlist edit stops a running autopilot (`autopilot_service.reset`), as a Settings save does.
   Symbols match `^[A-Z.\-]{1,10}$` after upper-casing.
-- **Contributions are not returns.** With `cash_flows`, metrics run on the
-  flow-free growth index (`backtest/flows.py`). `None` keeps the old path, and
-  the arena never passes flows. What-if cash lands on each month's first bar.
+- **Contributions are not returns.** With `cash_flows` metrics use the growth
+  index `equity_t / (equity_{t-1} + flow_t)`: a flow is invested at its bar's
+  open and earns that bar. The arena never passes flows. What-if cash: month's first bar.
 - **What-if books are fully investable** (`whatif_risk()`). The benchmark is
   equal-weight buy and hold with the same cash, so a buy-and-hold plan ties it.
 

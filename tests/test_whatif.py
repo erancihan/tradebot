@@ -164,3 +164,37 @@ def test_a_buy_and_hold_plan_ties_its_benchmark():
     plan = WhatIfPlan(symbols=["X", "Y"], start="2023-01-02", end=None, initial_cash=1_000,
                       monthly_contribution=50)
     assert run_whatif(plan, frames).comparison["vs_benchmark_pct"] == 0.0
+
+
+def _invested_book(returns: pd.Series, flows: pd.Series, initial: float) -> pd.Series:
+    """A fully invested book: each bar's contribution arrives at the open and
+    earns that bar's return alongside the capital already there."""
+    equity, prev = [], initial
+    for r, f in zip(returns, flows):
+        prev = (prev + f) * (1.0 + r)
+        equity.append(prev)
+    return pd.Series(equity, index=returns.index)
+
+
+def test_growth_index_does_not_depend_on_the_contribution_schedule():
+    from tradebot.backtest.flows import growth_index
+
+    closes = synthetic_ohlcv(periods=260, seed=7, freq="B", volatility=0.03)["close"]
+    returns = closes.pct_change().fillna(0.0)
+    none = pd.Series(0.0, index=returns.index)
+    some = none.copy()
+    some.iloc[::21] = 10_000.0
+    some.iloc[0] = 0.0
+    a = growth_index(_invested_book(returns, none, 100.0), none, 100.0)
+    b = growth_index(_invested_book(returns, some, 100.0), some, 100.0)
+    assert np.allclose(a.to_numpy(), b.to_numpy(), rtol=0, atol=1e-9)
+    assert np.allclose(a.to_numpy(), (1.0 + returns).cumprod().to_numpy(), atol=1e-9)
+
+
+def test_a_huge_contribution_cannot_push_returns_below_minus_100_percent():
+    df = synthetic_ohlcv(periods=300, seed=8, freq="B", volatility=0.03)
+    plan = WhatIfPlan(symbols=["X"], start="2023-01-02", end=None,
+                      initial_cash=100, monthly_contribution=10_000)
+    bt = run_whatif(plan, {"X": df}).plan
+    assert bt.total_return >= -1.0
+    assert -1.0 <= bt.max_drawdown <= 0.0
