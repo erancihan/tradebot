@@ -148,3 +148,30 @@ def test_a_zero_lead_means_no_brief(tmp_path):
     pilot, _, _, _ = build(tmp_path)
     assert Autopilot(pilot.engine, pilot.storage, poll_seconds=300,
                      brief_minutes=0).brief is None
+
+
+def _web_pilot_with_pending(tmp_path):
+    """The web's autopilot on the CLI's database: approve mode, lines parked."""
+    storage = Storage(tmp_path / "auto.db")
+    pilot, _, _, _ = build(tmp_path, storage=storage)
+    pilot.set_mode("approve")
+    pilot.tick()
+    scope, pending = pilot.scope, pilot.state().pending
+    assert pending > 0
+    storage.close()
+    return scope, pending
+
+
+@pytest.mark.parametrize("mode", ["off", "auto"])
+def test_a_cli_autopilot_leaves_the_web_scope_alone(tmp_path, capsys, mode):
+    web_scope, pending = _web_pilot_with_pending(tmp_path)
+    cfg = _cli_config(tmp_path)
+    with open(cfg, "a") as fh:
+        fh.write("autopilot:\n  brief_minutes_before_open: 30\n")
+    args = ["run", "--config", cfg, "--replay", "--replay-periods", "80",
+            "--autopilot", "--mode", mode, "--iterations", "1"]
+    assert main(args) == 0
+    with Storage(tmp_path / "auto.db") as st:
+        assert st.autopilot_values(web_scope).get("mode") == "approve"
+        if mode == "off":                   # a brief-only start never touches them
+            assert len(st.pending_lines(web_scope)) == pending

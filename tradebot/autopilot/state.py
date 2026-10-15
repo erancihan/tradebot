@@ -52,18 +52,21 @@ def _when(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value) if value else None
 
 
-def load_state(storage, scope: str, *, running: bool = False) -> AutopilotState:
-    """The stored state for one account scope; a never-touched scope is off."""
+def load_state(storage, scope: str, *, running: bool = False,
+               account: str | None = None) -> AutopilotState:
+    """The stored state for one runner scope; a never-touched scope is off.
+    ``account`` (default: the scope) labels the account and owns the pending lines."""
+    account = account or scope
     raw = storage.autopilot_values(scope)
     mode = raw.get("mode") or "off"
     return AutopilotState(
         mode=check_mode(mode) if mode in MODES else "off",
-        running=running, account=scope,
+        running=running, account=account,
         started_at=_when(raw.get("started_at")),
         last_pass_at=_when(raw.get("last_pass_at")),
         next_pass_at=_when(raw.get("next_pass_at")),
         last_error=raw.get("last_error"),
-        pending=len(storage.pending_lines(scope)),
+        pending=len(storage.pending_lines(account)),
     )
 
 

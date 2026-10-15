@@ -46,7 +46,7 @@ tradebot/
   advisor/       propose (bars + account -> Proposal), explain, types
   engine/        core (Engine.step -> PassOutcome), signals, orders, pending
   autopilot/     state, schedule, runner (Autopilot, injected clock/sleep/calendar),
-                 approvals, brief (MorningBrief)
+                 approvals, background, brief (MorningBrief), session
   storage/       SQLite tradebot.db mixins: orders, bars, weights, proposals, autopilot, watchlist
   cli/           build_parser/main + one module per command
   arena/         api, loader, interfaces, adapters, simulation, scenario, runner +
@@ -243,9 +243,10 @@ build on every push and PR, with no credentials.
   and SQLite (`check_same_thread=False`, WAL, `busy_timeout=5000`) under the
   Autopilot `RLock`. A line is `submitted` once the broker accepts it; later
   bookkeeping only logs. A mode switch wakes the loop.
-- **The web autopilot is paper or dry-run, never live** (`autopilot_build`).
-  The dry-run's virtual account does not survive a restart, the order log does.
-  `tradebot run --autopilot` builds exactly as `run`. A replay gets a simulated clock.
+- **The web autopilot is paper or dry-run, never live** (`autopilot_build`); a
+  dry-run's virtual account dies with a restart. `tradebot run --autopilot` builds as
+  `run`, keeps its state in scope `cli_<account>` (never the web's mode), expires no
+  pending lines at start, and a replay's clock reads its bars.
 - **With a morning brief, "off" keeps the loop alive** to send briefs from
   `engine.propose` (nothing stored). `brief_for` prevents resends. A brief-only
   loop is `tradebot run --autopilot --mode off`.
@@ -277,9 +278,8 @@ build on every push and PR, with no credentials.
 
 ## Docs policy
 
-- Documents state the final, expected state. Once a question is answered or a
-  decision made, write the answer and what happens next. Delete the question.
-- Keep only relevant documents: a paper trail only for what is done and the end goal.
+- Documents state the final, expected state: once a question is answered, write the
+  answer and what happens next, and delete the question. Keep only relevant documents.
 - An epic's plan folder under `docs/plans/` is deleted as the epic ships.
   Durable decisions go to `docs/adr/`. Research results go to
   `docs/research-record.md`.

@@ -60,11 +60,14 @@ def run_autopilot(settings, args: argparse.Namespace) -> int:
     if replay:
         clock = _ReplayClock(data, args.speed)
         extra = dict(clock=clock, sleep=clock.sleep, is_open=lambda now: True)
+    # Its own state scope: the web's stored mode is what the next
+    # `tradebot-web` start resumes, so a headless run must never write it.
     pilot = Autopilot(engine, engine.storage, poll_seconds=settings.poll_seconds,
-                      calendar=get_calendar(settings.market), **extra)
+                      calendar=get_calendar(settings.market),
+                      scope=f"cli_{engine.mode}", **extra)
     if replay:
         clock.pilot = pilot
-    pilot.set_mode(args.mode)
+    pilot.set_mode(args.mode, expire_pending=False)
     print(f"[AUTOPILOT] mode={args.mode} account={engine.mode} on {settings.symbols} "
           f"with {engine.strategy.name}; every {settings.poll_seconds}s in {settings.market} hours.")
     if pilot.brief is not None:
