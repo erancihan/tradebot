@@ -11,6 +11,8 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import urlsplit
 
+from .settings_validate import InvalidSettings
+
 ELLIPSIS = "…"
 #: notify keys treated as secrets; ``ntfy_server`` is a public host, not one.
 MASKED_KEYS = ("webhook_url", "ntfy_topic")
@@ -18,8 +20,17 @@ MASKED_KEYS = ("webhook_url", "ntfy_topic")
 
 def mask_url(url: str) -> str:
     """``scheme://host/…last4``: enough to recognise, not enough to use."""
-    parts = urlsplit(url)
-    return f"{parts.scheme}://{parts.netloc}/{ELLIPSIS}{url[-4:]}"
+    return f"{urlsplit(url).scheme}://{_host(url)}/{ELLIPSIS}{url[-4:]}"
+
+
+def _host(url: str) -> str:
+    """Host plus port, never ``netloc``: that would echo ``user:pass@``."""
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError:
+        return ""
+    return f"{parts.hostname or ''}{f':{port}' if port else ''}"
 
 
 def mask_topic(topic: str) -> str:
@@ -44,12 +55,29 @@ def configured(notify: dict[str, Any]) -> dict[str, bool]:
             "ntfy_configured": bool(notify.get("ntfy_topic"))}
 
 
+def _kept(value: Any) -> bool:
+    """Blank, or the mask the page was given: "keep what is stored"."""
+    return not value or ELLIPSIS in str(value)
+
+
 def restore(posted: dict[str, Any] | None, stored: dict[str, Any]) -> dict[str, Any]:
-    """The notify block to write: blank or masked values keep what is stored."""
+    """The notify block to write: blank or masked values keep what is stored.
+
+    A kept secret must still point where it did. A masked webhook is accepted
+    only if its host is the stored host, and a kept topic only while the ntfy
+    server is unchanged: otherwise the old secret would be sent somewhere new.
+    """
     out = dict(posted or {})
-    for key in MASKED_KEYS:
-        value = out.get(key)
-        old = stored.get(key)
-        if not value or (old and value == _mask(key, str(old))) or ELLIPSIS in str(value):
-            out[key] = old
+    url, old_url = out.get("webhook_url"), stored.get("webhook_url")
+    if _kept(url):
+        if url and (not old_url or _host(str(url)) != _host(str(old_url))):
+            raise InvalidSettings("notify.webhook_url: the host changed, so enter the "
+                                  "full webhook URL again")
+        out["webhook_url"] = old_url
+    if _kept(out.get("ntfy_topic")):
+        if (out.get("ntfy_server") or None) != (stored.get("ntfy_server") or None) \
+                and stored.get("ntfy_topic"):
+            raise InvalidSettings("notify.ntfy_topic: the ntfy server changed, so enter "
+                                  "the topic again")
+        out["ntfy_topic"] = stored.get("ntfy_topic")
     return out

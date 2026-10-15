@@ -1,0 +1,29 @@
+{#- A registry picker plus its typed param fields, for the Settings form.
+    Expects `kind` (strategy | selector | allocation), `pkey` (the form's
+    params object), `allow_none`, `input` (field classes). The names come from
+    /api/strategies or /api/stack via settings.ts. -#}
+<select class="{{ input }}" name="{{ kind }}" data-picker="{{ kind }}"
+        @change="pick('{{ kind }}', $event.target.value)">
+  {% if allow_none %}<option value="" :selected="form.{{ kind }} === ''">none</option>{% endif %}
+  <template x-for="name in options('{{ kind }}')" :key="name">
+    <option :value="name" x-text="name" :selected="name === form.{{ kind }}"></option>
+  </template>
+</select>
+<div class="grid grid-cols-2 gap-3">
+  <template x-for="p in params('{{ kind }}')" :key="'{{ kind }}-' + p.name">
+    <label class="block space-y-1">
+      <span class="text-xs text-slate-400" x-text="p.name"></span>
+      <template x-if="p.type === 'bool'">
+        <input type="checkbox" x-model="form.{{ pkey }}[p.name]"
+               class="block h-6 w-6 rounded border-slate-700 bg-slate-950">
+      </template>
+      <template x-if="p.type === 'int' || p.type === 'float'">
+        <input type="number" inputmode="decimal" :step="p.type === 'int' ? 1 : 'any'"
+               x-model.number="form.{{ pkey }}[p.name]" class="{{ input }}">
+      </template>
+      <template x-if="p.type === 'str'">
+        <input type="text" x-model="form.{{ pkey }}[p.name]" class="{{ input }}">
+      </template>
+    </label>
+  </template>
+</div>

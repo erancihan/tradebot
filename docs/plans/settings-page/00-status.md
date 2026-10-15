@@ -10,7 +10,7 @@ Gate approvals delegated by the owner (2026-10-14). Approved when written.
 ## Slices
 - [x] S1 tracer: `/settings` page renders the current settings read-only, under More
 - [x] S2 save: `POST /api/settings` validates and writes `config.yaml`, server settings reload
-- [ ] S3 strategy and portfolio pickers from the registries, params as typed fields
+- [x] S3 strategy and portfolio pickers from the registries, params as typed fields
 - [ ] S4 setup card on Today: config, credentials, cached bars, with the fix for each
 - [ ] S5 autopilot and alerts sections (poll seconds, brief lead time, ntfy topic, market)
 - [ ] S6 CLAUDE.md trimmed back under 300 lines (gotchas compressed, nothing dropped in substance)

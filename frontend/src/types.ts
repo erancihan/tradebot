@@ -300,3 +300,9 @@ export interface SettingsView {
   choices: { markets: string[]; timeframes: string[] };
   notice: string | null;
 }
+
+// GET /api/stack: selectors and allocators a form can pick, with their params.
+export interface StackSpecs {
+  selectors: StrategySpec[];
+  allocators: StrategySpec[];
+}

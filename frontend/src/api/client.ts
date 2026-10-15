@@ -16,6 +16,7 @@ import type {
   SeasonDetail,
   SettingsDoc,
   SettingsView,
+  StackSpecs,
   StrategySpec,
   WatchlistChange,
   WatchlistView,
@@ -139,4 +140,8 @@ export function getSettings(): Promise<SettingsView> {
 
 export function saveSettings(body: SettingsDoc): Promise<SettingsView> {
   return postJson<SettingsView>("/api/settings", body);
+}
+
+export function getStack(): Promise<StackSpecs> {
+  return getJson<StackSpecs>("/api/stack");
 }

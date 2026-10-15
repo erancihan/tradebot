@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from ...schemas import CacheEntry, JobRequest, JobView, StrategySpec
 from ...services import cache_service
-from ...services.jobs import VALID_KINDS, VALID_SOURCES, strategy_catalog
+from ...services.jobs import VALID_KINDS, VALID_SOURCES, stack_specs, strategy_catalog
 
 router = APIRouter()
 
@@ -15,6 +15,12 @@ router = APIRouter()
 def strategies():
     """Every registered strategy with the params a form can express."""
     return [StrategySpec(**s) for s in strategy_catalog()]
+
+
+@router.get("/stack")
+def stack() -> dict:
+    """Selectors and allocators a form can pick, each with its simple params."""
+    return stack_specs()
 
 
 @router.get("/cache", response_model=list[CacheEntry])

@@ -211,3 +211,69 @@ def test_a_blank_or_masked_alert_keeps_the_stored_secret_on_save(tmp_path):
     doc["notify"]["ntfy_topic"] = "a-new-topic"     # a plain value replaces it
     assert _post(client, doc).status_code == 200
     assert yaml.safe_load(open(path))["notify"]["ntfy_topic"] == "a-new-topic"
+
+
+# --- strategy and portfolio pickers ---------------------------------------------
+
+def test_stack_lists_selectors_and_allocators_with_typed_params(tmp_path):
+    data = _client(tmp_path).get("/api/stack").json()
+    momentum = next(s for s in data["selectors"] if s["name"] == "momentum")
+    assert {"name": "top_k", "type": "int", "default": 5} in momentum["params"]
+    assert {"name": "reverse", "type": "bool", "default": False} in momentum["params"]
+    assert [a["name"] for a in data["allocators"]] == ["equal", "inverse_vol"]
+
+
+def test_settings_page_has_the_three_pickers(tmp_path):
+    body = _client(tmp_path, _config(tmp_path)).get("/settings").text
+    for kind in ("strategy", "selector", "allocation"):
+        assert f'data-picker="{kind}"' in body
+    assert "edit in the config file" in body
+
+
+def test_save_a_picked_portfolio_keeps_the_overlays(tmp_path):
+    path = _config(tmp_path, "portfolio:\n  allocation: equal\n  overlays:\n"
+                             "    - name: vol_target\n      params: {target_vol: 0.2}\n")
+    client = _client(tmp_path, path)
+    doc = _doc(client)
+    doc["strategy"] = {"name": "buy_and_hold", "params": {}}
+    doc["portfolio"]["selector"] = {"name": "momentum", "params": {"lookback": 60, "skip": 5,
+                                                                   "top_k": 1, "reverse": False}}
+    doc["portfolio"]["allocation"] = "inverse_vol"
+    doc["portfolio"]["params"] = {"window": 21, "gross_target": 1.0}
+    assert _post(client, doc).status_code == 200
+    raw = yaml.safe_load(open(path))["portfolio"]
+    assert raw["selector"]["params"]["top_k"] == 1 and raw["allocation"] == "inverse_vol"
+    assert raw["overlays"] == [{"name": "vol_target", "params": {"target_vol": 0.2}}]
+
+
+def test_save_rejects_a_param_the_selector_does_not_take(tmp_path):
+    client = _client(tmp_path, _config(tmp_path))
+    doc = _doc(client)
+    doc["portfolio"]["selector"] = {"name": "momentum", "params": {"topk": 2}}
+    resp = _post(client, doc)
+    assert resp.status_code == 400
+    assert resp.json()["detail"].startswith("portfolio.selector:")
+
+
+def test_the_webhook_mask_never_echoes_userinfo(tmp_path):
+    alerts = "notify:\n  webhook_url: https://bob:hunter2@hooks.example.com:8443/x/abcd\n"
+    data = _client(tmp_path, _config(tmp_path, alerts)).get("/api/settings").json()
+    assert data["settings"]["notify"]["webhook_url"] == "https://hooks.example.com:8443/…abcd"
+    assert "hunter2" not in str(data)
+
+
+def test_a_kept_secret_must_still_point_where_it_did(tmp_path):
+    path = _config(tmp_path, _ALERTS)
+    client = _client(tmp_path, path)
+    before = open(path).read()
+
+    doc = _doc(client)
+    doc["notify"]["ntfy_server"] = "https://ntfy.example.org"     # topic left masked
+    resp = _post(client, doc)
+    assert resp.status_code == 400 and "enter the topic again" in resp.json()["detail"]
+
+    doc = _doc(client)
+    doc["notify"]["webhook_url"] = "https://evil.example.net/…wxyz"
+    resp = _post(client, doc)
+    assert resp.status_code == 400 and "full webhook URL again" in resp.json()["detail"]
+    assert open(path).read() == before
