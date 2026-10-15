@@ -58,6 +58,11 @@ market: us_equities
 # autopilot:
 #   brief_minutes_before_open: 30
 
+# The list is the mandate: a held stock not on the list (watchlist, else
+# `symbols`) gets a sell-to-flat line. false leaves such holdings alone. Live
+# mode never sells a name off the list, whatever this says.
+# manage_unlisted: true
+
 # Starting capital for backtests (paper/live read equity from the broker).
 initial_cash: 10000
 

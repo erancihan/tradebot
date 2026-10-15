@@ -43,7 +43,8 @@ are typed as percentages. The **No-trade band** skips drift trades smaller
 than that share of equity (1% unless you change it, 0 turns it off; full
 exits always run), so a pass does not trim one share each time equity moves.
 The same page sets the autopilot cadence, the
-morning brief, alert destinations and the exchange calendar.
+morning brief, **Sell names that leave the list** (`manage_unlisted`, on by
+default), alert destinations and the exchange calendar.
 
 Tap **Save**. The server builds every component you named, so a typo comes
 back as one readable sentence. Then it writes `config.yaml` atomically and
@@ -85,7 +86,10 @@ sma_crossover signals long; rank 2 of 5, weight 23%, capped by the risk limit; b
 A row can also say `not selected (rank 4 of 5)` or `within the 1% no-trade
 band, hold`. The list is the mandate: a name you hold that is not on the list
 gets a row `not on your list: sell to flat` (or `buy to flat` for a short), and
-the autopilot closes it. Without a cached price the row is skipped, never guessed.
+the autopilot closes it, sells before buys. Without a price the row is skipped,
+never guessed; a crypto or option position is ignored. Untick **Sell names that
+leave the list** in Settings to leave such holdings alone. Live trading never
+sells a name off the list.
 
 - **Account strip:** equity, cash and their source, `paper (Alpaca)`,
   `paper (from log)` or `paper (starting cash)`.
@@ -415,6 +419,11 @@ tradebot run --replay --autopilot --mode auto --iterations 50   # offline
 ```
 
 Parked trades wait on the Autopilot page of a server with the same database.
+
+**Which list the CLI trades.** `tradebot run` (every form) trades the same list
+as the web: the watchlist in `db_path` when it has symbols, in place of
+`symbols` and any `universe:` block, else the config. The startup line on
+stderr says which: `tradebot run: config=config.yaml symbols=watchlist(3)`.
 
 **Go live (only when you are sure).** Set `mode: live`, put **live** keys in
 `.env` and `export TRADEBOT_LIVE_CONFIRM=I_UNDERSTAND`. Without all three the

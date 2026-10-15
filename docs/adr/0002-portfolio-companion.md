@@ -164,3 +164,21 @@ One new core concept, the proposal, feeds three flows.
   edits it. `RiskConfig()` keeps 0, so backtests, the arena and the research
   record keep their numbers. A banded hold says "within the 1% no-trade band".
 - Simulations are unchanged: their books never hold a name outside their list.
+- Live never manages unlisted names, part of the live gate: live trades only the
+  list and never sells what it did not buy (`engine/unlisted.manages_unlisted`).
+  Elsewhere `manage_unlisted` (default true; Settings: "Sell names that leave the
+  list") switches it off for the engine and Today alike.
+- Every process trades the same list: `storage/watchlist.resolve_active` is the
+  one resolver. `tradebot run` (all its forms) uses the trading db's watchlist
+  when it has one, in place of the config symbols and any universe screen, and
+  says so on its startup line (`symbols=watchlist(3)` or `symbols=config(2)`).
+- Only equity tickers (`models.SYMBOL_RE`) are managed: a crypto pair or option
+  in the account is ignored and logged once. A failed batched price fetch falls
+  back to one fetch per name, so one unpriceable name never unprices the rest.
+  With keys, Today pulls the same short window before reading the last close.
+- Config symbols are upper-cased on load; off-list matching is upper-cased.
+- Exits and reductions submit before entries (`orders.exits_first`, automatic and
+  approved alike), so a swap's sell funds its buy; the proposal keeps its order.
+- The band is the product's, not the research's: a `tradebot backtest` of a
+  Settings file uses its 1% band, while the arena, what-if and the research
+  record keep `RiskConfig()`'s 0.
