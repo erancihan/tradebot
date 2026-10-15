@@ -20,18 +20,18 @@ def _parts(query: str) -> tuple[int, str]:
 
 
 def test_a_signed_link_verifies_for_its_batch_and_verb():
-    sign = link_signer(SECRET, poll_seconds=300, clock=lambda: 1_000_000)
+    sign = link_signer(SECRET, "paper", poll_seconds=300, clock=lambda: 1_000_000)
     exp, sig = _parts(sign(7, "approve"))
     assert exp == 1_000_000 + 600
-    assert verify(SECRET, 7, "approve", exp, sig, now=1_000_000)
+    assert verify(SECRET, "paper", 7, "approve", exp, sig, now=1_000_000)
     assert len(sig) == 64 and int(sig, 16) >= 0
 
 
 def test_an_expired_link_is_rejected():
-    sign = link_signer(SECRET, poll_seconds=300, clock=lambda: 1_000_000)
+    sign = link_signer(SECRET, "paper", poll_seconds=300, clock=lambda: 1_000_000)
     exp, sig = _parts(sign(7, "approve"))
-    assert verify(SECRET, 7, "approve", exp, sig, now=exp)
-    assert not verify(SECRET, 7, "approve", exp, sig, now=exp + 1)
+    assert verify(SECRET, "paper", 7, "approve", exp, sig, now=exp)
+    assert not verify(SECRET, "paper", 7, "approve", exp, sig, now=exp + 1)
 
 
 @pytest.mark.parametrize("batch_id, verb, delta", [
@@ -42,15 +42,15 @@ def test_an_expired_link_is_rejected():
 ])
 def test_a_tampered_link_is_rejected(batch_id, verb, delta):
     exp = 2_000_000_000
-    sig = signature(SECRET, 7, "approve", exp)
-    assert not verify(SECRET, batch_id, verb, exp + delta, sig, now=0)
+    sig = signature(SECRET, "paper", 7, "approve", exp)
+    assert not verify(SECRET, "paper", batch_id, verb, exp + delta, sig, now=0)
 
 
 def test_another_secret_does_not_verify():
     exp = 2_000_000_000
-    sig = signature(SECRET, 7, "approve", exp)
-    assert not verify(link_secret("other-token"), 7, "approve", exp, sig, now=0)
-    assert not verify(link_secret(None), 7, "approve", exp, sig, now=0)
+    sig = signature(SECRET, "paper", 7, "approve", exp)
+    assert not verify(link_secret("other-token"), "paper", 7, "approve", exp, sig, now=0)
+    assert not verify(link_secret(None), "paper", 7, "approve", exp, sig, now=0)
 
 
 def test_ttl_is_twice_the_poll_never_under_ten_minutes():
@@ -60,7 +60,7 @@ def test_ttl_is_twice_the_poll_never_under_ten_minutes():
 
 def test_the_signer_refuses_an_unknown_verb():
     with pytest.raises(ValueError):
-        link_signer(SECRET, 300)(1, "delete")
+        link_signer(SECRET, "paper", 300)(1, "delete")
 
 
 _PRINT_SECRET = ("import sys; from tradebot.autopilot.links import link_secret; "
@@ -107,4 +107,12 @@ def test_each_link_is_claimed_once_and_forgotten_after_it_expires():
 def test_a_malformed_signature_is_refused_without_raising(sig):
     """Only 64 lowercase hex digits are compared; anything else (a non-ASCII
     character made compare_digest raise) is simply not a valid link."""
-    assert verify(SECRET, 7, "approve", 2_000_000_000, sig, now=0) is False
+    assert verify(SECRET, "paper", 7, "approve", 2_000_000_000, sig, now=0) is False
+
+
+def test_a_link_signed_for_another_account_does_not_verify():
+    """The account is in the message: a dry-run's link cannot act on paper."""
+    sign = link_signer(SECRET, "dry_run", poll_seconds=300, clock=lambda: 1_000_000)
+    exp, sig = _parts(sign(7, "approve"))
+    assert verify(SECRET, "dry_run", 7, "approve", exp, sig, now=1_000_000)
+    assert not verify(SECRET, "paper", 7, "approve", exp, sig, now=1_000_000)

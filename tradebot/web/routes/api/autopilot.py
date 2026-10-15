@@ -41,7 +41,8 @@ def batch_link(batch_id: int, verb: str, exp: int, sig: str, request: Request):
     these paths skip the cookie gate. Each link acts once: a replay is a 409."""
     state = request.app.state
     if verb not in ("approve", "reject") or not verify(
-            state.link_secret, batch_id, verb, exp, sig):
+            state.link_secret, autopilot_service.link_account(request.app),
+            batch_id, verb, exp, sig):
         raise HTTPException(status_code=403, detail="invalid or expired link")
     if not state.used_links.claim(batch_id, verb, exp, sig):
         raise HTTPException(status_code=409, detail="this link was already used")

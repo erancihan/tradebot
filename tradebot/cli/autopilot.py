@@ -61,7 +61,7 @@ def run_autopilot(settings, args: argparse.Namespace) -> int:
         clock = _ReplayClock(data, args.speed)
         extra = dict(clock=clock, sleep=clock.sleep, is_open=lambda now: True)
     if settings.notify_public_url:
-        extra["notifier"] = _linked_notifier(settings)
+        extra["notifier"] = _linked_notifier(settings, engine.mode)
     # Its own state scope: the web's stored mode is what the next
     # `tradebot-web` start resumes, so a headless run must never write it.
     pilot = Autopilot(engine, engine.storage, poll_seconds=settings.poll_seconds,
@@ -85,15 +85,16 @@ def run_autopilot(settings, args: argparse.Namespace) -> int:
     return 0
 
 
-def _linked_notifier(settings):
+def _linked_notifier(settings, account: str):
     """The pending push with Approve/Skip links, signed as the web signs them.
 
     The links are served by ``tradebot-web`` on the same database; with
-    ``TRADEBOT_WEB_TOKEN`` set in both processes they share one secret.
+    ``TRADEBOT_WEB_TOKEN`` set in both processes they share one secret, and a
+    paper link signed here verifies against the web's paper pilot (same label).
     """
     from ..autopilot.links import env_secret, link_signer
 
-    return settings.build_notifier(link_signer(env_secret(), settings.poll_seconds))
+    return settings.build_notifier(link_signer(env_secret(), account, settings.poll_seconds))
 
 
 def _build(settings, args):

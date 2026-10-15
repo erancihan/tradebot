@@ -44,7 +44,7 @@ def build(settings, *, trading_db: str, cache_dir: str,
                     selector=settings.build_selector(),
                     overlays=settings.build_overlays(),
                     notifier=settings.build_notifier(
-                        link_signer(link_secret, settings.poll_seconds)
+                        link_signer(link_secret, label, settings.poll_seconds)
                         if link_secret else None))
     return Autopilot(engine, storage, poll_seconds=settings.poll_seconds)
 

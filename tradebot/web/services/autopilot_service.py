@@ -38,6 +38,13 @@ def current(app) -> Autopilot | None:
     return getattr(app.state, "autopilot", None)
 
 
+def link_account(app) -> str:
+    """The account a signed link must be signed for: the running pilot's, else
+    the one ``get`` would build (the label follows the credentials)."""
+    pilot = current(app)
+    return pilot.account if pilot is not None else scope()
+
+
 def get(app) -> Autopilot:
     """The process's Autopilot, built on first use."""
     with _BUILD_LOCK:
