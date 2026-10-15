@@ -110,7 +110,10 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
 # sent four tests down the Alpaca path. They are removed for the session and
 # restored after it; a test that needs one sets it with monkeypatch.
 _SCRUBBED_ENV = ("ALPACA_API_KEY", "ALPACA_API_SECRET", "ALPACA_DATA_FEED",
-                 "TRADEBOT_WEB_TOKEN", "TRADEBOT_LIVE_CONFIRM")
+                 "TRADEBOT_WEB_TOKEN", "TRADEBOT_LIVE_CONFIRM",
+                 # Read at settings resolution and app build: a developer's
+                 # own config or database must not leak into a test.
+                 "TRADEBOT_CONFIG", "TRADEBOT_DB")
 
 
 @pytest.fixture(autouse=True, scope="session")

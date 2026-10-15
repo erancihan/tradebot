@@ -102,6 +102,16 @@ def test_check_exits_1_on_a_config_it_could_not_serve(tmp_path, capsys, problem)
     assert "--check failed" in capsys.readouterr().err
 
 
+def test_check_reads_tradebot_config_when_no_flag_is_given(tmp_path, capsys, monkeypatch):
+    env = tmp_path / "env.yaml"
+    env.write_text(CONFIG)
+    monkeypatch.setenv("TRADEBOT_CONFIG", str(env))
+    assert server.main(["--check", "--trading-db", str(tmp_path / "t.db")]) == 0
+    assert f"config={env}" in capsys.readouterr().out
+    monkeypatch.setenv("TRADEBOT_CONFIG", str(tmp_path / "missing.yaml"))
+    assert server.main(["--check", "--trading-db", str(tmp_path / "t.db")]) == 1
+
+
 def test_stopping_the_server_stops_a_running_autopilot_loop(tmp_path, monkeypatch):
     monkeypatch.setattr("tradebot.config.AlpacaCredentials.from_env", lambda: None)
     cache = BarCache(tmp_path / "cache")

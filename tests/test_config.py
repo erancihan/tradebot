@@ -181,6 +181,47 @@ def test_resolve_settings_refuses_an_explicit_missing_path(tmp_path, monkeypatch
         resolve_settings(str(tmp_path / "missing.yaml"))
 
 
+def test_resolve_settings_reads_tradebot_config_before_the_working_directory(
+        tmp_path, monkeypatch):
+    from tradebot.config import resolve_settings
+
+    (tmp_path / "config.yaml").write_text("symbols: [GLD]\n")
+    env = tmp_path / "env.yaml"
+    env.write_text("symbols: [XLE]\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TRADEBOT_CONFIG", str(env))
+    settings, source = resolve_settings(None)
+    assert source == str(env) and settings.symbols == ["XLE"]
+    explicit = tmp_path / "flag.yaml"
+    explicit.write_text("symbols: [TLT]\n")
+    assert resolve_settings(str(explicit))[0].symbols == ["TLT"]     # --config wins
+
+
+def test_resolve_settings_refuses_a_missing_tradebot_config(tmp_path, monkeypatch):
+    from tradebot.config import resolve_settings
+
+    (tmp_path / "config.yaml").write_text("symbols: [GLD]\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TRADEBOT_CONFIG", str(tmp_path / "missing.yaml"))
+    with pytest.raises(FileNotFoundError):
+        resolve_settings(None)
+
+
+def test_the_cli_honours_tradebot_config(tmp_path, monkeypatch, capsys):
+    from tradebot.cli.common import _load_settings
+
+    env = tmp_path / "env.yaml"
+    env.write_text("symbols: [XLE]\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TRADEBOT_CONFIG", str(env))
+
+    class Args:
+        config = None
+
+    assert _load_settings(Args(), "backtest").symbols == ["XLE"]
+    assert f"config={env}" in capsys.readouterr().err
+
+
 # --- the product's no-trade band -------------------------------------------------
 
 def test_the_product_band_is_one_percent_unless_the_yaml_says(tmp_path):

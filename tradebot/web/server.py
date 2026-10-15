@@ -25,9 +25,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--trading-db", default=os.getenv("TRADEBOT_DB", "tradebot.db"))
     parser.add_argument("--arena-db", default=os.getenv("TRADEBOT_ARENA_DB", "arena.db"))
     parser.add_argument("--season-db", default=os.getenv("TRADEBOT_SEASON_DB", "season.db"))
-    parser.add_argument("--config", default=os.getenv("TRADEBOT_CONFIG"),
-                        help="settings YAML for the Today page "
-                             "(default: ./config.yaml if present, else SPY/QQQ defaults)")
+    # No env default here: ``config.resolve_settings`` reads TRADEBOT_CONFIG,
+    # so `tradebot` and `tradebot-web` resolve the file by one rule.
+    parser.add_argument("--config", default=None,
+                        help="settings YAML (default: $TRADEBOT_CONFIG, else "
+                             "./config.yaml if present, else SPY/QQQ defaults)")
     parser.add_argument("--allow-host", action="append", default=[], metavar="HOST",
                         help="extra Host header to serve, e.g. your LAN IP or hostname "
                              "(repeatable; '*' disables the check). Also read from "
