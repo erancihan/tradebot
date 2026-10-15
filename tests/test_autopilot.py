@@ -329,6 +329,33 @@ def test_only_a_new_batch_or_a_due_reminder_is_announced(tmp_path):
     assert len(_pushes(notifier)) == 2                      # the reminder resets the wait
 
 
+def _half_again(line):
+    """The same trade grown well past what the push said (equity jumped)."""
+    qty = line.order_qty * 1.5
+    return replace(line, order_qty=qty, desired_qty=line.desired_qty * 1.5,
+                   notional=abs(qty) * line.price)
+
+
+def test_a_carried_line_grown_past_the_push_is_pushed_again(tmp_path, monkeypatch):
+    """An approval must mean what the phone showed: a refresh that grows a
+    line by more than the tolerance pushes the batch again at once."""
+    pilot, _, clock, notifier, first = _approve_pass(tmp_path)
+    _spy_proposals(pilot, monkeypatch, _one_more_share)
+    clock.sleep(300)
+    pilot.tick()                                            # one share more: quiet
+    assert len(_pushes(notifier)) == 1
+    _spy_proposals(pilot, monkeypatch, _half_again)
+    clock.sleep(300)
+    pilot.tick()                                            # half again: pushed
+    pushes = _pushes(notifier)
+    assert len(pushes) == 2
+    assert pushes[-1]["batch_id"] == first[0]["batch_id"]
+    assert pushes[-1]["lines"][0]["qty"] > first[0]["order_qty"]
+    clock.sleep(300)
+    pilot.tick()                                            # same size again: quiet
+    assert len(_pushes(notifier)) == 2
+
+
 def test_approval_after_a_refresh_submits_the_latest_quantity(tmp_path, monkeypatch):
     pilot, broker, clock, _, first = _approve_pass(tmp_path)
     seen = _spy_proposals(pilot, monkeypatch, _one_more_share)

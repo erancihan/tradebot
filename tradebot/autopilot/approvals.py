@@ -14,6 +14,7 @@ approval expires them, never executes them.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
 
 from ..engine import pending
@@ -22,6 +23,10 @@ from .links import ttl_seconds
 #: Line statuses that make up the shape of a waiting batch: a rejected line
 #: still counts, so the same proposal never asks about it again.
 _SHAPE_STATUSES = ("pending", "rejected")
+
+#: A carried line re-sized to more than this share above what the last push
+#: said is pushed again at once: an approval must mean what was shown.
+GROWTH_TOLERANCE = 0.10
 
 
 def _trades(lines) -> set[tuple[str, str]]:
@@ -85,8 +90,9 @@ class ApprovalsMixin:
         else:
             self.storage.refresh_pending_batch(batch_id, proposal, self.account)
         if self._announce_due(batch_id, now):
-            self._announce_pending(batch_id)
-            self._set(announced_batch=str(batch_id), announced_at=now)
+            shown = self._announce_pending(batch_id)
+            self._set(announced_batch=str(batch_id), announced_at=now,
+                      announced_notional=json.dumps(shown))
         return batch_id
 
     def _carried_batch(self, proposal) -> int | None:
@@ -105,8 +111,18 @@ class ApprovalsMixin:
         if batch_id is None or raw.get("announced_batch") != str(batch_id):
             return True
         last = raw.get("announced_at")
-        return (last is None or now - datetime.fromisoformat(last)
-                >= timedelta(seconds=ttl_seconds(self.poll_seconds)))
+        if (last is None or now - datetime.fromisoformat(last)
+                >= timedelta(seconds=ttl_seconds(self.poll_seconds))):
+            return True
+        return self._grew_past_shown(json.loads(raw.get("announced_notional") or "{}"))
+
+    def _grew_past_shown(self, shown: dict[str, float]) -> bool:
+        """Did a refresh grow a pending line past what the last push said?"""
+        for ln in self.storage.pending_lines(self.account):
+            was = shown.get(str(ln["id"]))
+            if was is not None and abs(ln["notional"]) > abs(was) * (1 + GROWTH_TOLERANCE):
+                return True
+        return False
 
     def _pending_ids(self, line_ids: list[int]) -> list[int]:
         wanted = {int(i) for i in line_ids}
@@ -126,13 +142,15 @@ class ApprovalsMixin:
             self.storage.set_line_status(ids, "expired")
         return len(ids)
 
-    def _announce_pending(self, batch_id: int | None) -> None:
+    def _announce_pending(self, batch_id: int | None) -> dict[str, float]:
+        """Push the pending lines; returns what was shown (``{line id: notional}``)."""
         lines = self.storage.pending_lines(self.account)
         if not lines:
-            return
+            return {}
         self._notify({
             "type": "pending_trades", "batch_id": batch_id, "count": len(lines),
             "lines": [{"id": ln["id"], "symbol": ln["symbol"], "action": ln["action"],
                        "qty": abs(ln["order_qty"]), "notional": ln["notional"]}
                       for ln in lines],
         })
+        return {str(ln["id"]): float(ln["notional"]) for ln in lines}

@@ -104,8 +104,7 @@ config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])  deploy
   exits: the broker holds them, no simulation loop models them, and a backtest
   of a bracketed config shows the unbracketed result. Never quote a backtest as
   evidence about a stop. Do not add brackets to the backtester.
-- **Import isolation.** The Alpaca SDK and `python-dotenv` load lazily inside
-  functions. The trading core never imports `tradebot.web`.
+- **Import isolation.** The Alpaca SDK and `python-dotenv` load lazily inside functions. The trading core never imports `tradebot.web`.
 - **Offline-first.** Everything except the literal Alpaca call runs and tests
   offline (synthetic data, fake fetchers). Every feature keeps a credential-free path and offline tests.
 - **Credentials stay on the server.** The browser never receives them, and no
@@ -236,7 +235,8 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   `(symbol, action)` set refreshes it in place (sizing, prices, `created_at`; rejected lines stay
   rejected; same batch id, so the push's link still works). A changed proposal, an approval older
   than one `poll_seconds`, a halt, and switching off expire it. One push per batch, plus a reminder
-  every `links.ttl_seconds` (max(2 x poll, 30 min)), which is also the link TTL (`announced_*` state).
+  every `links.ttl_seconds` (max(2 x poll, 30 min), also the link TTL) or at once when a refresh grows
+  a line's notional past `GROWTH_TOLERANCE` (10%) of what the push said (`announced_*` state).
 - **Signed batch links** (`autopilot/links.py`; buttons when `safe_public_url(notify.public_url)`)
   are paper-only (other pushes get just "Open") and account-bound (`account:batch:verb:exp`); they act
   on that account's pending lines under the lock (`Autopilot.act_on_batch`; foreign batch = 409). Key

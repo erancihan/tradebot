@@ -93,3 +93,7 @@ One new core concept, the proposal, feeds three flows.
 - A batch is pushed once when recorded, then again as a reminder every
   `links.ttl_seconds(poll)` = max(2 x `poll_seconds`, 30 minutes). The same
   number is the link lifetime, so a push's buttons work until the next push.
+- An approval means what the phone showed: when a refresh grows a pending
+  line's notional by more than 10% over the last push, the batch is pushed
+  again at once, with the new sizes. Link lifetime is a trade-off the paper-only,
+  single-use links accept; the ntfy topic itself is the credential.
