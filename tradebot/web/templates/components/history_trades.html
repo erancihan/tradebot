@@ -1,0 +1,50 @@
+{#- History: round trips and realised P&L by average cost, from the bot's
+    filled orders in this account (services/history_trades.view). Expects
+    `history.trades`. Phone-first: lines wrap, never truncate. -#}
+{% macro signed(v) %}{{ '+' if v >= 0 else '−' }}{{ (v | abs) | money }}{% endmacro %}
+{% macro price(v) %}{{ '%.2f' | format(v) }}{% endmacro %}
+{% set t = history.trades %}
+{% set s = t.summary %}
+<div class="space-y-2" data-trades>
+  <div class="flex items-baseline justify-between gap-2">
+    <h2 class="text-sm font-semibold text-slate-200">Trades</h2>
+    <span class="text-xs text-slate-500">{{ t.provenance.orders }} filled order{{ '' if t.provenance.orders == 1 else 's' }}</span>
+  </div>
+  {% if s.closed %}
+    <p class="text-sm text-slate-300 break-words" data-trades-summary>
+      {{ s.closed }} closed · {{ s.wins }} win{{ '' if s.wins == 1 else 's' }}
+      · <span class="{{ 'text-emerald-400' if s.realised >= 0 else 'text-rose-400' }}">{{ signed(s.realised) }}</span> realised
+      {%- if s.profit_factor is not none %} · profit factor {{ '%.1f' | format(s.profit_factor) }}{% endif %}
+    </p>
+  {% else %}
+    <p class="text-sm text-slate-400" data-no-trades>No closed trades yet. A trade closes when a name goes back to flat.</p>
+  {% endif %}
+  {% if t.trades or t.open %}
+    <ul class="divide-y divide-slate-800">
+      {% for tr in t.trades %}
+        <li class="min-h-[40px] py-2 text-sm break-words" data-trade="{{ tr.symbol }}">
+          <span class="font-mono font-semibold text-slate-100">{{ tr.symbol }}</span>
+          <span class="text-slate-400">{{ tr.side }} {{ '%g' | format(tr.qty) }} sh</span>
+          <span class="text-slate-300">· {{ price(tr.entry_price) }} → {{ price(tr.exit_price) }}</span>
+          <span class="{{ 'text-emerald-400' if tr.pnl >= 0 else 'text-rose-400' }}" data-pnl>· {{ signed(tr.pnl) }}
+            {%- if tr.pnl_pct is not none %} ({{ '%+.1f' | format(tr.pnl_pct * 100) }}%){% endif %}</span>
+          <span class="text-xs text-slate-500">· {{ (tr.entry_ts or '')[:10] }} → {{ tr.exit_ts[:10] }}</span>
+        </li>
+      {% endfor %}
+      {% for lot in t.open %}
+        <li class="min-h-[40px] py-2 text-sm break-words" data-open-trade="{{ lot.symbol }}">
+          <span class="font-mono font-semibold text-slate-100">{{ lot.symbol }}</span>
+          <span class="text-slate-400">{{ lot.side }} {{ '%g' | format(lot.qty) }} sh</span>
+          <span class="text-slate-300">· open since {{ lot.entry_ts[:10] }} at avg {{ price(lot.avg_price) }}</span>
+          {%- if lot.realised %}
+            <span class="text-xs text-slate-500">· {{ signed(lot.realised) }} realised from part-exits</span>
+          {%- endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  <p class="text-xs text-slate-500" data-trades-provenance>
+    From the bot's filled orders in this account ({{ t.provenance.mode }}), by average cost;
+    hand trades are not included and a partial fill counts the shares that filled.
+  </p>
+</div>

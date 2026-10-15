@@ -184,3 +184,25 @@ One new core concept, the proposal, feeds three flows.
 - The band is the product's, not the research's: a `tradebot backtest` of a
   Settings file uses its 1% band, while the arena, what-if and the research
   record keep `RiskConfig()`'s 0.
+
+## Addendum 2026-10-15: Trades
+- History answers "how did my trades do?" with a Trades card under the
+  performance card, built from the order log's fills for the page's account
+  (`?mode=` pins it, as for the rest of History).
+- The fills are the orders with a known fill: `filled_qty > 0` and a fill
+  price, whatever the status (a cancel after a partial fill counts the shares
+  that filled, as positions do), oldest fill first. Commission is 0 (Alpaca).
+  Hand trades in the same account are not in the log and never count.
+- Accounting is average cost per symbol (`tradebot/portfolio_pnl.py`, pure): a
+  trip opens on the first fill, scales in at the average price, and each
+  reducing fill realises `(exit - avg) x shares` (sign flipped for a short). The
+  trip closes when the position is flat; a fill through zero closes it and
+  opens the next trip with the remainder at the fill price. A closed trip shows
+  its shares, average entry and exit, P&L and P&L over cost, and its dates.
+- Open positions show "open since <date> at avg <price>" and no P&L (the log
+  has no prices); a partial exit's realised part is shown beside it but is not
+  in the summary, which covers closed trips only: closed, wins, losses, win
+  rate, realised, average win and loss, best, worst, and profit factor (gross
+  wins over gross losses, None without a loss). A break-even trip is neither.
+- `GET /api/history/trades?mode=` returns `{summary, trades, open, provenance}`
+  with provenance `{mode, source: "order log fills", orders}`.

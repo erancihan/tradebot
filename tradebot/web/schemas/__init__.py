@@ -57,3 +57,10 @@ from .trading import (  # noqa: F401
     AllocationRow,
     AllocationsView,
 )
+from .history import (  # noqa: F401
+    ClosedTrade,
+    OpenTradeRow,
+    TradeSummary,
+    TradesProvenance,
+    TradesView,
+)

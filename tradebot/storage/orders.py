@@ -32,6 +32,16 @@ def effective_qty(row: dict) -> float:
     return float(row["qty"])
 
 
+#: Orders of one mode with a known fill, oldest fill first: what History's
+#: round trips are built from. Any status counts once shares moved (a cancel
+#: after a partial fill too, as in :func:`effective_qty`); the web reader
+#: (``web/repository/history.py``) runs the same query read-only.
+FILLED_ORDERS_SQL = (
+    "SELECT id, ts, symbol, side, qty, status, filled_qty, fill_price, filled_at"
+    " FROM orders WHERE mode = ? AND filled_qty > 0 AND fill_price IS NOT NULL"
+    " ORDER BY COALESCE(filled_at, ts), ts, id")
+
+
 def signed_effective_qty(row: dict) -> float:
     qty = effective_qty(row)
     return qty if row["side"] == "buy" else -qty
@@ -70,6 +80,12 @@ class OrdersMixin:
             " AND broker_order_id IS NOT NULL"
             f" AND (status IS NULL OR status NOT IN ({marks})) ORDER BY ts, id",
             (mode, since_ts, *sorted(TERMINAL_STATUSES)))
+        cols = [c[0] for c in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+    def filled_orders(self, mode: str) -> list[dict]:
+        """Every order of ``mode`` with a known fill, in fill order."""
+        cur = self._conn.execute(FILLED_ORDERS_SQL, (mode,))
         cols = [c[0] for c in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 
