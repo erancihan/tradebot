@@ -60,7 +60,9 @@ ones) and the account is simulated. With keys it fetches missing bars and
 reads your paper account.
 
 1. Create a free Alpaca account, open **Paper Trading** and generate API keys.
-2. Run `cp .env.example .env` and paste your **paper** key and secret.
+2. Run `cp .env.example .env` and paste your **paper** key and secret. The
+   app reads the `.env` in the working directory (where you run it) and
+   nowhere else; variables already set win.
 3. Restart `make web`. `make install-all` already installed the Alpaca SDK;
    after `make install-web` alone, run `make install-live` first.
 
@@ -241,7 +243,9 @@ after a crash. Run `tradebot-web --check` with the same flags first: it
 validates the config, opens the database, prints the startup line and exits 0
 (1 says what is wrong). The service logs that line at every start: the config
 file, the database, the allowed hosts, and whether the token and the Alpaca
-keys are set (never their values), plus the autopilot's stored mode.
+keys are set (never their values), plus the autopilot's stored mode. Secrets
+come from the service's environment, or from the `.env` in its working
+directory (launchd: the plist's `WorkingDirectory`).
 
 A restart keeps the config, the databases, the watchlist and the autopilot
 mode. A loop left on **Approve first** or **Automatic** resumes by itself at

@@ -258,10 +258,10 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   loop is `tradebot run --autopilot --mode off`.
 
 **Web and CI**
-- **The web writes `config.yaml` without comments. Secrets stay in `.env`.**
-  A save merges the editable keys into the file on disk (mode, db_path, costs,
-  universe kept), validates by building every component, writes atomically, then
-  `autopilot_service.reset` stops the loop and drops the runner (stored mode kept).
+- **The web writes `config.yaml` without comments. Secrets stay in `.env`**, read only from the
+  working directory (`Path.cwd()`, never searched upward; launchd's `WorkingDirectory`). A save merges
+  the editable keys into the file on disk (mode, db_path, costs, universe kept), validates by building
+  every component, writes atomically, then `autopilot_service.reset` stops the loop (stored mode kept).
 - **Alert destinations are masked both ways** (`settings_secrets`): a masked or
   omitted value keeps the stored one only while it still points at the same host
   or ntfy server; `""` deletes it. Settings responses are `Cache-Control: no-store`.

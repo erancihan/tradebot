@@ -54,9 +54,10 @@ launchctl load -w ~/Library/LaunchAgents/com.tradebot.web.plist
 tail -f logs/tradebot-web.log
 ```
 
-launchd cannot read an env file, so the secrets live in `.env` at the root
-of the checkout, which `tradebot-web` reads at start (variables already set
-win). A LaunchAgent starts at login. Keep the Mac from sleeping, or the
+launchd cannot read an env file, so the secrets live in the `.env` in the
+working directory, which `tradebot-web` reads at start (variables already set
+win). The plist's `WorkingDirectory` is what makes it load: `tradebot-web`
+looks for `.env` there and nowhere else. A LaunchAgent starts at login. Keep the Mac from sleeping, or the
 autopilot sleeps with it.
 
 ## Update

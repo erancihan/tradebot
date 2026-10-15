@@ -9,14 +9,24 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 
 def _maybe_load_dotenv() -> None:
+    """Fill unset variables from the ``.env`` in the working directory, only.
+
+    A bare ``load_dotenv()`` searches upward from the *calling module's*
+    directory: under systemd a checkout's development ``.env`` silently filled
+    variables the EnvironmentFile left unset, and a non-editable install under
+    launchd found nothing. The working directory is what a service file sets.
+    """
     try:
         from dotenv import load_dotenv
     except ImportError:
         return
-    load_dotenv()
+    path = Path.cwd() / ".env"
+    if path.is_file():
+        load_dotenv(dotenv_path=path, override=False)
 
 
 @dataclass

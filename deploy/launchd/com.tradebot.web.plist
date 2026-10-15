@@ -6,7 +6,8 @@
 
   launchd has no EnvironmentFile. Put ALPACA_API_KEY, ALPACA_API_SECRET and
   TRADEBOT_WEB_TOKEN in /PATH/TO/tradebot/.env (chmod 600): tradebot-web reads
-  the .env at the root of the checkout at start. Keep secrets out of this file.
+  the .env in its working directory (WorkingDirectory below) at start, and
+  nowhere else. Keep secrets out of this file.
 -->
 <plist version="1.0">
 <dict>
