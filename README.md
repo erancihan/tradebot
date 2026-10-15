@@ -26,7 +26,7 @@ market data and a real paper account.
 ### 1. Install and start
 
 ```bash
-make install-web      # venv + Python web extra + npm install
+make install-all      # venv + every Python extra + npm install
 make web              # build the frontend, then serve at http://127.0.0.1:8000
 ```
 
@@ -61,8 +61,8 @@ reads your paper account.
 
 1. Create a free Alpaca account, open **Paper Trading** and generate API keys.
 2. Run `cp .env.example .env` and paste your **paper** key and secret.
-3. Run `make install-live` (the Alpaca SDK and `.env` loading), then restart
-   `make web`.
+3. Restart `make web`. `make install-all` already installed the Alpaca SDK;
+   after `make install-web` alone, run `make install-live` first.
 
 Until config, keys and cached bars are all in place, Today shows a
 **Finish setting up** card with the fix for each one.
@@ -255,9 +255,9 @@ Every flow, from the Today page to a backtest, runs one pipeline:
 
 ## Terminal reference
 
-Install with `make install` (core), `make install-live` (adds Alpaca) or
-`make install-web` (adds the web app). `tradebot <command> --help` lists
-every flag.
+Install with `make install` (core), `make install-live` (adds Alpaca),
+`make install-web` (adds the web app) or `make install-all` (everything).
+`tradebot <command> --help` lists every flag.
 
 ### Commands
 

@@ -1,4 +1,4 @@
-.PHONY: help install install-live test demo backtest run status clean
+.PHONY: help install install-live install-web install-all test demo backtest run status clean
 
 VENV ?= .venv
 PY := $(VENV)/bin/python
@@ -8,6 +8,8 @@ help:
 	@echo "Targets:"
 	@echo "  install       create venv + install core deps (backtest/test only)"
 	@echo "  install-live  also install Alpaca SDK for paper/live trading"
+	@echo "  install-web   also install the web app and npm packages"
+	@echo "  install-all   everything: core, Alpaca SDK, web app, npm packages"
 	@echo "  test          run the test suite"
 	@echo "  demo          offline backtest on synthetic data (no creds needed)"
 	@echo "  backtest      backtest config.yaml (needs creds or --csv)"
@@ -29,6 +31,10 @@ install-live: $(VENV)
 
 install-web: $(VENV)
 	$(PIP) install -e ".[dev,web]"
+	cd frontend && npm install
+
+install-all: $(VENV)
+	$(PIP) install -e ".[dev,live,web]"
 	cd frontend && npm install
 
 test:
