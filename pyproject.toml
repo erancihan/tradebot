@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=84.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -24,9 +24,9 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "pandas>=2.0",
-    "numpy>=1.24",
-    "PyYAML>=6.0",
+    "pandas>=2.3.3",
+    "numpy>=2.2.6",
+    "PyYAML>=6.0.3",
 ]
 
 [project.urls]
@@ -39,17 +39,17 @@ Changelog = "https://github.com/erancihan/tradebot/blob/master/CHANGELOG.md"
 # The strategy/backtest core works without these, so they are optional.
 [project.optional-dependencies]
 live = [
-    "alpaca-py>=0.21",
-    "python-dotenv>=1.0",
+    "alpaca-py>=0.44.0",
+    "python-dotenv>=1.2.4",
 ]
 dev = [
-    "pytest>=7.4",
-    "httpx>=0.24",
+    "pytest>=9.1.1",
+    "httpx>=0.28.1",
 ]
 web = [
-    "fastapi>=0.110",
-    "uvicorn[standard]>=0.27",
-    "jinja2>=3.1",
+    "fastapi>=0.143.0",
+    "uvicorn[standard]>=0.54.0",
+    "jinja2>=3.1.6",
 ]
 
 [project.scripts]
