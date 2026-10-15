@@ -88,7 +88,10 @@ tests/  docs/ (research-record.md, adr/, plans/)  data/cache/ (gitignored)
 config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])  Makefile
 ```
 
-A later epic adds `market/` (the `MarketCalendar` protocol).
+`market/` holds the exchange calendars: base (`MarketCalendar` protocol: `name`,
+`timezone`, `is_open`, `next_open`, `session`, `is_holiday`; `TableCalendar`), us
+(`USEquities` + the old helpers, re-exported by `arena/market.py`), bist
+(`BorsaIstanbul`, holiday table through 2027), registry (`get_calendar`).
 
 ## Invariants
 
