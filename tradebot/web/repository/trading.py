@@ -157,3 +157,10 @@ class TradingRepository:
         """The Today page's watchlist (``storage/watchlist.py``), oldest first."""
         rows = _read(self.db_path, "SELECT symbol FROM watchlist ORDER BY rowid")
         return [r["symbol"] for r in rows]
+
+    def latest_discover_run(self) -> dict | None:
+        """The newest Discover ranking (``storage/discover.py``), or None."""
+        from ...storage.discover import decode_run
+
+        rows = _read(self.db_path, "SELECT * FROM discover_runs ORDER BY id DESC LIMIT 1")
+        return decode_run(rows[0]) if rows else None

@@ -86,6 +86,14 @@ CREATE TABLE IF NOT EXISTS watchlist (
     symbol    TEXT PRIMARY KEY,     -- upper-case, validated by the web layer
     added_at  TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS discover_runs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at  TEXT NOT NULL,
+    source      TEXT NOT NULL,      -- alpaca | cache: where the pool came from
+    as_of       TEXT,               -- newest bar date the ranking may read
+    provenance  TEXT NOT NULL,      -- JSON: window, bar count, pool sizes
+    rows        TEXT NOT NULL       -- JSON: ranked [{symbol, score, price, adv, reason}]
+);
 """
 
 #: (table, column, declaration) added after the table first shipped.

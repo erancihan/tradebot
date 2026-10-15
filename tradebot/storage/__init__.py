@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .autopilot import AutopilotMixin
 from .bars import BarsMixin, _ts_iso
+from .discover import DiscoverMixin
 from .orders import OrdersMixin
 from .proposals import ProposalsMixin
 from .schema import _SCHEMA, migrate
@@ -21,7 +22,7 @@ __all__ = ["Storage"]
 
 
 class Storage(OrdersMixin, BarsMixin, WeightsMixin, ProposalsMixin, AutopilotMixin,
-              WatchlistMixin):
+              WatchlistMixin, DiscoverMixin):
     def __init__(self, path: str | Path = "tradebot.db", *,
                  check_same_thread: bool = True) -> None:
         # ``check_same_thread=False`` is for the autopilot, whose loop thread
