@@ -23,6 +23,7 @@ class OrderRow(BaseModel):
     side: str
     qty: float
     mode: str
+    status: str | None = None       # the broker's last word; None = not asked yet
 
 
 class Candle(BaseModel):

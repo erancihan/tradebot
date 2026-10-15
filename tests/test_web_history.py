@@ -231,3 +231,65 @@ def test_the_account_stays_put_between_page_load_and_show_more(tmp_path, monkeyp
     perf = client.get("/partials/history/performance?mode=paper").text
     assert "$10,000.00" in perf and "5,000" not in perf
     assert client.get("/partials/history?mode=bogus").status_code == 400
+
+
+def _fill(st: Storage, symbol: str, status: str, filled: float,
+          fill_price: float | None) -> None:
+    from tradebot.broker import OrderStatus
+
+    (row_id,) = st._conn.execute("SELECT id FROM orders WHERE symbol = ?", (symbol,)).fetchone()
+    st.set_order_fill(row_id, OrderStatus(status, filled, fill_price, T0))
+
+
+def test_an_order_shows_what_the_broker_filled_and_the_slippage(tmp_path):
+    with Storage(tmp_path / "t.db") as st:
+        _snapshot(st, T0, 10_000.0, "paper")
+        _order(st, "SPY", 13, T0, price=766.85)
+        _order(st, "QQQ", 13, T0 + timedelta(hours=1), price=500.0)
+        _order(st, "IWM", 4, T0 + timedelta(hours=2), price=200.0, side=Side.SELL)
+        _order(st, "DIA", 2, T0 + timedelta(hours=3), price=400.0)
+        _order(st, "XLK", 2, T0 + timedelta(hours=4), price=100.0)
+        _fill(st, "SPY", "filled", 13, 767.24)
+        _fill(st, "QQQ", "partially_filled", 5, 500.0)
+        _fill(st, "IWM", "filled", 4, 199.5)           # sold lower: a cost
+        _fill(st, "DIA", "canceled", 0, None)
+        _fill(st, "XLK", "rejected", 0, None)
+    events = {e["symbol"]: e for e in history_service.view(
+        TradingRepository(str(tmp_path / "t.db")),
+        type("S", (), {"mode": "paper"})())["events"]}
+    assert events["SPY"]["slippage"] == pytest.approx(5.07)
+    assert events["SPY"]["fill_price"] == 767.24 and events["SPY"]["status"] == "filled"
+    assert events["IWM"]["slippage"] == pytest.approx(2.0)
+    assert events["QQQ"]["slippage"] == 0.0 and events["DIA"]["slippage"] is None
+
+    body = _client(tmp_path).get("/history").text
+
+    def item(symbol: str) -> str:
+        return body.split(f'data-symbol="{symbol}"')[1].split("</li>")[0]
+
+    assert "filled 13 sh @ $767.24" in item("SPY") and "+$5.07 vs plan" in item("SPY")
+    assert "13 sh · $9,969.05" in item("SPY")            # the plan stays visible
+    assert "partial 5 of 13" in item("QQQ")
+    assert "cancelled" in item("DIA") and "vs plan" not in item("DIA")
+    assert "rejected" in item("XLK")
+    assert "truncate" not in item("SPY")                 # phone width wraps, never cuts
+
+
+def test_an_order_nobody_has_asked_about_reads_submitted(tmp_path):
+    with Storage(tmp_path / "t.db") as st:
+        _snapshot(st, T0, 10_000.0, "paper")
+        _order(st, "SPY", 13, T0, price=766.85)
+    body = _client(tmp_path).get("/history").text
+    assert 'data-fill="submitted"' in body and "vs plan" not in body
+
+
+def test_the_orders_api_and_table_carry_the_broker_status(tmp_path):
+    with Storage(tmp_path / "t.db") as st:
+        _order(st, "SPY", 13, T0, price=766.85)
+        _order(st, "QQQ", 2, T0, price=10.0)
+        _fill(st, "SPY", "filled", 13, 767.24)
+    client = _client(tmp_path)
+    rows = {r["symbol"]: r["status"] for r in client.get("/api/orders").json()}
+    assert rows == {"SPY": "filled", "QQQ": None}
+    table = client.get("/partials/orders").text
+    assert "<td" in table and "filled" in table and "submitted" in table

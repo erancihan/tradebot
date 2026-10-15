@@ -49,11 +49,24 @@ def performance(repo, mode: str) -> dict:
 
 
 def _order_event(row: dict) -> dict:
-    price = row.get("price")
+    """An order with what the broker said became of it. ``slippage`` is what
+    the fill cost beyond the sizing price over the shares that filled
+    (positive = paid more on a buy, got less on a sell); None until both
+    prices are known. ``status`` None means nobody has asked the broker yet."""
+    price, fill_price = row.get("price"), row.get("fill_price")
     qty = float(row["qty"])
+    filled = row.get("filled_qty")
+    filled = None if filled is None else float(filled)
+    sign = 1.0 if row["side"] == "buy" else -1.0
+    slippage = None
+    if price is not None and fill_price is not None and filled:
+        slippage = (float(fill_price) - float(price)) * sign * filled
     return {"kind": "order", "id": row["id"], "ts": row["ts"], "symbol": row["symbol"],
             "side": row["side"], "qty": qty, "price": price,
-            "notional": qty * float(price) if price is not None else None}
+            "notional": qty * float(price) if price is not None else None,
+            "status": row.get("status"), "filled_qty": filled,
+            "fill_price": fill_price, "filled_at": row.get("filled_at"),
+            "slippage": slippage}
 
 
 def _batch_event(head: dict) -> dict:

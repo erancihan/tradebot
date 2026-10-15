@@ -100,3 +100,19 @@ def test_the_today_page_shows_holdings_under_the_account_strip(tmp_path, offline
 def test_an_empty_book_says_nothing_is_held(tmp_path, offline):
     body = _client(tmp_path, _config(tmp_path)).get("/today").text
     assert "data-empty" in body and "data-no-holdings" in body
+
+
+def test_holdings_from_the_log_count_fills_and_skip_a_cancelled_order(tmp_path, offline):
+    from tradebot.broker import OrderStatus
+
+    _seed_log(tmp_path)                          # paper: SPY +6, QQQ flat
+    with Storage(tmp_path / "t.db") as st:
+        st.record_order(Order(symbol="SPY", qty=10, side=Side.BUY), "part", "paper")
+        st.record_order(Order(symbol="QQQ", qty=3, side=Side.BUY), "gone", "paper")
+        ids = {r[1]: r[0] for r in st._conn.execute(
+            "SELECT id, broker_order_id FROM orders WHERE broker_order_id IS NOT NULL")}
+        st.set_order_fill(ids["part"], OrderStatus("partially_filled", 4.0, 1.0, None))
+        st.set_order_fill(ids["gone"], OrderStatus("canceled", 0.0, None, None))
+    _seed_cache(tmp_path)
+    data = _client(tmp_path, _config(tmp_path)).get("/api/holdings").json()
+    assert {r["symbol"]: r["qty"] for r in data["rows"]} == {"SPY": 10.0}
