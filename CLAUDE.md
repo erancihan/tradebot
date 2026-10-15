@@ -75,16 +75,13 @@ config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])  deploy
 
 ## Invariants
 
-- **Paper by default.** Live trading needs `mode: live` and the env var
-  `TRADEBOT_LIVE_CONFIRM=I_UNDERSTAND` (`Settings.require_live_ack`). Never
-  weaken this gate or default anything to live. The web never sets `mode`.
-- **No look-ahead.** Targets shift one bar: decide on `t`, fill on `t+1`. The
-  arena feeds a growing window. The allocator at fill bar `t+1` sees bars
-  `<= t` only. Selector membership is computed over the full frame and shifted
-  one bar. The sizing mark uses the fill bar's open (previous close as
-  fallback), never the close of the bar being filled. Both loops import the one
-  `_sizing_marks` helper. This choice was pre-registered: open over previous
-  close, because the open is the actual fill price.
+- **Paper by default.** Live trading needs `mode: live` and the env var `TRADEBOT_LIVE_CONFIRM=I_UNDERSTAND`
+  (`Settings.require_live_ack`). Never weaken this gate or default anything to live. The web never sets `mode`.
+- **No look-ahead.** Targets shift one bar: decide on `t`, fill on `t+1`. The arena feeds a growing
+  window. The allocator at fill bar `t+1` sees bars `<= t` only. Selector membership is computed over
+  the full frame and shifted one bar. The sizing mark uses the fill bar's open (previous close as
+  fallback), never the close of the bar being filled. Both loops import the one `_sizing_marks` helper.
+  This choice was pre-registered: open over previous close, because the open is the actual fill price.
 - **Every shift has an absolute guard.** A lockstep test cannot catch an error
   made the same way in both loops. Each shift also has a single-engine test,
   for example `test_sizing_never_sees_the_fill_bars_close` and
@@ -232,11 +229,13 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   phantom exit each pass). Streaming only speeds bar arrival; the `Engine` polls.
 - **A notifier never breaks a trade:** sends are wrapped, remote notifiers swallow errors. `deliver() -> bool` is only for the test-alert button ("not delivered").
 - **A pending batch is re-sized or expired, never executed late:** a pass proposing the same
-  `(symbol, action)` set refreshes it in place (sizing, prices, `created_at`; rejected lines stay
-  rejected; same batch id, so the push's link still works). A changed proposal, an approval older
-  than one `poll_seconds`, a halt, and switching off expire it. One push per batch, plus a reminder
-  every `links.ttl_seconds` (max(2 x poll, 30 min), also the link TTL) or at once when a refresh grows
-  a line's notional past `GROWTH_TOLERANCE` (10%) of what the push said (`announced_*` state).
+  `(symbol, action)` set refreshes it in place (sizing, prices, holds, `created_at`, so History and
+  Today show its latest refresh time; same batch id, so the push's link still works). A rejection,
+  even Skip of every line, holds until the proposal changes or the session day ends (`waiting_batch`).
+  A changed proposal, an approval older than one `poll_seconds`, a failed pass and a broker-closed
+  pass, a halt, and switching off expire it. One push per batch and process (a restart pushes again:
+  the link key may be new), plus a reminder every `links.ttl_seconds` (max(2 x poll, 30 min), also the
+  link TTL) or at once when a refresh grows a line's notional past `GROWTH_TOLERANCE` (10%) of what the push said (`announced_*` state).
 - **Signed batch links** (`autopilot/links.py`; buttons when `safe_public_url(notify.public_url)`)
   are paper-only (other pushes get just "Open") and account-bound (`account:batch:verb:exp`); they act
   on that account's pending lines under the lock (`Autopilot.act_on_batch`; foreign batch = 409). Key

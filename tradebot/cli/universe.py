@@ -17,10 +17,14 @@ def register(sub: argparse._SubParsersAction) -> None:
 
 def cmd_universe(args: argparse.Namespace) -> int:
     """Resolve and print the screened candidate universe (needs Alpaca creds)."""
-    from .common import _load_settings
+    from .common import _load_settings_from
 
-    settings = _load_settings(args, "universe")
+    settings, source = _load_settings_from(args, "universe")
     uni = settings.build_universe()
+    if uni is None and source is None:
+        print("No config file found: create config.yaml (see config.example.yaml) "
+              "with a `universe:` block, or pass --config PATH.", file=sys.stderr)
+        return 2
     if uni is None:
         print("No `universe:` block in the config — the static `symbols` list "
               "is the candidate pool. See config.example.yaml.", file=sys.stderr)

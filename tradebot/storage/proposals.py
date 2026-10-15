@@ -58,10 +58,13 @@ class ProposalsMixin:
         return batch_id
 
     def latest_proposal(self, mode: str | None = None) -> dict | None:
-        """The newest batch (optionally for one mode) with its lines, or None."""
+        """The newest batch (optionally for one mode) with its lines, or None.
+        Newest by time, not id: a carried batch keeps its id but takes the
+        latest pass's time, so it outranks a Today refresh made before it."""
         where, args = ("WHERE mode = ?", (mode,)) if mode else ("", ())
         head = self._conn.execute(
-            f"SELECT * FROM proposal_batches {where} ORDER BY id DESC LIMIT 1", args,
+            f"SELECT * FROM proposal_batches {where}"
+            " ORDER BY created_at DESC, id DESC LIMIT 1", args,
         ).fetchone()
         if head is None:
             return None
@@ -80,6 +83,18 @@ class ProposalsMixin:
             (mode,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def waiting_batch(self, mode: str) -> dict | None:
+        """The account's newest approve-first batch (``id``, ``created_at``)
+        while it still waits: a line of it is pending or rejected. None when
+        there is none, or when a newer batch has superseded it."""
+        row = self._conn.execute(
+            "SELECT b.id, b.created_at FROM proposal_batches b WHERE b.id ="
+            " (SELECT MAX(batch_id) FROM proposals WHERE mode = ? AND status != 'suggested')"
+            " AND EXISTS (SELECT 1 FROM proposals p WHERE p.batch_id = b.id"
+            " AND p.status IN ('pending', 'rejected'))", (mode,),
+        ).fetchone()
+        return None if row is None else dict(row)
 
     def batch_mode(self, batch_id: int) -> str | None:
         """The account a batch was recorded under, or None for no such batch."""
@@ -125,7 +140,8 @@ class ProposalsMixin:
     def refresh_pending_batch(self, batch_id: int, proposal, mode: str) -> None:
         """Re-size a carried-over batch in place from a newer, same-shaped pass.
 
-        Each still-pending line takes the new line of its ``(symbol, action)``:
+        Each still-pending line, and each hold kept for the record
+        (``suggested``), takes the new line of its ``(symbol, action)``:
         sizing, price, reason and ``created_at`` (the staleness clock). Lines
         in any other status (a rejection) are left alone; the header takes the
         new equity, cash, provenance and time. The batch id never changes, so
@@ -141,10 +157,9 @@ class ProposalsMixin:
         self._conn.executemany(
             "UPDATE proposals SET created_at = ?, "
             + ", ".join(f"{c} = ?" for c in _SIZING_COLUMNS)
-            + " WHERE batch_id = ? AND mode = ? AND status = 'pending'"
+            + " WHERE batch_id = ? AND mode = ? AND status IN ('pending', 'suggested')"
             " AND symbol = ? AND action = ?",
             [(created, *(getattr(line, c) for c in _SIZING_COLUMNS), int(batch_id), mode,
-              line.symbol, line.action)
-             for line in proposal.lines if line.order_qty and not line.skipped],
+              line.symbol, line.action) for line in proposal.lines],
         )
         self._conn.commit()

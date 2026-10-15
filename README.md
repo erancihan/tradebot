@@ -115,8 +115,8 @@ Like any watchlist edit, it stops a running autopilot. The last run survives a r
   the Today proposal and lists its trades under **Waiting for approval**. Tap
   **Approve** or **Reject** per trade, or **Approve all**. While the passes
   keep proposing the same trades, the batch stays: each pass re-sizes it at its
-  own prices, and a rejected trade stays rejected. A pass that proposes
-  different trades replaces it. An approval more than one poll interval after
+  own prices, and a rejected trade stays rejected until the proposal changes
+  or the trading day ends. A pass that proposes different trades replaces it. An approval more than one poll interval after
   the last pass expires the batch. It never executes late. The phone gets one
   push per batch, then a reminder every 2 x `poll_seconds` (at least 30 minutes),
   or sooner when a re-sized line grows more than 10% past what the push said.

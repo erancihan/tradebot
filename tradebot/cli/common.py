@@ -69,9 +69,15 @@ def _format_standings(snap) -> str:
 
 
 def _load_settings(args, command: str):
-    """The command's settings, resolved as ``tradebot-web`` does, and one line naming the file."""
+    """The command's settings, resolved as ``tradebot-web`` does."""
+    return _load_settings_from(args, command)[0]
+
+
+def _load_settings_from(args, command: str):
+    """``(settings, source)``, and one line on stderr naming the file (stdout
+    stays the command's own output, so ``tradebot universe`` pipes cleanly)."""
     from ..config import resolve_settings
 
     settings, source = resolve_settings(getattr(args, "config", None))
-    print(f"tradebot {command}: config={source or 'defaults'}")
-    return settings
+    print(f"tradebot {command}: config={source or 'defaults'}", file=sys.stderr)
+    return settings, source
