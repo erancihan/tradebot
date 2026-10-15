@@ -9,12 +9,11 @@ sentence for the page.
 
 from __future__ import annotations
 
-import re
 from typing import Any
-from urllib.parse import urlsplit
 
 from ...config import Settings
 from ...data.alpaca_data import _TIMEFRAME_ALIASES
+from ...notify_actions import safe_public_url
 from . import symbols_service
 
 
@@ -83,22 +82,8 @@ def _check_numbers(settings: Settings) -> None:
         raise InvalidSettings("autopilot.brief_minutes_before_open must be 0 to 720 minutes")
 
 
-#: Characters ntfy's Actions header would split on, plus anything non-ASCII.
-_UNSAFE_URL = re.compile(r"[\s\"',;]|[^\x21-\x7e]")
-
-
 def _check_public_url(url: str | None) -> None:
     """An http(s) address with a host, safe to put in an ntfy Actions header."""
-    if url is None:
-        return
-    reason = "notify.public_url must be an http(s) address, e.g. http://192.168.1.20:8000"
-    if not isinstance(url, str) or _UNSAFE_URL.search(url):
-        raise InvalidSettings(reason)
-    try:
-        parts = urlsplit(url)
-        parts.port                      # raises on a malformed port
-    except ValueError as exc:
-        raise InvalidSettings(reason) from exc
-    if parts.scheme not in ("http", "https") or not parts.hostname \
-            or parts.query or parts.fragment or parts.username:
-        raise InvalidSettings(reason)
+    if url is not None and safe_public_url(url) is None:
+        raise InvalidSettings(
+            "notify.public_url must be an http(s) address, e.g. http://192.168.1.20:8000")
