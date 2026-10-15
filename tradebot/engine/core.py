@@ -28,7 +28,7 @@ from ..notify import LogNotifier
 from ..risk import RiskManager
 from ..storage import Storage
 from ..strategies.base import Strategy
-from . import orders, pending, session, signals
+from . import fills, orders, pending, session, signals
 from .orders import RebalanceAction
 from .pending import PassOutcome
 
@@ -177,6 +177,8 @@ class Engine:
                 actions.append(orders.submit_line(self, line, now=now))
             except Exception:  # one bad symbol shouldn't kill the whole pass
                 log.exception("Rebalance failed for %s", line.symbol)
+        if any(a.submitted_id for a in actions):   # usually filled at once: one look
+            fills.reconcile_quietly(self, now=now)
         return actions
 
     def run_forever(self, max_iterations: int | None = None) -> None:
