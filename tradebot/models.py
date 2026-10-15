@@ -134,15 +134,26 @@ class Position:
 
 @dataclass
 class Trade:
-    """A realised round-trip leg (a reduction/close of a position)."""
+    """A realised round-trip leg (a reduction/close of a position), or, from
+    ``portfolio_pnl.round_trips``, a whole trip from open back to flat."""
 
     symbol: str
     qty: float          # absolute quantity closed
     entry_price: float
     exit_price: float
     pnl: float
-    timestamp: datetime = field(default_factory=utcnow)
+    timestamp: datetime = field(default_factory=utcnow)    # the closing fill
+    #: When the position opened and which way it pointed; None/"long" for a
+    #: backtest leg, which never records them.
+    entry_ts: datetime | None = None
+    side: str = "long"
 
     @property
     def is_win(self) -> bool:
         return self.pnl > 0
+
+    @property
+    def pnl_pct(self) -> float | None:
+        """P&L over the cost of what was closed; None for a free position."""
+        cost = abs(self.entry_price * self.qty)
+        return self.pnl / cost if cost else None
