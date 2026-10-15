@@ -51,6 +51,17 @@ class RiskConfig:
                 raise ValueError(f"{name} must be in (0, 1] when set, got {v}")
 
 
+#: The product's no-trade band (1% of equity). ``RiskConfig`` itself keeps 0 so
+#: backtests, the arena and the research record keep their numbers; the
+#: ``Settings`` a person runs default to this, as config.example.yaml says.
+PRODUCT_BAND_PCT = 0.01
+
+
+def product_risk(**overrides) -> RiskConfig:
+    """A ``RiskConfig`` with the product's band unless ``overrides`` sets one."""
+    return RiskConfig(**{"rebalance_band_pct": PRODUCT_BAND_PCT, **overrides})
+
+
 class DailyLossLimitError(RuntimeError):
     """Raised/used to signal the daily loss circuit breaker has tripped."""
 

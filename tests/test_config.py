@@ -179,3 +179,18 @@ def test_resolve_settings_refuses_an_explicit_missing_path(tmp_path, monkeypatch
     monkeypatch.chdir(tmp_path)
     with pytest.raises(FileNotFoundError):
         resolve_settings(str(tmp_path / "missing.yaml"))
+
+
+# --- the product's no-trade band -------------------------------------------------
+
+def test_the_product_band_is_one_percent_unless_the_yaml_says(tmp_path):
+    from tradebot.risk import RiskConfig
+
+    assert RiskConfig().rebalance_band_pct == 0.0           # simulations keep 0
+    assert Settings().risk.rebalance_band_pct == 0.01        # no config at all
+    assert Settings.from_dict({}).risk.rebalance_band_pct == 0.01
+    other = Settings.from_dict({"risk": {"max_position_pct": 0.2}}).risk
+    assert other.rebalance_band_pct == 0.01 and other.max_position_pct == 0.2
+    path = tmp_path / "c.yaml"
+    path.write_text("risk:\n  rebalance_band_pct: 0.0\n")
+    assert Settings.from_yaml(path).risk.rebalance_band_pct == 0.0   # explicit 0 honoured

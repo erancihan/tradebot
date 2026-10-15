@@ -20,7 +20,7 @@ from typing import Any
 import yaml
 
 from .credentials import AlpacaCredentials  # noqa: F401 - re-exported
-from .risk import RiskConfig
+from .risk import RiskConfig, product_risk
 
 LIVE_CONFIRM_ENV = "TRADEBOT_LIVE_CONFIRM"
 LIVE_CONFIRM_VALUE = "I_UNDERSTAND"
@@ -51,7 +51,8 @@ class Settings:
     #: Overlay chain (see tradebot.overlays): list of {name, params} dicts,
     #: applied to allocator weights in order. Requires an allocation scheme.
     overlays: list[dict[str, Any]] = field(default_factory=list)
-    risk: RiskConfig = field(default_factory=RiskConfig)
+    #: The product's 1% no-trade band unless the YAML sets one (``product_risk``).
+    risk: RiskConfig = field(default_factory=product_risk)
     #: Optional webhook for order/halt events (see tradebot.notify). None keeps
     #: notifications log-only.
     notify_webhook_url: str | None = None
@@ -172,7 +173,7 @@ class Settings:
             universe_name=(raw.get("universe", {}) or {}).get("source"),
             universe_params=(raw.get("universe", {}) or {}).get("params", {}) or {},
             overlays=list(portfolio.get("overlays", []) or []),
-            risk=RiskConfig(**risk_raw),
+            risk=product_risk(**risk_raw),
             notify_webhook_url=(raw.get("notify", {}) or {}).get("webhook_url"),
             notify_ntfy_topic=(raw.get("notify", {}) or {}).get("ntfy_topic"),
             notify_ntfy_server=(raw.get("notify", {}) or {}).get("ntfy_server"),

@@ -439,3 +439,15 @@ def test_today_links_are_thumb_sized_and_footnotes_readable(tmp_path):
     assert 'href="/settings" class="inline-flex min-h-[40px]' in card
     assert 'class="flex min-h-[44px] items-center text-sm text-emerald-400' in body
     assert '<p class="text-xs text-slate-600"' not in body
+
+
+def test_the_no_trade_band_defaults_to_one_percent_and_round_trips(tmp_path):
+    path = _config(tmp_path)                                  # no risk block at all
+    client = _client(tmp_path, path)
+    doc = _doc(client)
+    assert doc["risk"]["rebalance_band_pct"] == 0.01
+    doc["risk"]["rebalance_band_pct"] = 0.0                   # 0 disables the band
+    assert _post(client, doc).status_code == 200
+    assert yaml.safe_load(open(path))["risk"]["rebalance_band_pct"] == 0.0
+    assert _doc(client)["risk"]["rebalance_band_pct"] == 0.0
+    assert client.app.state.settings.risk.rebalance_band_pct == 0.0
