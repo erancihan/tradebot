@@ -1,5 +1,6 @@
-{#- Trades waiting for approval (approve mode). A batch expires when the next
-    pass replaces it, so these are only ever one poll interval old. -#}
+{#- Trades waiting for approval (approve mode). The next pass re-sizes the
+    batch when it proposes the same trades and replaces it when not, so these
+    are only ever one poll interval old. -#}
 {% set pending = autopilot.pending %}
 <div class="space-y-2" data-pending>
   <div class="flex items-center justify-between">

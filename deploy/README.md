@@ -43,8 +43,15 @@ journalctl -u tradebot-web -f                        # the startup line is here
 
 `/etc/tradebot/env` holds `ALPACA_API_KEY=...`, `ALPACA_API_SECRET=...` and
 `TRADEBOT_WEB_TOKEN=...` (paper keys; the token is what the phone signs in
-with). `/etc/tradebot` stays writable because the Settings page saves the
-config there. The rest of the file system is read-only to the service.
+with). `--check` from your shell does not read that file, so its line reports
+the token and keys of your shell, not the service's. `/etc/tradebot` stays
+writable because the Settings page saves the config there. The rest of the
+file system is read-only to the service.
+
+The service's database is `--trading-db`; `tradebot-web` ignores the config's
+`db_path`. If you also run `tradebot run` on this machine, set
+`db_path: /var/lib/tradebot/tradebot.db` in `/etc/tradebot/config.yaml` so both
+share the watchlist and the parked trades.
 
 ## macOS (launchd)
 

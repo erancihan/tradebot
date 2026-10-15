@@ -128,17 +128,18 @@ Like any watchlist edit, it stops a running autopilot. The last run survives a r
   **Approve** or **Reject** per trade, or **Approve all**. While the passes
   keep proposing the same trades, the batch stays: each pass re-sizes it at its
   own prices, and a rejected trade stays rejected until the proposal changes
-  or the trading day ends. A pass that proposes different trades replaces it. An approval more than one poll interval after
-  the last pass expires the batch. It never executes late. The phone gets one
-  push per batch, then a reminder every 2 x `poll_seconds` (at least 30 minutes),
-  or sooner when a re-sized line grows more than 10% past what the push said.
+  or the trading day ends. A pass that proposes different trades replaces it.
+  An approval more than one poll interval after the last pass expires the
+  batch: it never executes late. The phone gets one push per batch, then a
+  reminder every 2 x `poll_seconds` (at least 30 minutes), or sooner when a
+  re-sized line grows more than 10% past what the push said.
 - **Automatic.** Every pass submits its trades.
 
 The status card shows the mode, the loop, the account, the last and next pass,
 the pending count and the last error. If the daily-loss limit
-(`risk.max_daily_loss_pct`) trips, the engine closes every open position,
-and the autopilot switches itself **off**, shows `daily loss halt` and
-notifies you. The limit is measured per exchange session day, so a plain
+(`risk.max_daily_loss_pct`) trips, the engine closes every open stock
+position (crypto and options are left alone), and the autopilot switches
+itself **off**, shows `daily loss halt` and notifies you. The limit is measured per exchange session day, so a plain
 `tradebot run` trades again at the next session.
 
 With keys the autopilot trades the **paper** account. Without them it runs a
@@ -204,17 +205,17 @@ pending batch then carries three buttons: **Approve all** submits that
 batch's pending trades, **Skip** rejects them, **Open** opens Autopilot. The
 server must be reachable from the phone: the same setup as
 [Reach it over the network](#8-reach-it-over-the-network), including
-`--allow-host` for that host. Approve and Skip are signed links, each good for
-one batch and one action, for twice the poll interval (at least 30 minutes).
-They work without the login cookie. The signing key comes from
-`TRADEBOT_WEB_TOKEN`; without a token it is random per server process, so a
-restart kills old links (the next reminder push brings fresh ones). Each link
-works once per server process: a second tap is refused (409); after a restart
-a used link can act again until it expires, on lines still pending. A tap after
-a pass replaced the batch with different trades does nothing. A link is signed for one account
-and only the **paper** account's push carries Approve and Skip: a dry-run,
-replay or live push carries just Open. A hand-edited `public_url` that is not a
-plain http(s) address gives a push without buttons and a warning in the log.
+`--allow-host` for that host. Approve and Skip are signed links for one
+batch and one action, good until the next reminder (twice the poll interval,
+at least 30 minutes), and they work without the login cookie. Only the
+**paper** account's push carries them: a dry-run, replay or live push carries
+just Open. A link acts once per server process (a second tap is refused);
+after a restart a used link can act again until it expires, on lines still
+pending. A tap after a pass replaced the batch with different trades does
+nothing. The signing key comes from `TRADEBOT_WEB_TOKEN`; without a token it
+is random per server process, so a restart kills old links and the next push
+brings fresh ones. A hand-edited `public_url` that is not a plain http(s)
+address gives a push without buttons and a warning in the log.
 
 **With `public_url` set, the ntfy topic itself grants approval** of the bot's
 own pending paper trades: anyone who can read the topic sees the links. Use a
@@ -262,7 +263,8 @@ tradebot-web --host 0.0.0.0 --allow-host myserver.tail1234.ts.net
 Set **Public URL** on Settings to `http://myserver.tail1234.ts.net:8000`. The
 Approve and Skip buttons in a push then open only for a phone on the tailnet.
 `tailscale serve 8000` adds HTTPS with a certificate Tailscale manages; the
-public URL and `--allow-host` then use the `https://` name without a port.
+public URL then becomes `https://myserver.tail1234.ts.net` (no port), and
+`--allow-host` keeps the bare name.
 
 ### 9. Keep it running
 
@@ -285,7 +287,7 @@ on: the first pass after the restart re-sizes them if it proposes the same
 trades, and replaces them if not.
 A dry-run's virtual account starts over, while the paper account lives at
 Alpaca. Approve links in phone alerts outlive a restart only with
-`TRADEBOT_WEB_TOKEN` set (they are signed with it).
+`TRADEBOT_WEB_TOKEN` set.
 
 ### More pages (under More on a phone)
 
@@ -382,7 +384,11 @@ Install with `make install` (core), `make install-live` (adds Alpaca),
 `make install-web` (adds the web app) or `make install-all` (everything).
 `tradebot <command> --help` lists every flag. `--config PATH` defaults to
 `./config.yaml` when present, else SPY/QQQ defaults, for `tradebot` and
-`tradebot-web` alike; each command prints the file it used.
+`tradebot-web` alike (`tradebot-web` also reads `TRADEBOT_CONFIG`); each
+command prints the file it used. `tradebot` commands keep their log in the
+config's `db_path`; `tradebot-web` ignores `db_path` and uses `--trading-db`
+(`TRADEBOT_DB`, default `tradebot.db`). Point both at one file when you use
+both, so they share the watchlist and the parked trades.
 
 ### Commands
 
@@ -400,7 +406,8 @@ tradebot run                          # continuous paper loop
 tradebot status                       # broker account snapshot
 tradebot universe                     # screened universe (needs keys)
 tradebot data pull --symbols SPY QQQ --start 2024-01-01 --end 2025-01-01
-tradebot-web [--host H] [--port P] [--config F] [--allow-host H] [--token T] [--trading-db F] [--check]
+tradebot-web [--host H] [--port P] [--config F] [--allow-host H] [--token T]
+             [--trading-db F] [--arena-db F] [--season-db F] [--check]
 ```
 
 Always pass explicit `--start` and `--end` to `data pull`. The cache records
@@ -454,6 +461,7 @@ risk:
   max_gross_exposure: 1.0     # at most 100% of equity deployed
   max_daily_loss_pct: 0.03    # flatten + halt after a 3% daily drawdown
   rebalance_band_pct: 0.01    # skip drift trades under 1% of equity (the default; exits always run)
+manage_unlisted: true         # sell held names that leave the list (default; never live)
 portfolio:
   selector:
     name: momentum
@@ -525,7 +533,7 @@ risk:
   take_profit_pct: 0.15      # exit 15% above it (either one alone works)
 ```
 
-Live, these become an Alpaca bracket order (`oto` with one leg), so the broker
+On Alpaca (paper or live) these become a bracket order (`oto` with one leg), so the broker
 holds the legs while the bot is offline. A dry-run simulates them from each
 bar's high and low, pessimistically. On a bar that touches both levels the
 stop wins. A gap through the stop fills at the open. A target never fills

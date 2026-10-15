@@ -44,13 +44,13 @@ One new core concept, the proposal, feeds three flows.
 
 ## Addendum 2026-10-15: settings from the phone
 - `/settings` edits the YAML keys symbols, timeframe, poll_seconds,
-  initial_cash, strategy, portfolio, risk, notify, market and autopilot.
-  The save writes `config.yaml` atomically without comments; the example
-  file keeps the documentation.
+  initial_cash, strategy, portfolio, risk, notify, market, autopilot and
+  manage_unlisted. The save writes `config.yaml` atomically without comments;
+  the example file keeps the documentation.
 - `mode` is never editable from the web. Secrets stay in `.env`; the page
-  shows presence only. Alert destinations are masked in the view, a blank
-  value keeps the stored one, and a stored secret is never carried over to
-  a changed server or host.
+  shows presence only. Alert destinations are masked in the view. A masked or
+  omitted value keeps the stored one only while it still points at the same
+  host or ntfy server; an empty value deletes it.
 - A save stops a running autopilot loop and drops the cached runner. The
   next mode tap rebuilds it from the new file.
 - A setup card on Today lists what is missing (config, keys, bars) with the
@@ -59,50 +59,51 @@ One new core concept, the proposal, feeds three flows.
 ## Addendum 2026-10-15: compare strategies on a what-if plan
 - A comparison changes only the decision rule: every strategy runs on its
   default params with the plan's symbols, cash flows, allocator and selector.
-  Tuned params stay a single-run affair; the window and benchmark run once.
-- Meta strategies are skipped (they need a configured roster). The phone gets
-  every row but only the top five curves plus the benchmark.
+  A plan with tuned params also gets its own row, `<name> (your settings)`.
+  The window and benchmark run once.
+- Meta strategies are skipped (they need a configured roster). A strategy that
+  raises is listed with its error and the rest still run, within 120 seconds.
+  The phone gets every row but only the top five curves plus the benchmark.
 
-## Addendum 2026-10-15: approve from the phone notification
-- With `notify.public_url` set, a pending batch's ntfy push carries Approve all,
-  Skip and Open. Approve and Skip POST signed links: capability tokens scoped to
-  one batch and one verb, valid for 2 x `poll_seconds` (at least 30 minutes).
+## Addendum 2026-10-15: approve first, batches, pushes and signed links
+- A pass whose trades are the same `(symbol, action)` set as the waiting batch
+  (its pending and rejected lines) carries that batch over: the pending lines
+  and holds take the new pass's sizing, prices and time, rejected lines stay
+  rejected, and the batch id stays, so the push's links keep working. History
+  and Today show a carried batch at its latest refresh time.
+- A rejection, even Skip of every line, holds until the proposal changes or the
+  trading day ends, never longer: the same trades are not asked about again
+  that day.
+- A changed proposal, an approval older than one `poll_seconds`, a failed pass,
+  a pass the broker reports closed, a daily-loss halt, switching off and the
+  first automatic pass expire the batch. A late approval never executes.
+- Each process pushes a batch once (without `TRADEBOT_WEB_TOKEN` a restart
+  changes the link key, so the old push's buttons stop working), then again as
+  a reminder every `links.ttl_seconds(poll)` = max(2 x `poll_seconds`, 30
+  minutes). An approval means what the phone showed: when a refresh grows a
+  pending line's notional by more than 10% over the last push, the batch is
+  pushed again at once, with the new sizes.
+- With `notify.public_url` set, the paper account's push carries Approve all,
+  Skip and Open; every other push (dry-run, replay, live) carries only Open.
+  Approve and Skip POST signed links: capability tokens scoped to one account,
+  one batch and one verb, valid for `links.ttl_seconds(poll)`, the reminder
+  interval, so a push's buttons work until the next push arrives.
 - They are the only URL-borne credential in the app. That is acceptable because
-  a link can only approve or reject lines already pending in its own batch,
-  through `Autopilot.act_on_batch` (account-checked, under the lock; it calls the page's approve/reject), never changes the mode, and
-  lives its TTL or until the batch is replaced, whichever comes first. Each link acts once (a replay is a 409) and a live
-  account never gets an Approve link. The links ride through the ntfy topic,
-  so the topic grants approval: the README asks for a self-hosted or
-  access-controlled ntfy. The secret derives from `TRADEBOT_WEB_TOKEN`, else is
-  random per process.
-- Links are paper-only and account-bound.
+  a link can only approve or reject lines still pending in its own batch,
+  through `Autopilot.act_on_batch` (account-checked, under the lock; it calls
+  the page's approve and reject), and never changes the mode. Each link acts
+  once per process (a second tap is a 409; after a restart a used link acts
+  again until it expires). The secret derives from `TRADEBOT_WEB_TOKEN`, else
+  is random per process.
+- The links ride through the ntfy topic, so the topic grants approval of the
+  bot's own pending paper trades: the README asks for a self-hosted or
+  access-controlled ntfy and a long random topic.
 
 ## Addendum 2026-10-15: Discover, "what else could I buy?"
 - Discover is a suggestion of names, never a trade: it ranks unwatched, unheld
   names by 6-1 momentum over the Alpaca most-active pool (with keys) or the cache.
 - The watchlist stays the owner's decision: a name reaches suggestions or the
   autopilot only after the owner taps Add, which stops a running autopilot.
-
-## Addendum 2026-10-15: quiet re-proposals
-- In approve-first mode a pass whose trades are the same `(symbol, action)` set
-  as the waiting batch (its pending and rejected lines) carries that batch over:
-  the pending lines and holds take the new pass's sizing, prices and time, rejected
-  lines stay rejected, and the batch id stays, so the push's links keep working.
-  History and Today show a carried batch at its latest refresh time.
-- A rejection, even Skip of every line, holds until the proposal changes or the
-  trading day ends, never longer: the same trades are not asked about again that day.
-- A changed proposal, an approval older than one `poll_seconds`, a failed pass, a
-  pass the broker reports closed, a daily-loss halt and switching off expire the batch.
-- Each process pushes a carried batch once before going quiet: without
-  `TRADEBOT_WEB_TOKEN` a restart changes the link key, so the old push's buttons
-  no longer work.
-- A batch is pushed once when recorded, then again as a reminder every
-  `links.ttl_seconds(poll)` = max(2 x `poll_seconds`, 30 minutes). The same
-  number is the link lifetime, so a push's buttons work until the next push.
-- An approval means what the phone showed: when a refresh grows a pending
-  line's notional by more than 10% over the last push, the batch is pushed
-  again at once, with the new sizes. Link lifetime is a trade-off the paper-only,
-  single-use links accept; the ntfy topic itself is the credential.
 
 ## Addendum 2026-10-15: History benchmark
 - History's performance card answers "is the bot beating just holding the list?": it
@@ -121,7 +122,8 @@ One new core concept, the proposal, feeds three flows.
   the card says "through <date>". Without a `mode`, `/api/equity` rows of several accounts
   get no benchmark ("pick one account to compare").
 - The benchmark holds TODAY's active list from the start: a hindsight bias (a name added
-  later counts from day one). The card's muted line says "today's list, held from the start".
+  later counts from day one). The card's muted lines say so: "Equal-weight <symbols> since
+  <date>" and "today's list +x% · account +y% · cached closes".
 - Bars come from the cache only, never fetched, so the comparison needs no credentials;
   without cached daily bars the card names the `tradebot data pull` command instead.
 - `/api/equity` carries the daily points, the symbols, the window and the source
@@ -154,17 +156,19 @@ One new core concept, the proposal, feeds three flows.
   `unlisted` (`symbol -> (signed qty, last price or None)`) and stays pure.
 - The engine reads them from `broker.positions()` minus the list, equities only
   (`Position.asset_class`, Alpaca's; a crypto or option position is never an
-  off-list holding), and prices them with one short fetch through its own data
-  source. The Today refresh reads them
-  from the paper broker, or offline from the order log, priced at the last cached
-  close. Without a price the line is skipped ("not on your list; no price to size
+  off-list holding), and prices them with one batched short fetch through its own
+  data source, falling back to one fetch per name, so one unpriceable name never
+  unprices the rest. The Today refresh reads them from the paper broker (pulling
+  the same short window into the cache first), or offline from the order log,
+  priced at the last cached close. Without a price the line is skipped ("not on your list; no price to size
   it"), never guessed. Approve mode asks for the line like any other.
 - Removing a held name from the watchlist asks first and says the autopilot sells
   it at its next pass; an unheld name gets the plain confirmation.
 - The product's no-trade band is 1% of equity: `Settings` uses it when the YAML
   does not set `risk.rebalance_band_pct` (an explicit 0 turns it off), and Settings
-  edits it. `RiskConfig()` keeps 0, so backtests, the arena and the research
-  record keep their numbers. A banded hold says "within the 1% no-trade band".
+  edits it. A banded hold says "within the 1% no-trade band". The band is the
+  product's, not the research's: a `tradebot backtest` of a Settings file uses it,
+  while the arena, what-if and the research record keep `RiskConfig()`'s 0.
 - Simulations are unchanged: their books never hold a name outside their list.
 - Live never manages unlisted names, part of the live gate: live trades only the
   list and never sells what it did not buy (`engine/unlisted.manages_unlisted`).
@@ -175,15 +179,10 @@ One new core concept, the proposal, feeds three flows.
   when it has one, in place of the config symbols and any universe screen, and
   says so on its startup line (`symbols=watchlist(3)` or `symbols=config(2)`).
 - Only equity tickers (`models.SYMBOL_RE`) are managed: a crypto pair or option
-  in the account is ignored and logged once. A failed batched price fetch falls
-  back to one fetch per name, so one unpriceable name never unprices the rest.
-  With keys, Today pulls the same short window before reading the last close.
+  in the account is ignored and logged once.
 - Config symbols are upper-cased on load; off-list matching is upper-cased.
 - Exits and reductions submit before entries (`orders.exits_first`, automatic and
   approved alike), so a swap's sell funds its buy; the proposal keeps its order.
-- The band is the product's, not the research's: a `tradebot backtest` of a
-  Settings file uses its 1% band, while the arena, what-if and the research
-  record keep `RiskConfig()`'s 0.
 
 ## Addendum 2026-10-15: Trades
 - History answers "how did my trades do?" with a Trades card under the

@@ -12,7 +12,8 @@ mode: paper
 
 # Symbols to trade. Liquid ETFs are a sane place to start.
 # (If a `universe:` block is set below, this list is replaced at startup by
-# the screened candidates — replay/offline runs keep using this list.)
+# the screened candidates — replay/offline runs keep using this list. A
+# non-empty Today watchlist replaces both, for the web and `tradebot run`.)
 symbols:
   - SPY
   - QQQ
@@ -41,7 +42,9 @@ symbols:
 # Bar size: 1min | 5min | 15min | 1hour | 1day
 timeframe: 1day
 
-# How often the live loop rebalances, in seconds (300 = every 5 min).
+# How often `tradebot run` and the autopilot make a pass, in seconds (300 =
+# every 5 min; at least 10). Approve-first links live, and an unchanged batch
+# is pushed again, every 2 x this (at least 30 minutes).
 poll_seconds: 300
 
 # Exchange calendar the autopilot (and its morning brief) schedule against:
@@ -63,14 +66,17 @@ market: us_equities
 # mode never sells a name off the list, whatever this says.
 # manage_unlisted: true
 
-# Starting capital for backtests (paper/live read equity from the broker).
+# Starting capital for backtests, dry-runs and the offline (no-keys) account;
+# paper/live with keys read equity from the broker.
 initial_cash: 10000
 
 # Backtest cost assumptions.
 commission: 0.0       # Alpaca US equities are commission-free
 slippage_bps: 1.0     # 1 bp = 0.01% slippage per fill
 
-# Where the SQLite audit log (orders + equity snapshots) is written.
+# Where `tradebot` commands keep the SQLite log (orders, equity snapshots, the
+# watchlist `tradebot run` trades). `tradebot-web` ignores this key and uses
+# --trading-db (or TRADEBOT_DB, default tradebot.db): point both at one file.
 db_path: tradebot.db
 
 # --- Strategy -----------------------------------------------------------------
@@ -145,8 +151,8 @@ risk:
                               # (full exits always execute). The default when
                               # unset; 0 disables the band.
   # Bracket exits attached to entries, as fractions of the entry price. Both are
-  # optional; either can be set alone. LIVE-EXECUTION ONLY — the backtester does
-  # not model them, so a backtest will not show their effect. A bracket protects
+  # optional; either can be set alone. PAPER/LIVE (and dry-run) ONLY — the
+  # backtester does not model them, so a backtest will not show their effect. A bracket protects
   # BETWEEN rebalance passes: if the signal is still long after a stop fires,
   # the next pass re-enters.
   # stop_loss_pct: 0.05       # exit 5% below the entry price
@@ -154,8 +160,9 @@ risk:
 
 # --- Notifications ------------------------------------------------------------
 # Order fills, bracket exits, daily-loss halts, approval batches and the morning
-# brief always go to the log. Set a webhook to also POST them as JSON (stdlib urllib; no new dependency). Delivery
-# failures are logged and swallowed — an unreachable endpoint never halts trading.
+# brief always go to the log. Set a webhook to also POST them as JSON (stdlib
+# urllib; no new dependency). Delivery failures are logged and swallowed — an
+# unreachable endpoint never halts trading.
 # notify:
 #   webhook_url: https://hooks.example.com/tradebot
 #   ntfy_topic: tradebot-pick-a-long-random-name   # phone alerts via the ntfy app
@@ -167,5 +174,6 @@ risk:
 #   # (README "Reach it over the network"). Not a secret itself, BUT with it set
 #   # the ntfy topic grants approval of the bot's own pending paper trades: use a
 #   # self-hosted ntfy or ntfy access control, and a long random topic. Each
-#   # link works once; a live account's push never carries Approve.
+#   # link works once per server process; only the paper account's push carries
+#   # Approve and Skip (dry-run and live pushes get just Open).
 #   public_url: http://192.168.1.20:8000

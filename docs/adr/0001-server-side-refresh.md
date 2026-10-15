@@ -23,4 +23,10 @@ fetcher.
 - The invariant "the dashboard never fetches" is retired.
 
 ## Addendum 2026-10-15
-Discover also fetches with keys: the Alpaca most-actives screen, then the survivors through `BarCache`.
+- Discover also fetches with keys: one most-actives call and a ~55-day batched
+  bar request for the liquidity screen (outside the cache), then at most 20
+  survivors through `BarCache`.
+- The Today refresh also pulls a short window for each held name off the list
+  through `BarCache`, to price its closing line, and asks the paper broker what
+  became of open orders (fills). Both only with keys; a page load never does.
+- History's benchmark never fetches: it reads cached daily closes only.
