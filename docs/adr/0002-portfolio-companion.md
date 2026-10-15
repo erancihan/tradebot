@@ -41,3 +41,17 @@ One new core concept, the proposal, feeds three flows.
   `rebalance`.
 - Every result and proposal carries provenance (source, window, age).
 - The offline, credential-free path still runs every page.
+
+## Addendum 2026-10-15: settings from the phone
+- `/settings` edits the YAML keys symbols, timeframe, poll_seconds,
+  initial_cash, strategy, portfolio, risk, notify, market and autopilot.
+  The save writes `config.yaml` atomically without comments; the example
+  file keeps the documentation.
+- `mode` is never editable from the web. Secrets stay in `.env`; the page
+  shows presence only. Alert destinations are masked in the view, a blank
+  value keeps the stored one, and a stored secret is never carried over to
+  a changed server or host.
+- A save stops a running autopilot loop and drops the cached runner. The
+  next mode tap rebuilds it from the new file.
+- A setup card on Today lists what is missing (config, keys, bars) with the
+  fix for each.
