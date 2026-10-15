@@ -95,6 +95,8 @@ class UsedLinks:
 
     The push travels through the ntfy topic, so a link is replayable by
     anyone who saw it; a replay is refused instead of quietly re-running.
+    The set lives in memory, by decision: after a restart a used link can act
+    again until its ``exp``, bounded to its batch's lines still pending.
     Entries are dropped once their link has expired anyway, so the set stays
     the size of the links currently alive.
     """

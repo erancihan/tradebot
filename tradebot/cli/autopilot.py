@@ -86,7 +86,9 @@ def run_autopilot(settings, args: argparse.Namespace) -> int:
 
 
 def _linked_notifier(settings, account: str):
-    """The pending push with Approve/Skip links, signed as the web signs them.
+    """The pending push's notifier: Approve/Skip links, signed as the web
+    signs them, for the paper account only (a dry-run, replay or live push
+    carries just "Open").
 
     The links are served by ``tradebot-web`` on the same database; with
     ``TRADEBOT_WEB_TOKEN`` set in both processes they share one secret, and a
@@ -94,6 +96,8 @@ def _linked_notifier(settings, account: str):
     """
     from ..autopilot.links import env_secret, link_signer
 
+    if account != "paper":
+        return settings.build_notifier()
     return settings.build_notifier(link_signer(env_secret(), account, settings.poll_seconds))
 
 

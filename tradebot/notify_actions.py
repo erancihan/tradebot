@@ -1,10 +1,10 @@
 """What an ntfy push says, and the buttons a pending batch's push carries.
 
 ``ntfy_text`` flattens an event to lines a lock screen can show. With a
-``public_url`` and a link signer, ``actions_header`` turns a ``pending_trades``
-event into ntfy's ``Actions`` header (https://docs.ntfy.sh/publish/#action-buttons):
-"Approve all" and "Skip" POST the batch's signed links from the phone, "Open"
-opens the Autopilot page. The signer comes from ``tradebot.autopilot.links``;
+``public_url``, ``actions_header`` turns a ``pending_trades`` event into ntfy's
+``Actions`` header (https://docs.ntfy.sh/publish/#action-buttons): "Open"
+opens the Autopilot page and, for the paper account with a link signer,
+"Approve all" and "Skip" POST the batch's signed links from the phone. The signer comes from ``tradebot.autopilot.links``;
 this module never imports the web layer.
 """
 
@@ -72,12 +72,12 @@ def actions_header(event: dict, public_url: str | None,
     format splits on it otherwise. A public URL that fails ``safe_public_url``
     (a hand-edited config.yaml) gives a plain push and one warning.
 
-    A live account's push gets no Approve button: the link rides through the
-    ntfy topic, so whoever reads the topic could use it. Skip is harmless.
+    Approve and Skip are for the paper account only: a live link would ride
+    the ntfy topic to real money, and the web cannot act on a dry-run's or a
+    replay's batch. Every other push gets just "Open".
     """
     batch_id = event.get("batch_id")
-    if (event.get("type") != "pending_trades" or batch_id is None
-            or not public_url or signer is None):
+    if event.get("type") != "pending_trades" or not public_url:
         return None
     public_url = safe_public_url(public_url)
     if public_url is None:
@@ -85,10 +85,9 @@ def actions_header(event: dict, public_url: str | None,
                     "the push goes without buttons")
         return None
     actions = []
-    if event.get("mode") != "live":
-        approve = batch_link(public_url, batch_id, "approve", signer)
-        actions.append(f'http, Approve all, "{approve}", {_HTTP_OPTS}')
-    reject = batch_link(public_url, batch_id, "reject", signer)
-    actions.append(f'http, Skip, "{reject}", {_HTTP_OPTS}')
+    if signer is not None and batch_id is not None and event.get("mode") == "paper":
+        for verb, label in (("approve", "Approve all"), ("reject", "Skip")):
+            link = batch_link(public_url, batch_id, verb, signer)
+            actions.append(f'http, {label}, "{link}", {_HTTP_OPTS}')
     actions.append(f'view, Open, "{public_url}/autopilot"')
     return "; ".join(actions)

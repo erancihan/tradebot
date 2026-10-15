@@ -10,6 +10,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 
+class ForeignBatch(LookupError):
+    """A signed link named a batch recorded under another account."""
+
+
 class ApprovalsMixin:
     """Mixed into ``Autopilot``; uses its engine, storage, clock and lock."""
 
@@ -38,10 +42,14 @@ class ApprovalsMixin:
         """A signed link's command: approve or reject one batch's still-pending
         lines of this account. The lookup and the act share the lock, so a pass
         cannot replace the batch in between. A live account is never approved
-        by link (it rode through the ntfy topic)."""
+        by link (it rode through the ntfy topic); another account's batch
+        raises ``ForeignBatch`` rather than reporting 0 acted on."""
         with self._lock:
             if verb == "approve" and self.account == "live":
                 return 0
+            owner = self.storage.batch_mode(batch_id)
+            if owner is not None and owner != self.account:
+                raise ForeignBatch(f"batch {batch_id} belongs to {owner}")
             ids = [ln["id"] for ln in
                    self.storage.pending_lines_in_batch(batch_id, self.account)]
             if not ids:

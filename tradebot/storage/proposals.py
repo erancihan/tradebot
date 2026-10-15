@@ -78,6 +78,12 @@ class ProposalsMixin:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def batch_mode(self, batch_id: int) -> str | None:
+        """The account a batch was recorded under, or None for no such batch."""
+        row = self._conn.execute(
+            "SELECT mode FROM proposal_batches WHERE id = ?", (int(batch_id),)).fetchone()
+        return None if row is None else row["mode"]
+
     def pending_lines_in_batch(self, batch_id: int, mode: str) -> list[dict]:
         """One batch's lines still waiting for approval (a signed link's scope)."""
         rows = self._conn.execute(

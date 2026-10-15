@@ -48,6 +48,9 @@ def batch_link(batch_id: int, verb: str, exp: int, sig: str, request: Request):
         raise HTTPException(status_code=409, detail="this link was already used")
     try:
         done = autopilot_service.act_on_batch(request.app, batch_id, verb)
+    except autopilot_service.ForeignBatch as exc:
+        raise HTTPException(status_code=409,
+                            detail="batch belongs to another account") from exc
     except autopilot_service.AutopilotUnavailable as exc:
         state.used_links.release(batch_id, verb, sig)
         raise HTTPException(status_code=503, detail=str(exc)) from exc

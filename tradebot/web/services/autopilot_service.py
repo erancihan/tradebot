@@ -16,7 +16,7 @@ import logging
 import threading
 from datetime import datetime, timezone
 
-from ...autopilot import MODE_LABELS, Autopilot, load_state, store_mode
+from ...autopilot import MODE_LABELS, Autopilot, ForeignBatch, load_state, store_mode
 from ...config import AlpacaCredentials
 from ...storage import Storage
 from . import autopilot_build
@@ -147,5 +147,5 @@ def reject(app, line_ids: list[int]) -> dict:
 def act_on_batch(app, batch_id: int, verb: str) -> int:
     """A signed link's command, through ``Autopilot.act_on_batch`` (one lock,
     the page's submit path). The mode never changes; a batch already acted on
-    yields 0."""
+    yields 0, another account's raises ``ForeignBatch``."""
     return get(app).act_on_batch(batch_id, verb)

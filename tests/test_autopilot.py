@@ -354,6 +354,42 @@ def test_run_autopilot_headless_replay_ends_when_the_tape_does(tmp_path, capsys)
     assert "ticks=" in capsys.readouterr().out          # no cap, still terminated
 
 
+class _Pushed:
+    status = 200
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def test_a_replay_autopilot_push_has_only_the_open_button(tmp_path, capsys, monkeypatch):
+    """Links are paper-only: the web cannot act on a replay's batch, so the
+    headless replay's push carries "Open" and no Approve or Skip."""
+    pushes: list = []
+    monkeypatch.setattr("tradebot.notify.urllib.request.urlopen",
+                        lambda req, timeout=None: (pushes.append(req), _Pushed())[1])
+    cfg = _cli_config(tmp_path)
+    with open(cfg, "a") as fh:
+        fh.write("notify:\n  ntfy_topic: t0pic\n  ntfy_server: http://127.0.0.1:9\n"
+                 "  public_url: http://192.168.1.20:8000\n")
+    assert main(["run", "--config", cfg, "--replay", "--replay-periods", "80",
+                 "--autopilot", "--iterations", "2"]) == 0
+    actions = {p.get_header("Actions") for p in pushes if p.get_header("Actions")}
+    assert actions == {'view, Open, "http://192.168.1.20:8000/autopilot"'}
+
+
+def test_the_cli_arms_links_only_for_paper():
+    from tradebot.cli.autopilot import _linked_notifier
+
+    settings = Settings.from_dict({"notify": {"ntfy_topic": "t",
+                                              "public_url": "http://192.168.1.20:8000"}})
+    assert _linked_notifier(settings, "paper").notifiers[1].link_signer is not None
+    for account in ("dry_run", "live"):
+        assert _linked_notifier(settings, account).notifiers[1].link_signer is None
+
+
 def _down_then_up(path, bars=60) -> str:
     """One daily bar per day: 30 bars falling 1% each, then 30 rising 1% each."""
     import pandas as pd

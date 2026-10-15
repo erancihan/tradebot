@@ -179,14 +179,18 @@ one batch and one action, for twice the poll interval (at least 10 minutes).
 They work without the login cookie. The signing key comes from
 `TRADEBOT_WEB_TOKEN`; without a token it is random per server process, so a
 restart kills old links (the batch expires at the next pass anyway). Each link
-works once: a second tap is refused (409). A tap after the next pass replaced
-the batch does nothing. A live account's push never carries Approve.
+works once per server process: a second tap is refused (409); after a restart
+a used link can act again until it expires, on lines still pending. A tap after
+the next pass replaced the batch does nothing. A link is signed for one account
+and only the **paper** account's push carries Approve and Skip: a dry-run,
+replay or live push carries just Open. A hand-edited `public_url` that is not a
+plain http(s) address gives a push without buttons and a warning in the log.
 
 **With `public_url` set, the ntfy topic itself grants approval** of the bot's
 own pending paper trades: anyone who can read the topic sees the links. Use a
 self-hosted ntfy server or ntfy access control (an access token on the topic),
 and a long random topic name. Links from
-`tradebot run --autopilot` are served by `tradebot-web` on the same database
+`tradebot run --autopilot` on paper are served by `tradebot-web` on the same database
 and need the same `TRADEBOT_WEB_TOKEN` in both processes.
 
 ### 8. Reach it over the network
