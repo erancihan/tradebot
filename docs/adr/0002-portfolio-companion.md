@@ -192,7 +192,9 @@ One new core concept, the proposal, feeds three flows.
 - The fills are the orders with a known fill: `filled_qty > 0` and a fill
   price, whatever the status (a cancel after a partial fill counts the shares
   that filled, as positions do), oldest fill first. Commission is 0 (Alpaca).
-  Hand trades in the same account are not in the log and never count.
+  Hand trades in the same account are not in the log and never count. A bot
+  sale of a hand-bought holding (the off-list mandate) is in the log: it is
+  listed as an unmatched exit, not a trade (below).
 - Accounting is average cost per symbol (`tradebot/portfolio_pnl.py`, pure): a
   trip opens on the first fill, scales in at the average price, and each
   reducing fill realises `(exit - avg) x shares` (sign flipped for a short). The
@@ -204,5 +206,13 @@ One new core concept, the proposal, feeds three flows.
   in the summary, which covers closed trips only: closed, wins, losses, win
   rate, realised, average win and loss, best, worst, and profit factor (gross
   wins over gross losses, None without a loss). A break-even trip is neither.
-- `GET /api/history/trades?mode=` returns `{summary, trades, open, provenance}`
-  with provenance `{mode, source: "order log fills", orders}`.
+- Each order records why it was sent: `orders.intent` is `entry` when it opens
+  or grows exposure (`models.opens_exposure`, a flip too) and `exit` for a
+  reduction, an off-list close or a daily-loss flatten. `schema.migrate` adds
+  the column on open; older rows stay NULL and book as before (a NULL sell can
+  open a short: strategies can short). An `exit` fill never opens a position:
+  with no open trip in that symbol, or beyond the open quantity, the rest is an
+  unmatched exit (a hand-bought holding, or a buy older than the fill log),
+  listed under "Sold without a recorded buy" and never in the summary.
+- `GET /api/history/trades?mode=` returns `{summary, trades, open, unmatched,
+  provenance}` with provenance `{mode, source: "order log fills", orders}`.
