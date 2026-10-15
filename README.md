@@ -662,8 +662,10 @@ Open `/autopilot` (the second tab on a phone) and pick one of three modes:
 
 The status card shows the mode, whether the loop is running, the account,
 the last and next pass, the number of pending trades and the last error.
-If the daily-loss limit (`risk.max_daily_loss_pct`) trips, the autopilot
-switches itself **off**, shows `daily loss halt` and notifies you.
+If the daily-loss limit (`risk.max_daily_loss_pct`) trips, the engine closes
+every open position, and the autopilot switches itself **off**, shows `daily
+loss halt` and notifies you. The limit is measured per exchange session day,
+so a plain `tradebot run` trades again at the next session.
 
 The web autopilot trades the **paper** account when Alpaca credentials are in
 the server's environment. Without them it runs a dry-run (simulated fills)

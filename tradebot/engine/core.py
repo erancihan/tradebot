@@ -9,7 +9,8 @@ One ``rebalance()`` pass:
 Step 2 is the very function the Today page calls, so a suggestion and an
 execution cannot disagree. The same Strategy + RiskManager objects power the
 backtester, so behaviour is consistent between simulation and live. A
-daily-loss circuit breaker stops trading for the session once breached.
+daily-loss circuit breaker flattens the book and stops trading for the rest
+of the session day once breached (``engine.session``).
 """
 
 from __future__ import annotations
@@ -22,11 +23,12 @@ from .. import advisor
 from ..advisor import Proposal
 from ..broker.base import Broker
 from ..config import Settings
+from ..models import utcnow
 from ..notify import LogNotifier
 from ..risk import RiskManager
 from ..storage import Storage
 from ..strategies.base import Strategy
-from . import orders, pending, signals
+from . import orders, pending, session, signals
 from .orders import RebalanceAction
 from .pending import PassOutcome
 
@@ -67,6 +69,8 @@ class Engine:
         # Label used for logs and storage tagging (e.g. "dry_run").
         self._mode_label = mode_label or settings.mode
         self._session_start_equity: float | None = None
+        self._session_day = None             # exchange-local date of the anchor
+        self._halted_day = None              # the day the breaker flattened the book
 
     @property
     def mode(self) -> str:
@@ -94,10 +98,11 @@ class Engine:
                 needed = max(needed, component.required_history)
         return max(needed * 2, 60)
 
-    def rebalance(self, submit: bool = True) -> list[RebalanceAction]:
+    def rebalance(self, submit: bool = True,
+                  now: datetime | None = None) -> list[RebalanceAction]:
         """One full pass; returns the submitted actions (none when ``submit``
         is False: the proposal is parked as pending instead, see ``step``)."""
-        return self.step(submit=submit).actions
+        return self.step(submit=submit, now=now).actions
 
     def step(self, submit: bool = True, now: datetime | None = None) -> PassOutcome:
         """One full pass: book bracket exits, read the account, build the
@@ -111,12 +116,13 @@ class Engine:
         # to be booked first, or sizing would be done against stale equity.
         self._check_brackets()
 
+        day = session.roll_session(self, now or utcnow())
         acct = self.broker.account()
         if self._session_start_equity is None:
             self._session_start_equity = acct.equity
         if self.storage:
             self.storage.record_equity(acct.equity, acct.cash, self.mode)
-        if self._halt_on_daily_loss(acct.equity):
+        if session.halt_on_daily_loss(self, acct.equity, day):
             return PassOutcome(halted=True)
 
         proposal = self.propose(acct.equity, acct.cash, now=now)
@@ -134,8 +140,10 @@ class Engine:
 
     def reset_session(self, start_equity: float | None = None) -> None:
         """Start a daily-loss session: from a persisted same-day anchor, or
-        (``None``) at the equity the next pass sees."""
+        (``None``) at the equity the next pass sees. The next pass adopts its
+        own session day, so a restored anchor is not rolled away."""
         self._session_start_equity = start_equity
+        self._session_day = self._halted_day = None
 
     @property
     def session_start_equity(self) -> float | None:
@@ -155,22 +163,6 @@ class Engine:
             selector_frames=self._selector_frames(frames) if self.selector else None,
             now=now,
         )
-
-    def _halt_on_daily_loss(self, equity: float) -> bool:
-        """Circuit breaker: stop opening risk if today's drawdown is too deep."""
-        if not self.risk.daily_loss_tripped(self._session_start_equity, equity):
-            return False
-        log.warning(
-            "Daily loss limit hit (start=%.2f now=%.2f). Flattening and halting.",
-            self._session_start_equity, equity,
-        )
-        self.broker.cancel_all()
-        self._notify({
-            "type": "halt", "reason": "daily_loss",
-            "start_equity": self._session_start_equity, "equity": equity,
-            "limit_pct": self.risk.config.max_daily_loss_pct,
-        })
-        return True
 
     def _submit_all(self, proposal: Proposal) -> list[RebalanceAction]:
         actions: list[RebalanceAction] = []

@@ -125,8 +125,7 @@ config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])
   aim for 150 (`tests/test_code_shape.py`). Test modules have no module limit.
 - Split along section comments, one concern per file. Keep package re-exports
   so imports in `tests/` and `algos/` stay unchanged.
-- Type hints throughout, `from __future__ import annotations` in every module.
-  Comments explain why, not what.
+- Type hints, `from __future__ import annotations` everywhere; comments explain why.
 
 ## Dev commands
 
@@ -160,14 +159,13 @@ build on every push and PR, with no credentials.
   would trade (`test_propose_matches_engine_rebalance_deltas`).
 - **Bad prices are flat.** NaN, inf or non-positive prices never reach sizing.
   All three loops skip the symbol (`math.floor(NaN)` raises).
-- **Allocator history:** both loops pass `aligned.iloc[:i]` at fill bar `i`.
+- **Allocator history:** `aligned.iloc[:i]` at fill bar `i`. **ReplayData** advances once per step.
 - **Selectors are prefix-stable** (verdict at `t` from bars `<= t` and earlier
   verdicts). A ranked walk starts from an empty set, so a truncated frame
   changes the verdict: the engine recomputes from full stored history
   (`Engine._selector_frames`), and `record_bars` upserts forming bars.
 - **Composite selectors mask their own warmup** (`required_history - 1` rows).
   `exit_rank`: a held name stays droppable in any pool larger than `top_k`.
-- **ReplayData cursor** advances once per loop step, never inside `history()`.
 - **Cache coverage is a manifest** (`*.coverage.json`, gaps included), and it
   records the requested bounds: give `tradebot data pull` explicit `--start`/`--end`.
   Ranges are half-open (`_slice` drops the end date's 04:00/05:00 UTC session).
@@ -237,8 +235,10 @@ build on every push and PR, with no credentials.
   errors. `deliver() -> bool` is only for the test-alert button ("not delivered").
 - **A pending batch expires, never executes late:** the next pass, an approval
   older than one `poll_seconds`, and switching off all expire it.
-- **A daily-loss halt turns the autopilot off.** The anchor is persisted per
-  scope (`autopilot/session.py`), so a restart or Settings save never re-anchors mid-day.
+- **The daily-loss breaker is per session day and flattens** (`engine/session.py`):
+  each pass rolls the anchor when `now`'s exchange date changes (a replay's `now` is
+  its newest bar); a breach closes every position and stays out that day. The
+  autopilot also turns off; its anchor persists per scope (`autopilot/session.py`).
 - **One lock, one connection:** the loop thread and web taps share the engine
   and SQLite (`check_same_thread=False`, WAL, `busy_timeout=5000`) under the
   Autopilot `RLock`. A line is `submitted` once the broker accepts it; later
