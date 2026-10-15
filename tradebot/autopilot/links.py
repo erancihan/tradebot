@@ -1,7 +1,8 @@
 """Signed approve/skip links for one pending batch: the phone push's buttons.
 
-A link is a capability token: ``HMAC-SHA256(secret, "{batch}:{verb}:{exp}")``
-grants exactly one verb on exactly one batch until ``exp`` (unix seconds). It
+A link is a capability token: ``HMAC-SHA256(secret,
+"{account}:{batch}:{verb}:{exp}")`` grants exactly one verb on exactly one
+batch of one account (the engine's mode label) until ``exp`` (unix seconds). It
 is the only credential the link endpoints check, so it is short-lived: twice
 the poll interval (a pending batch expires at the next pass anyway), never
 less than ten minutes so a slow tap still lands.
@@ -17,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import re
 import secrets
 import threading
 import time
@@ -26,6 +28,9 @@ TOKEN_ENV = "TRADEBOT_WEB_TOKEN"
 VERBS = ("approve", "reject")
 #: Never shorter than this, whatever the poll interval.
 MIN_TTL_SECONDS = 600
+#: What ``signature`` emits; anything else is refused before comparing
+#: (``compare_digest`` raises on a non-ASCII str).
+_SIG = re.compile(r"[0-9a-f]{64}", re.ASCII)
 
 #: Created once per process, at import: a link signed by this process is
 #: verifiable only by this process.
@@ -44,29 +49,33 @@ def env_secret() -> bytes:
     return link_secret(os.getenv(TOKEN_ENV) or None)
 
 
-def signature(secret: bytes, batch_id: int, verb: str, exp: int) -> str:
-    msg = f"{int(batch_id)}:{verb}:{int(exp)}".encode()
+def signature(secret: bytes, account: str, batch_id: int, verb: str, exp: int) -> str:
+    msg = f"{account}:{int(batch_id)}:{verb}:{int(exp)}".encode()
     return hmac.new(secret, msg, hashlib.sha256).hexdigest()
 
 
-def verify(secret: bytes, batch_id: int, verb: str, exp: int, sig: str,
+def verify(secret: bytes, account: str, batch_id: int, verb: str, exp: int, sig: str,
            now: float | None = None) -> bool:
-    """True only for an unexpired link signed for this batch and this verb."""
+    """True only for an unexpired link signed for this account, batch and verb."""
     if verb not in VERBS:
         return False
     if (time.time() if now is None else now) > int(exp):
         return False
-    return hmac.compare_digest(signature(secret, batch_id, verb, exp), str(sig))
+    if not isinstance(sig, str) or _SIG.fullmatch(sig) is None:
+        return False
+    return hmac.compare_digest(signature(secret, account, batch_id, verb, exp).encode(), sig.encode())
 
 
 def ttl_seconds(poll_seconds: float) -> int:
     return max(int(2 * poll_seconds), MIN_TTL_SECONDS)
 
 
-def link_signer(secret: bytes, poll_seconds: float,
+def link_signer(secret: bytes, account: str, poll_seconds: float,
                 clock: Callable[[], float] = time.time) -> Callable[[int, str], str]:
     """``signer(batch_id, verb) -> "exp=...&sig=..."``, the query a link carries.
 
+    ``account`` is the signing engine's mode label (``Autopilot.account``);
+    the endpoint verifies with the web pilot's, so only that account's links act.
     Called when the batch is announced, right after the pass that made it, so
     "now + ttl" is the batch's creation plus the ttl.
     """
@@ -76,7 +85,7 @@ def link_signer(secret: bytes, poll_seconds: float,
         if verb not in VERBS:
             raise ValueError(f"verb must be one of {VERBS}, got {verb!r}")
         exp = int(clock()) + ttl
-        return f"exp={exp}&sig={signature(secret, batch_id, verb, exp)}"
+        return f"exp={exp}&sig={signature(secret, account, batch_id, verb, exp)}"
 
     return sign
 
@@ -86,6 +95,8 @@ class UsedLinks:
 
     The push travels through the ntfy topic, so a link is replayable by
     anyone who saw it; a replay is refused instead of quietly re-running.
+    The set lives in memory, by decision: after a restart a used link can act
+    again until its ``exp``, bounded to its batch's lines still pending.
     Entries are dropped once their link has expired anyway, so the set stays
     the size of the links currently alive.
     """

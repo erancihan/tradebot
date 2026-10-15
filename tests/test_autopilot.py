@@ -52,7 +52,7 @@ class Recorder:
 
 
 def build(tmp_path, *, now=OPEN_NOW, poll=300, risk: RiskConfig | None = None,
-          storage: Storage | None = None):
+          storage: Storage | None = None, label: str = "dry_run"):
     frames = {s: synthetic_ohlcv(periods=80, drift=0.001, volatility=0.01, seed=i)
               for i, s in enumerate(SYMBOLS)}
     data = ReplayData(frames, warmup=60)
@@ -62,7 +62,7 @@ def build(tmp_path, *, now=OPEN_NOW, poll=300, risk: RiskConfig | None = None,
     storage = storage or Storage(tmp_path / "t.db")
     notifier = Recorder()
     engine = Engine(settings, broker, data, build_strategy("buy_and_hold", {}),
-                    RiskManager(risk), storage, mode_label="dry_run",
+                    RiskManager(risk), storage, mode_label=label,
                     enforce_live_ack=False, notifier=notifier)
     clock = FakeClock(now)
     pilot = Autopilot(engine, storage, poll_seconds=poll, clock=clock, sleep=clock.sleep)
@@ -352,6 +352,71 @@ def test_run_autopilot_headless_replay_ends_when_the_tape_does(tmp_path, capsys)
                "--autopilot", "--mode", "auto"])
     assert rc == 0
     assert "ticks=" in capsys.readouterr().out          # no cap, still terminated
+
+
+class _Pushed:
+    status = 200
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def test_a_replay_autopilot_push_has_only_the_open_button(tmp_path, capsys, monkeypatch):
+    """Links are paper-only: the web cannot act on a replay's batch, so the
+    headless replay's push carries "Open" and no Approve or Skip."""
+    pushes: list = []
+    monkeypatch.setattr("tradebot.notify.urllib.request.urlopen",
+                        lambda req, timeout=None: (pushes.append(req), _Pushed())[1])
+    cfg = _cli_config(tmp_path)
+    with open(cfg, "a") as fh:
+        fh.write("notify:\n  ntfy_topic: t0pic\n  ntfy_server: http://127.0.0.1:9\n"
+                 "  public_url: http://192.168.1.20:8000\n")
+    assert main(["run", "--config", cfg, "--replay", "--replay-periods", "80",
+                 "--autopilot", "--iterations", "2"]) == 0
+    actions = {p.get_header("Actions") for p in pushes if p.get_header("Actions")}
+    assert actions == {'view, Open, "http://192.168.1.20:8000/autopilot"'}
+
+
+def test_a_live_pilots_pending_push_carries_its_mode_and_no_approve(tmp_path, monkeypatch):
+    """End to end from ``Autopilot._notify``: the header's paper-only check
+    reads the event's ``mode``, so the runner must stamp it. Armed with a
+    signer on purpose: the event alone must keep Approve off a live push."""
+    from tradebot.autopilot.links import link_secret, link_signer
+    from tradebot.notify import NtfyNotifier
+
+    pushes: list = []
+    monkeypatch.setattr("tradebot.notify.urllib.request.urlopen",
+                        lambda req, timeout=None: (pushes.append(req), _Pushed())[1])
+    events: list = []
+
+    class Seen(NtfyNotifier):
+        def send(self, event: dict) -> None:
+            events.append(event)
+            super().send(event)
+
+    pilot, _, _, _ = build(tmp_path, label="live")
+    pilot.notifier = Seen("t0pic", server="http://127.0.0.1:9",
+                          public_url="http://192.168.1.20:8000",
+                          link_signer=link_signer(link_secret("t"), "live", 300))
+    pilot.set_mode("approve")
+    pilot.tick()
+    (event,) = [e for e in events if e["type"] == "pending_trades"]
+    assert event["mode"] == "live"
+    (push,) = [p for p in pushes if p.get_header("Title") == "tradebot: pending_trades"]
+    assert push.get_header("Actions") == 'view, Open, "http://192.168.1.20:8000/autopilot"'
+
+
+def test_the_cli_arms_links_only_for_paper():
+    from tradebot.cli.autopilot import _linked_notifier
+
+    settings = Settings.from_dict({"notify": {"ntfy_topic": "t",
+                                              "public_url": "http://192.168.1.20:8000"}})
+    assert _linked_notifier(settings, "paper").notifiers[1].link_signer is not None
+    for account in ("dry_run", "live"):
+        assert _linked_notifier(settings, account).notifiers[1].link_signer is None
 
 
 def _down_then_up(path, bars=60) -> str:

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, HTTPException, Request
 
 from ....autopilot.links import verify
 from ...schemas import AutopilotCommand, AutopilotView
 from ...services import autopilot_service
+
+log = logging.getLogger("tradebot.web.autopilot")
 
 router = APIRouter()
 
@@ -41,13 +45,20 @@ def batch_link(batch_id: int, verb: str, exp: int, sig: str, request: Request):
     these paths skip the cookie gate. Each link acts once: a replay is a 409."""
     state = request.app.state
     if verb not in ("approve", "reject") or not verify(
-            state.link_secret, batch_id, verb, exp, sig):
+            state.link_secret, autopilot_service.link_account(request.app),
+            batch_id, verb, exp, sig):
         raise HTTPException(status_code=403, detail="invalid or expired link")
     if not state.used_links.claim(batch_id, verb, exp, sig):
         raise HTTPException(status_code=409, detail="this link was already used")
     try:
         done = autopilot_service.act_on_batch(request.app, batch_id, verb)
+    except autopilot_service.ForeignBatch as exc:
+        raise HTTPException(status_code=409,
+                            detail="batch belongs to another account") from exc
     except autopilot_service.AutopilotUnavailable as exc:
         state.used_links.release(batch_id, verb, sig)
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        # The link rode through the ntfy topic: its holder learns nothing of
+        # the setup (symbols, the pull command); the reason goes to the log.
+        log.warning("A signed link found the autopilot not ready: %s", exc)
+        raise HTTPException(status_code=503, detail="autopilot not ready") from exc
     return {"batch_id": batch_id, ("approved" if verb == "approve" else "rejected"): done}

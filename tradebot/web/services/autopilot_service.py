@@ -16,7 +16,7 @@ import logging
 import threading
 from datetime import datetime, timezone
 
-from ...autopilot import MODE_LABELS, Autopilot, load_state, store_mode
+from ...autopilot import MODE_LABELS, Autopilot, ForeignBatch, load_state, store_mode
 from ...config import AlpacaCredentials
 from ...storage import Storage
 from . import autopilot_build
@@ -36,6 +36,13 @@ def scope() -> str:
 
 def current(app) -> Autopilot | None:
     return getattr(app.state, "autopilot", None)
+
+
+def link_account(app) -> str:
+    """The account a signed link must be signed for: the running pilot's, else
+    the one ``get`` would build (the label follows the credentials)."""
+    pilot = current(app)
+    return pilot.account if pilot is not None else scope()
 
 
 def get(app) -> Autopilot:
@@ -138,17 +145,7 @@ def reject(app, line_ids: list[int]) -> dict:
 
 
 def act_on_batch(app, batch_id: int, verb: str) -> int:
-    """A signed link's command: approve or reject the batch's still-pending lines.
-
-    Only lines of that batch in this account's scope are touched, through the
-    same ``Autopilot.approve``/``reject`` the page uses (one lock, one submit
-    path). The mode never changes, and a live account is never approved by link
-    (it rode through the ntfy topic). A batch already acted on yields 0.
-    """
-    pilot = get(app)
-    if verb == "approve" and pilot.account == "live":
-        return 0
-    ids = [ln["id"] for ln in pilot.storage.pending_lines_in_batch(batch_id, pilot.account)]
-    if not ids:
-        return 0
-    return pilot.approve(ids) if verb == "approve" else pilot.reject(ids)
+    """A signed link's command, through ``Autopilot.act_on_batch`` (one lock,
+    the page's submit path). The mode never changes; a batch already acted on
+    yields 0, another account's raises ``ForeignBatch``."""
+    return get(app).act_on_batch(batch_id, verb)

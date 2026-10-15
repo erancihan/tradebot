@@ -22,7 +22,8 @@ from .jobs.frames import _pull_hint
 
 def build(settings, *, trading_db: str, cache_dir: str,
           link_secret: bytes | None = None) -> Autopilot:
-    """``link_secret`` signs the push's Approve/Skip links (``autopilot.links``)."""
+    """``link_secret`` signs the push's Approve/Skip links (``autopilot.links``),
+    armed for the paper account only: the dry-run push carries just "Open"."""
     from ...autopilot.links import link_signer
     from ...engine import Engine
     from ...risk import RiskManager
@@ -44,8 +45,8 @@ def build(settings, *, trading_db: str, cache_dir: str,
                     selector=settings.build_selector(),
                     overlays=settings.build_overlays(),
                     notifier=settings.build_notifier(
-                        link_signer(link_secret, settings.poll_seconds)
-                        if link_secret else None))
+                        link_signer(link_secret, label, settings.poll_seconds)
+                        if link_secret and label == "paper" else None))
     return Autopilot(engine, storage, poll_seconds=settings.poll_seconds)
 
 

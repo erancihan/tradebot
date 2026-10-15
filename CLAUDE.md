@@ -236,11 +236,11 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   errors. `deliver() -> bool` is only for the test-alert button ("not delivered").
 - **A pending batch expires, never executes late:** the next pass, an approval
   older than one `poll_seconds`, and switching off all expire it.
-- **Signed batch links** (`autopilot/links.py`; ntfy buttons when `notify.public_url` is set)
-  approve or reject only that batch's still-pending lines via `Autopilot.approve`/`reject`, never
-  the mode or a live account (no Approve button either). HMAC key from `TRADEBOT_WEB_TOKEN`, else
-  random per process; 2 x poll (min 10 min); single use (replay = 409); skip the cookie gate, not
-  the guard. **The ntfy topic then grants approval:** self-host ntfy or use its access control.
+- **Signed batch links** (`autopilot/links.py`; buttons when `safe_public_url(notify.public_url)`)
+  are paper-only (other pushes get just "Open") and account-bound (`account:batch:verb:exp`); they act
+  on that account's pending lines under the lock (`Autopilot.act_on_batch`; foreign batch = 409). Key
+  from `TRADEBOT_WEB_TOKEN`, else per-process; 2 x poll (min 10 min); single use per process (after a
+  restart a used link acts again until `exp`). They skip the cookie gate, not the guard. **The ntfy topic grants approval.**
 - **The daily-loss breaker is per session day and flattens** (`engine/session.py`):
   each pass rolls the anchor when `now`'s exchange date changes (a replay's `now` is
   its newest bar); a breach closes every position and stays out that day. The

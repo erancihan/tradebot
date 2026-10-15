@@ -75,6 +75,7 @@ One new core concept, the proposal, feeds three flows.
   so the topic grants approval: the README asks for a self-hosted or
   access-controlled ntfy. The secret derives from `TRADEBOT_WEB_TOKEN`, else is
   random per process.
+- Links are paper-only and account-bound.
 
 ## Addendum 2026-10-15: Discover, "what else could I buy?"
 - Discover is a suggestion of names, never a trade: it ranks unwatched, unheld
