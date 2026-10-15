@@ -2,8 +2,8 @@
 
 A webhook URL usually carries its token in the path, and an ntfy topic on the
 public server is readable and writable by anyone who guesses it. The Settings
-page therefore only ever sees a masked form, and a save that sends the mask
-back (or nothing) keeps the stored value instead of overwriting it.
+page therefore only ever sees a masked form. On save, the mask sent back (or a
+key not sent at all) keeps the stored value; an explicit empty value deletes it.
 """
 
 from __future__ import annotations
@@ -55,13 +55,17 @@ def configured(notify: dict[str, Any]) -> dict[str, bool]:
             "ntfy_configured": bool(notify.get("ntfy_topic"))}
 
 
-def _kept(value: Any) -> bool:
-    """Blank, or the mask the page was given: "keep what is stored"."""
-    return not value or ELLIPSIS in str(value)
+def _kept(posted: dict[str, Any], key: str) -> bool:
+    """Not sent, or the mask the page was given: "keep what is stored".
+
+    An explicit empty value (``""`` or ``null``) is a deletion, not a keep.
+    """
+    return key not in posted or ELLIPSIS in str(posted[key] or "")
 
 
 def restore(posted: dict[str, Any] | None, stored: dict[str, Any]) -> dict[str, Any]:
-    """The notify block to write: blank or masked values keep what is stored.
+    """The notify block to write: masked or missing values keep what is stored,
+    empty ones delete it.
 
     A kept secret must still point where it did. A masked webhook is accepted
     only if its host is the stored host, and a kept topic only while the ntfy
@@ -69,15 +73,17 @@ def restore(posted: dict[str, Any] | None, stored: dict[str, Any]) -> dict[str, 
     """
     out = dict(posted or {})
     url, old_url = out.get("webhook_url"), stored.get("webhook_url")
-    if _kept(url):
+    if _kept(out, "webhook_url"):
         if url and (not old_url or _host(str(url)) != _host(str(old_url))):
             raise InvalidSettings("notify.webhook_url: the host changed, so enter the "
                                   "full webhook URL again")
         out["webhook_url"] = old_url
-    if _kept(out.get("ntfy_topic")):
+    if _kept(out, "ntfy_topic"):
         if (out.get("ntfy_server") or None) != (stored.get("ntfy_server") or None) \
                 and stored.get("ntfy_topic"):
             raise InvalidSettings("notify.ntfy_topic: the ntfy server changed, so enter "
                                   "the topic again")
         out["ntfy_topic"] = stored.get("ntfy_topic")
+    for key in MASKED_KEYS:                 # "" and null both mean "none"
+        out[key] = out.get(key) or None
     return out

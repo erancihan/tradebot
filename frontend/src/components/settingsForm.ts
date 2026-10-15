@@ -127,10 +127,11 @@ export function toDoc(form: SettingsForm, original: SettingsDoc): SettingsDoc {
     doc.risk[key] = value === null && !NULLABLE.has(key) ? original.risk[key] ?? null : value;
   }
   doc.risk.allow_fractional = form.allowFractional;
-  // A masked or blank secret goes back as sent: the server keeps the stored one.
+  // Secrets go back as typed: the untouched mask keeps the stored value, an
+  // emptied field ("") deletes it.
   doc.notify = {
-    webhook_url: form.webhookUrl.trim() || null,
-    ntfy_topic: form.ntfyTopic.trim() || null,
+    webhook_url: form.webhookUrl.trim(),
+    ntfy_topic: form.ntfyTopic.trim(),
     ntfy_server: form.ntfyServer.trim() || null,
   };
   return doc;

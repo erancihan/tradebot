@@ -198,11 +198,11 @@ def test_alert_destinations_are_masked_in_the_view(tmp_path):
     assert "abcdSECRET" not in page.text and "very-private" not in page.text
 
 
-def test_a_blank_or_masked_alert_keeps_the_stored_secret_on_save(tmp_path):
+def test_a_masked_or_missing_alert_keeps_the_stored_secret_on_save(tmp_path):
     path = _config(tmp_path, _ALERTS)
     client = _client(tmp_path, path)
     doc = _doc(client)                       # carries the masked webhook back
-    doc["notify"]["ntfy_topic"] = ""         # blank: keep
+    del doc["notify"]["ntfy_topic"]          # not sent at all: keep
     assert _post(client, doc).status_code == 200
     raw = yaml.safe_load(open(path))["notify"]
     assert raw["webhook_url"].endswith("abcdSECRETwxyz")
@@ -211,6 +211,20 @@ def test_a_blank_or_masked_alert_keeps_the_stored_secret_on_save(tmp_path):
     doc["notify"]["ntfy_topic"] = "a-new-topic"     # a plain value replaces it
     assert _post(client, doc).status_code == 200
     assert yaml.safe_load(open(path))["notify"]["ntfy_topic"] == "a-new-topic"
+
+
+def test_an_emptied_alert_destination_is_removed_on_save(tmp_path):
+    """Clearing a field is the only way to delete a destination from the page."""
+    path = _config(tmp_path, _ALERTS)
+    client = _client(tmp_path, path)
+    doc = _doc(client)
+    doc["notify"]["webhook_url"] = ""
+    doc["notify"]["ntfy_topic"] = ""
+    assert _post(client, doc).status_code == 200
+    raw = yaml.safe_load(open(path)).get("notify") or {}
+    assert not raw.get("webhook_url") and not raw.get("ntfy_topic")
+    data = client.get("/api/settings").json()
+    assert data["webhook_configured"] is False and data["ntfy_configured"] is False
 
 
 # --- strategy and portfolio pickers ---------------------------------------------

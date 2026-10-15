@@ -255,9 +255,9 @@ build on every push and PR, with no credentials.
   A save merges the editable keys into the file on disk (mode, db_path, costs,
   universe kept), validates by building every component, writes atomically, then
   `autopilot_service.reset` stops the loop and drops the runner (stored mode kept).
-- **Alert destinations are masked both ways** (`settings_secrets`): a blank or
-  masked value keeps the stored one only while it still points at the same host
-  or ntfy server. Settings responses are `Cache-Control: no-store`.
+- **Alert destinations are masked both ways** (`settings_secrets`): a masked or
+  omitted value keeps the stored one only while it still points at the same host
+  or ntfy server; `""` deletes it. Settings responses are `Cache-Control: no-store`.
 - **Alpine state is a Proxy:** `structuredClone` throws on it (copy with JSON),
   and ECharts instances must live in a closure, not in Alpine state.
 - **Pydantic coercion:** `JobRequest.params` stays `dict | None` (float coercion breaks ints).
