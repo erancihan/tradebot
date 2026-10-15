@@ -7,13 +7,14 @@ import pytest
 pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
 
-from fastapi.testclient import TestClient  # noqa: E402
+from tradebot.web.guard import POST_HEADERS  # noqa: E402
+from tests.web_client import local_client  # noqa: E402
 
 from tradebot.web.app import create_app  # noqa: E402
 
 
 def _client(tmp_path):
-    return TestClient(create_app(trading_db=str(tmp_path / "t.db"),
+    return local_client(create_app(trading_db=str(tmp_path / "t.db"),
                                  arena_db=str(tmp_path / "a.db"),
                                  cache_dir=str(tmp_path / "cache")))
 
@@ -59,7 +60,7 @@ def test_whatif_is_a_bottom_tab_and_chart_moved_under_more(tmp_path):
 
 def test_whatif_job_returns_a_result_with_provenance(tmp_path):
     client = _client(tmp_path)
-    r = client.post("/api/whatif", json={"symbols": ["DEMO", "TOY"], "source": "synthetic",
+    r = client.post("/api/whatif", headers=POST_HEADERS, json={"symbols": ["DEMO", "TOY"], "source": "synthetic",
                                          "start": "2021-01-04", "end": "2022-12-30",
                                          "initial_cash": 10000, "monthly_contribution": 200})
     assert r.status_code == 200
@@ -75,7 +76,7 @@ def test_whatif_job_returns_a_result_with_provenance(tmp_path):
 def test_whatif_job_runs_from_the_cache_and_carries_provenance(tmp_path):
     _seed_cache(tmp_path)
     client = _client(tmp_path)
-    r = client.post("/api/whatif", json={"symbols": ["aaa", "BBB"], "start": "2022-02-01",
+    r = client.post("/api/whatif", headers=POST_HEADERS, json={"symbols": ["aaa", "BBB"], "start": "2022-02-01",
                                          "initial_cash": 5000, "monthly_contribution": 100})
     job = _wait(client, r.json()["job_id"])
     assert job["state"] == "done", job.get("error")
@@ -92,7 +93,7 @@ def test_whatif_job_runs_from_the_cache_and_carries_provenance(tmp_path):
 def test_whatif_uncached_range_returns_pull_hint(tmp_path):
     _seed_cache(tmp_path, symbols=("AAA",))
     client = _client(tmp_path)
-    r = client.post("/api/whatif", json={"symbols": ["AAA", "ZZZ", "YYY"],
+    r = client.post("/api/whatif", headers=POST_HEADERS, json={"symbols": ["AAA", "ZZZ", "YYY"],
                                          "start": "2022-02-01", "end": "2022-06-01"})
     job = _wait(client, r.json()["job_id"])
     assert job["state"] == "error"
@@ -107,13 +108,13 @@ def test_whatif_uncached_range_returns_pull_hint(tmp_path):
     {"symbols": ["SPY"], "monthly_contribution": -5},
 ])
 def test_whatif_rejects_an_impossible_plan(tmp_path, body):
-    assert _client(tmp_path).post("/api/whatif", json=body).status_code == 400
+    assert _client(tmp_path).post("/api/whatif", headers=POST_HEADERS, json=body).status_code == 400
 
 
 def test_whatif_job_runs_a_strategy_with_a_selector(tmp_path):
     _seed_cache(tmp_path, symbols=("AAA", "BBB", "CCC"))
     client = _client(tmp_path)
-    r = client.post("/api/whatif", json={
+    r = client.post("/api/whatif", headers=POST_HEADERS, json={
         "symbols": ["AAA", "BBB", "CCC"], "initial_cash": 10000,
         "strategy": "sma_crossover", "params": {"fast": 5, "slow": 20},
         "allocation": "inverse_vol", "selector": "momentum",
@@ -125,7 +126,7 @@ def test_whatif_job_runs_a_strategy_with_a_selector(tmp_path):
 
 def test_whatif_unknown_strategy_is_a_job_error(tmp_path):
     client = _client(tmp_path)
-    r = client.post("/api/whatif", json={"symbols": ["X"], "source": "synthetic",
+    r = client.post("/api/whatif", headers=POST_HEADERS, json={"symbols": ["X"], "source": "synthetic",
                                          "strategy": "no_such_thing"})
     job = _wait(client, r.json()["job_id"])
     assert job["state"] == "error" and "no_such_thing" in job["error"]
@@ -172,7 +173,7 @@ def test_every_preset_runs_as_is(tmp_path, cached):
         _seed_cache(tmp_path, symbols=cached)
     client = _client(tmp_path)
     for preset in client.get("/api/whatif/presets").json():
-        r = client.post("/api/whatif", json=preset["request"])
+        r = client.post("/api/whatif", headers=POST_HEADERS, json=preset["request"])
         assert r.status_code == 200, preset["name"]
         job = _wait(client, r.json()["job_id"])
         assert job["state"] == "done", (preset["name"], job.get("error"))
