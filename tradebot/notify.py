@@ -41,8 +41,15 @@ def masked_url(url: str) -> str:
 
 
 def _failure(url: str, exc: Exception) -> str:
-    """The error text with the URL masked (a ValueError can quote it whole)."""
-    return str(exc).replace(url, masked_url(url))
+    """What a failed delivery logs: the error class and an HTTP status or errno.
+
+    Never the exception text. urllib and ValueError quote the request URL,
+    and a webhook path or an ntfy topic is a bearer secret. ``url`` stays in
+    the signature so callers cannot pass the raw text by accident.
+    """
+    del url
+    code = getattr(exc, "code", None) or getattr(exc, "errno", None)
+    return f"{type(exc).__name__}" + (f" ({code})" if code is not None else "")
 
 
 class Notifier(Protocol):
