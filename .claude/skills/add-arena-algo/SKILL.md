@@ -108,9 +108,9 @@ changes the field size some tests assert on — see the CLAUDE.md gotcha.
   never silently downgrades), `thread` (portable **soft** runner), `auto`
   (process if possible, else warned soft fallback). Each contestant is
   **sandboxed by default** (process isolation) via `sandbox.py` — no disk writes
-  + network-namespace isolation; `--no-harden` opts out. For *fully adversarial*
-  code go further (seccomp syscall filtering / containers) — don't touch
-  `tournament.py`/`scoring.py`.
+  + network-namespace isolation; `--no-harden` opts out. `--seccomp` adds an
+  execve/ptrace filter and `--require-sandbox` makes refusals fatal; containers
+  are out of scope (ADR 0002). Don't touch `tournament.py`/`scoring.py`.
 - **Persistence:** `tradebot/arena/store.py` (SQLite `arena_runs`/`arena_results`,
   equity curves as JSON). The web dashboard reads these.
 

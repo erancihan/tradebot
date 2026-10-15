@@ -13,11 +13,10 @@ Every placeholder is spelled to stand out: `/PATH/TO/tradebot` (the checkout),
 ```bash
 cd /PATH/TO/tradebot
 make install-all && make web-build
-.venv/bin/tradebot-web --check --config /etc/tradebot/config.yaml \
-    --trading-db /var/lib/tradebot/tradebot.db --allow-host YOUR_HOST
 ```
 
-`--check` loads and validates the config, opens the database, prints the line
+Each flow below copies the config into place, then runs `tradebot-web --check`
+before it enables the service. `--check` loads and validates the config, opens the database, prints the line
 the service logs at start, and exits 0. Exit 1 says what is wrong. The line
 names the config file, the database, the allowed hosts, whether the token and
 the Alpaca keys are set (never their values) and the autopilot's stored mode.
@@ -31,6 +30,8 @@ sudo install -m 600 /dev/null /etc/tradebot/env   # then add the three lines bel
 sudo chown -R YOUR_USER /etc/tradebot /var/lib/tradebot
 sudo cp deploy/systemd/tradebot-web.service /etc/systemd/system/
 sudo nano /etc/systemd/system/tradebot-web.service   # replace the placeholders
+.venv/bin/tradebot-web --check --config /etc/tradebot/config.yaml \
+    --trading-db /var/lib/tradebot/tradebot.db --allow-host YOUR_HOST
 sudo systemctl daemon-reload && sudo systemctl enable --now tradebot-web
 journalctl -u tradebot-web -f                        # the startup line is here
 ```
@@ -48,6 +49,7 @@ cp config.example.yaml config.yaml
 cp .env.example .env && chmod 600 .env    # keys, plus TRADEBOT_WEB_TOKEN=...
 cp deploy/launchd/com.tradebot.web.plist ~/Library/LaunchAgents/
 nano ~/Library/LaunchAgents/com.tradebot.web.plist   # replace the placeholders
+.venv/bin/tradebot-web --check --config config.yaml --allow-host YOUR_HOST
 launchctl load -w ~/Library/LaunchAgents/com.tradebot.web.plist
 tail -f logs/tradebot-web.log
 ```

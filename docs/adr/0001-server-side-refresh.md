@@ -21,3 +21,6 @@ fetcher.
 - Every result still carries provenance (source, window, bar count, age).
 - The invariant "offline-first" holds: the credential-free path works.
 - The invariant "the dashboard never fetches" is retired.
+
+## Addendum 2026-10-15
+Discover also fetches with keys: the Alpaca most-actives screen, then the survivors through `BarCache`.

@@ -69,7 +69,7 @@ One new core concept, the proposal, feeds three flows.
   one batch and one verb, valid for 2 x `poll_seconds` (at least 10 minutes).
 - They are the only URL-borne credential in the app. That is acceptable because
   a link can only approve or reject lines already pending in its own batch,
-  through the page's `Autopilot.approve`/`reject`, never changes the mode, and
+  through `Autopilot.act_on_batch` (account-checked, under the lock; it calls the page's approve/reject), never changes the mode, and
   dies with the batch. Each link acts once (a replay is a 409) and a live
   account never gets an Approve link. The links ride through the ntfy topic,
   so the topic grants approval: the README asks for a self-hosted or
