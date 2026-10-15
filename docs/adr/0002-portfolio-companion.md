@@ -62,3 +62,13 @@ One new core concept, the proposal, feeds three flows.
   Tuned params stay a single-run affair; the window and benchmark run once.
 - Meta strategies are skipped (they need a configured roster). The phone gets
   every row but only the top five curves plus the benchmark.
+
+## Addendum 2026-10-15: approve from the phone notification
+- With `notify.public_url` set, a pending batch's ntfy push carries Approve all,
+  Skip and Open. Approve and Skip POST signed links: capability tokens scoped to
+  one batch and one verb, valid for 2 x `poll_seconds` (at least 10 minutes).
+- They are the only URL-borne credential in the app. That is acceptable because
+  a link can only approve or reject lines already pending in its own batch,
+  through the page's `Autopilot.approve`/`reject`, never changes the mode, and
+  dies with the batch. The secret derives from `TRADEBOT_WEB_TOKEN`, else is
+  random per process.
