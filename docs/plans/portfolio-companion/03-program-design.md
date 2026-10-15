@@ -337,3 +337,58 @@ Approve: `POST /api/autopilot {approve: [ids]}` -> `Autopilot.approve` ->
 3. Live mode keeps the existing gate and is not reachable from the web UI.
    The mode switch changes approve/auto only. Paper versus live is the
    config file plus the env latch, as before.
+
+## E5: Expansion
+
+Decided scope (owner asked for what else makes managing a portfolio easier).
+
+### Files, web side (branch `feat/expand-web`)
+- Polish: `frontend/src/charts/equityChart.ts` formats daily axis labels as
+  dates; `web/services/whatif_presets.py` prefers cached real symbols;
+  `tests/test_web_guard.py` gains the chunked-body and lying-Content-Length
+  413 tests.
+- `tradebot/notify.py`: `NtfyNotifier(topic, server="https://ntfy.sh")`
+  posts plain text (title header + body) with stdlib urllib; `notify:
+  ntfy_topic` in the config and `Settings.build_notifier` wire it next to
+  the webhook. `POST /api/notify/test` sends one test message; a "Send test
+  alert" button sits on the Autopilot page.
+- Watchlist: table `watchlist(symbol)` (mixin `storage/watchlist.py`);
+  `GET/POST /api/watchlist` (`{add: [..]}` / `{remove: [..]}`); chips with a
+  remove tap and one input on the Today page. When the watchlist is not
+  empty, the advisor refresh and the autopilot run on it instead of the
+  config symbols; the Today page says which list is in use.
+- Portfolio card on Today: current holdings with quantity, last price,
+  value and weight. Source: broker positions with credentials, else the
+  order log plus the last cached close. Partial `components/holdings.html`,
+  `GET /api/holdings`.
+
+### Files, core side (branch `feat/expand-core`)
+- `tradebot/market/` package: `base.py` (`MarketCalendar` protocol:
+  `is_open(now)`, `next_open(now)`, `session(date)`, `is_holiday(date)`,
+  `timezone`), `us.py` (moved from `arena/market.py`, which re-exports),
+  `bist.py` (Borsa Istanbul: 10:00 to 18:00 Europe/Istanbul, weekday
+  sessions, a holiday table for 2026 and 2027 with a comment on its
+  source and expiry), `registry.py` (`get_calendar(name)`).
+- `Settings.market` (`us_equities` default, `bist`). The autopilot and the
+  season daemon take the calendar from settings. Alpaca remains the only
+  broker; a BIST broker is a later epic.
+- Morning brief: `autopilot/brief.py`. When `brief_minutes_before_open` is
+  set in the config (default off), the autopilot loop computes a proposal
+  that many minutes before the next open, in any mode including off, and
+  sends it through the notifier as a short text list (symbol, action,
+  quantity, reason). Tested with the injected clock.
+
+### Test plan
+- `test_ntfy_posts_plain_text_with_a_title_header` (loopback http server).
+- `test_watchlist_overrides_config_symbols_for_the_advisor_and_autopilot`.
+- `test_holdings_from_the_order_log_use_the_last_cached_close`.
+- `test_us_calendar_matches_the_old_arena_market_helpers`.
+- `test_bist_session_hours_and_a_holiday`.
+- `test_morning_brief_fires_once_before_open_with_a_fake_clock`.
+
+### Decided not now
+- Native mobile app: the PWA covers the phone. Revisit if push
+  notifications must come from the app itself instead of ntfy.
+- Bank or broker funding automation: no API on the free tier.
+- A BIST broker adapter: needs a brokerage API decision first.
+- Multi-user accounts: single owner, token access is enough.
