@@ -59,15 +59,36 @@ def test_bad_prices_never_count_as_a_close():
     assert used == ["OK"] and dropped == ["BAD"]
 
 
-def test_the_window_starts_at_the_next_session_and_until_cuts_the_tail():
+def test_the_window_starts_at_the_last_close_before_since_and_until_cuts_the_tail():
+    """The list is bought at the price of the newest close before the first
+    snapshot (Friday's for a Saturday start), so the first session day of a
+    bot has a benchmark before that day's close is cached."""
     frames = {"SPY": _bars([100.0, 101.0, 102.0, 103.0, 104.0])}  # Oct 1, 2, 5, 6, 7
     saturday = datetime(2026, 10, 3, 12, 0, tzinfo=timezone.utc)
     monday = datetime(2026, 10, 5, 23, 0, tzinfo=timezone.utc)
     series = benchmark.buy_and_hold(frames, 1_000.0, saturday, monday)
-    assert list(series.index) == [date(2026, 10, 5)]           # Monday's close, nothing after
-    assert series.iloc[0] == pytest.approx(1_000.0)
+    assert list(series.index) == [date(2026, 10, 2), date(2026, 10, 5)]
+    assert series.iloc[-1] == pytest.approx(1_000.0 * 102.0 / 101.0)
     later = benchmark.buy_and_hold(frames, 1_000.0, saturday, UNTIL)
-    assert later.iloc[-1] == pytest.approx(1_000.0 * 104.0 / 102.0)
+    assert later.iloc[-1] == pytest.approx(1_000.0 * 104.0 / 101.0)
+
+
+def test_a_first_day_bot_has_a_benchmark_from_the_previous_close():
+    """Snapshots start today at 13:35 UTC and the cache stops at yesterday's
+    close (a daily fetch never caches a forming bar): the benchmark is the
+    previous close, flat, instead of missing."""
+    frames = {"SPY": _bars([100.0, 101.0]), "QQQ": _bars([50.0, 52.0])}  # Oct 1, 2
+    today = datetime(2026, 10, 5, 13, 35, tzinfo=timezone.utc)
+    series = benchmark.buy_and_hold(frames, 1_000.0, today, today)
+    assert list(series.index) == [date(2026, 10, 2)]
+    assert series.iloc[0] == pytest.approx(1_000.0)
+
+
+def test_without_an_earlier_close_the_start_is_the_next_session():
+    frames = {"SPY": _bars([100.0, 110.0], start="2026-10-05")}        # Oct 5, 6
+    series = benchmark.buy_and_hold(frames, 1_000.0, SINCE, UNTIL)     # SINCE is Oct 1
+    assert list(series.index) == [date(2026, 10, 5), date(2026, 10, 6)]
+    assert series.iloc[-1] == pytest.approx(1_100.0)
 
 
 def test_the_window_ends_where_every_held_name_has_a_close():

@@ -108,8 +108,10 @@ One new core concept, the proposal, feeds three flows.
 - History's performance card answers "is the bot beating just holding the list?": it
   compares equity with equal-weight buy and hold of the active list (the watchlist, else
   `settings.symbols`, the list the autopilot trades) from the first snapshot's equity.
-- Each symbol gets an equal share at the first session close on or after the first
-  snapshot; the benchmark is marked at each later close through the last snapshot's date,
+- Each symbol gets an equal share at the last session close on or before the first
+  snapshot (the price the list could have been bought at that morning; the next close
+  when no earlier one is cached), so a bot's first day has a benchmark before that day's
+  close is cached; the benchmark is marked at each later close through the last snapshot's date,
   ending at the last session every held name has. A name without a close at the start is
   left out and named. The card shows the difference in percentage points.
 - Bars come from the cache only, never fetched, so the comparison needs no credentials;
