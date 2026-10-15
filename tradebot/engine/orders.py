@@ -111,7 +111,7 @@ def submit_line(engine, line, on_submitted=None) -> RebalanceAction:
         _after_send(action, on_submitted)
     if engine.storage:
         _after_send(action, lambda: engine.storage.record_order(
-            order, action.submitted_id, engine.mode))
+            order, action.submitted_id, engine.mode, price=price))
     engine._notify({
         "type": "order", "symbol": symbol, "side": order.side.value,
         "qty": abs(delta), "price": price, "target": target,

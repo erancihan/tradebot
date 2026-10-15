@@ -8,10 +8,13 @@ from ..models import Order, utcnow
 class OrdersMixin:
     """Order/equity writes over ``self._conn``."""
 
-    def record_order(self, order: Order, broker_order_id: str | None, mode: str) -> None:
+    def record_order(self, order: Order, broker_order_id: str | None, mode: str,
+                     price: float | None = None) -> None:
+        """Log one submitted order. ``price`` is the price its proposal line was
+        sized at, kept so History can show the notional; None when unknown."""
         self._conn.execute(
-            "INSERT INTO orders (ts, symbol, side, qty, type, broker_order_id, mode)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO orders (ts, symbol, side, qty, type, broker_order_id, mode, price)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 order.created_at.isoformat(),
                 order.symbol,
@@ -20,6 +23,7 @@ class OrdersMixin:
                 order.type.value,
                 broker_order_id,
                 mode,
+                None if price is None else float(price),
             ),
         )
         self._conn.commit()

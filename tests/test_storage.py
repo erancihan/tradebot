@@ -98,3 +98,70 @@ def test_engine_records_bars_when_storage_present(tmp_path):
     storage.close()
 
     assert _count_bars(db, mode="dry_run") > 0
+
+
+# --- the order log's price column ----------------------------------------------
+
+_OLD_ORDERS = """CREATE TABLE orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, symbol TEXT NOT NULL,
+    side TEXT NOT NULL, qty REAL NOT NULL, type TEXT NOT NULL,
+    broker_order_id TEXT, mode TEXT NOT NULL)"""
+
+
+def test_an_order_log_without_a_price_column_migrates_on_open(tmp_path):
+    """A database written before `orders.price` existed opens, keeps its rows
+    (price NULL: never guessed) and accepts priced orders afterwards."""
+    from tradebot.models import Order, Side
+
+    db = str(tmp_path / "old.db")
+    con = sqlite3.connect(db)
+    con.execute(_OLD_ORDERS)
+    con.execute("INSERT INTO orders (ts, symbol, side, qty, type, broker_order_id, mode)"
+                " VALUES ('2025-01-02T00:00:00+00:00', 'SPY', 'buy', 3, 'market', NULL, 'paper')")
+    con.commit()
+    con.close()
+
+    with Storage(db) as st:
+        st.record_order(Order(symbol="QQQ", qty=2, side=Side.BUY), "o-2", "paper", price=401.5)
+    with Storage(db):                                   # a second open is a no-op
+        pass
+    con = sqlite3.connect(db)
+    rows = con.execute("SELECT symbol, qty, price FROM orders ORDER BY id").fetchall()
+    con.close()
+    assert rows == [("SPY", 3.0, None), ("QQQ", 2.0, 401.5)]
+
+
+def _buying_engine(db: str, storage: Storage) -> Engine:
+    data = ReplayData.from_single(synthetic_ohlcv(periods=60, seed=1), "DEMO", warmup=30)
+    settings = Settings(mode="paper", symbols=["DEMO"], timeframe="1day",
+                        strategy_name="buy_and_hold", strategy_params={})
+    strategy = build_strategy(settings.strategy_name, settings.strategy_params)
+    broker = DryRunBroker(data, timeframe="1day", initial_cash=10_000)
+    return Engine(settings, broker, data, strategy, RiskManager(RiskConfig()),
+                  storage=storage, mode_label="dry_run", enforce_live_ack=False)
+
+
+def _logged_prices(db: str) -> dict[str, float]:
+    con = sqlite3.connect(db)
+    try:
+        return dict(con.execute("SELECT symbol, price FROM orders").fetchall())
+    finally:
+        con.close()
+
+
+def test_the_engine_logs_the_price_each_order_was_sized_at(tmp_path):
+    db = str(tmp_path / "t.db")
+    with Storage(db) as storage:
+        outcome = _buying_engine(db, storage).step()
+    sized = {ln.symbol: ln.price for ln in outcome.proposal.lines if ln.order_qty}
+    assert sized and _logged_prices(db) == sized
+
+
+def test_an_approved_line_logs_the_price_it_was_parked_at(tmp_path):
+    db = str(tmp_path / "t.db")
+    with Storage(db) as storage:
+        engine = _buying_engine(db, storage)
+        engine.step(submit=False)
+        pending = storage.pending_lines("dry_run")
+        engine.submit_lines([ln["id"] for ln in pending])
+    assert pending and _logged_prices(db) == {ln["symbol"]: ln["price"] for ln in pending}
