@@ -103,3 +103,17 @@ One new core concept, the proposal, feeds three flows.
   line's notional by more than 10% over the last push, the batch is pushed
   again at once, with the new sizes. Link lifetime is a trade-off the paper-only,
   single-use links accept; the ntfy topic itself is the credential.
+
+## Addendum 2026-10-15: fills
+- An order is logged when the broker accepts it, at the price it was sized at.
+  What the broker did with it (status, filled quantity, average fill price,
+  fill time) is stored on the same row once the broker reports it
+  (`Broker.order_status`; a broker that cannot report returns None).
+- The bot asks about open orders of the last 7 days at three points only: the
+  start of each autopilot pass, the Today refresh job (paper orders, with keys)
+  and right after it submits. A page load never calls the broker for this. A
+  failed lookup is logged and never breaks a pass or a suggestion.
+- History shows the fill and the slippage against the sizing price over the
+  filled shares (positive = it cost money). Positions summed from the order log
+  count the filled quantity when known: a cancelled, expired or rejected order
+  counts only what filled before it ended, and an order not yet reported counts in full.

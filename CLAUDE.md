@@ -45,7 +45,8 @@ tradebot/
   data/          synthetic + factor_panel, cache + coverage, replay, csv, alpaca_data, stream
   market/        base (MarketCalendar, TableCalendar), us, bist, registry (CALENDARS)
   advisor/       propose (bars + account -> Proposal), explain, types
-  engine/        core (Engine.step -> PassOutcome), signals, orders, pending, session (daily-loss anchor)
+  engine/        core (Engine.step -> PassOutcome), signals, orders, pending, session (daily-loss anchor),
+                 fills (reconcile: Broker.order_status -> the order log's fill columns)
   autopilot/     state, schedule, runner (Autopilot, injected clock/sleep/calendar),
                  approvals, background, brief (MorningBrief), session, links (signed batch links)
   storage/       tradebot.db mixins: orders, bars, weights, proposals, autopilot, watchlist, discover
@@ -136,9 +137,8 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
 ## Conventions
 
 - Core logic depends only on pandas and numpy. Adapters isolate Alpaca and FastAPI.
-- Tests are offline and deterministic. Web tests use
-  `pytest.importorskip("fastapi")`. `tests/conftest.py` fails any non-loopback
-  socket and prints a simulated-balances ledger at the end.
+- Tests are offline and deterministic. Web tests use `pytest.importorskip("fastapi")`.
+  `tests/conftest.py` fails any non-loopback socket and prints a simulated-balances ledger at the end.
 - Web layering is strict: `routes -> services -> repository`. Partials serve
   first paint and Alpine polling. JSON endpoints feed charts.
 - Never commit secrets, `*.db`, `data/cache/`, `node_modules/` or `tradebot/web/static/`.
@@ -151,10 +151,9 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   would trade (`test_propose_matches_engine_rebalance_deltas`).
 - **Bad prices are flat.** NaN, inf or non-positive prices never reach sizing. All three loops skip the symbol (`math.floor(NaN)` raises).
 - **Allocator history:** `aligned.iloc[:i]` at fill bar `i`. **ReplayData** advances once per step.
-- **Selectors are prefix-stable** (verdict at `t` from bars `<= t` and earlier
-  verdicts). A ranked walk starts from an empty set, so a truncated frame
-  changes the verdict: the engine recomputes from full stored history
-  (`Engine._selector_frames`), and `record_bars` upserts forming bars.
+- **Selectors are prefix-stable** (verdict at `t` from bars `<= t` and earlier verdicts). A ranked
+  walk starts from an empty set, so a truncated frame changes the verdict: the engine recomputes from
+  full stored history (`Engine._selector_frames`), and `record_bars` upserts forming bars.
 - **Composite selectors mask their own warmup** (`required_history - 1` rows).
   `exit_rank`: a held name stays droppable in any pool larger than `top_k`.
 - **Cache coverage is a manifest** (`*.coverage.json`, gaps included) of the requested bounds:
@@ -164,10 +163,13 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
 - **Cost model differs from production:** raw (not dividend-adjusted) bars, no daily-loss halt
   in simulation, 1 bp slippage, and synthetic `open(t) == close(t-1)` hides signal-to-fill decay.
   Label it beside any quoted backtest. **Window selection is a bias:** run the sealed holdout once, last.
-- **Offline positions come from the order log** (signed sum per symbol for
-  `settings.mode`, every order assumed filled), equity and cash from the newest
-  snapshot, else `initial_cash`. Holdings use the same sum at the last cached
-  close (unpriced = skipped, never guessed), or the paper broker with credentials.
+- **Offline positions come from the order log** (signed sum per symbol for `settings.mode` via
+  `storage.orders.effective_qty`: `filled_qty` when the broker has said, nothing for a cancelled,
+  expired or rejected order beyond its partial fill, else the full `qty`), equity and cash from the
+  newest snapshot, else `initial_cash`. Holdings use the same sum at the last cached close (unpriced
+  = skipped, never guessed), or the paper broker with credentials. **Fills are learned by
+  `engine/fills.reconcile`** (open orders of the last 7 days) at the start of each autopilot pass,
+  in the Today refresh job (paper orders, with keys) and right after a submit; never on a page load.
 - **History** shows `default_mode()`, else `settings.mode`, pinned by `?mode=` in its URLs; orders
   and batches page on a `(ts, id)` keyset each (`X-History-Next`). `orders.price` is the sizing
   price (NULL on a flatten or old row); `schema.migrate` adds a later column on open, the web never.
@@ -253,9 +255,8 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   dry-run's account dies with a restart. `tradebot run --autopilot` builds as `run`, keeps
   state in scope `cli_<account>` (never the web's), expires no pending lines at start; a
   replay's clock reads its bars. Orders carry the pass clock, as batches do (approval: the tap's).
-- **With a morning brief, "off" keeps the loop alive** to send briefs from
-  `engine.propose` (nothing stored). `brief_for` prevents resends. A brief-only
-  loop is `tradebot run --autopilot --mode off`.
+- **With a morning brief, "off" keeps the loop alive** to send briefs from `engine.propose` (nothing
+  stored). `brief_for` prevents resends. A brief-only loop is `tradebot run --autopilot --mode off`.
 
 **Web and CI**
 - **The web writes `config.yaml` without comments. Secrets stay in `.env`**, read only from the
@@ -267,9 +268,8 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
 - **Alpine state is a Proxy:** `structuredClone` throws on it (copy with JSON),
   and ECharts instances must live in a closure, not in Alpine state.
 - **Pydantic coercion:** `JobRequest.params` stays `dict | None` (float coercion breaks ints).
-- **Starlette:** `templates.TemplateResponse(request, name, context)`. Equity
-  curves serialise as `{index: [...], equity: [...]}`. Dashboard refresh is one
-  SSE stream into an Alpine `live` store.
+- **Starlette:** `templates.TemplateResponse(request, name, context)`. Equity curves serialise as
+  `{index: [...], equity: [...]}`. Dashboard refresh is one SSE stream into an Alpine `live` store.
 - **State-changing requests need `X-Requested-With: tradebot`** (`web/guard.py`).
   Tests send `POST_HEADERS`, the TS client adds it in `postJson`. Middleware,
   outermost first: trusted host -> optional `TRADEBOT_WEB_TOKEN` gate -> guard.
