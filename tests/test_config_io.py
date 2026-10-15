@@ -29,7 +29,7 @@ def test_round_trip_keeps_a_full_portfolio_block(tmp_path):
                       "allocation": "inverse_vol", "params": {"window": 21},
                       "overlays": [{"name": "vol_target", "params": {"target_vol": 0.15}}]},
         "risk": {"stop_loss_pct": 0.05},
-        "notify": {"ntfy_topic": "abc"},
+        "notify": {"ntfy_topic": "abc", "public_url": "https://bot.example.net"},
         "autopilot": {"brief_minutes_before_open": 30},
         "universe": {"source": "alpaca_liquidity", "params": {"candidates": 50}},
     })

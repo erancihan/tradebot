@@ -342,6 +342,7 @@ def test_today_shows_the_setup_card_until_everything_is_ready(tmp_path, monkeypa
 def test_settings_page_has_a_field_for_every_s5_setting(tmp_path):
     body = _client(tmp_path, _config(tmp_path)).get("/settings").text
     for name in ("poll_seconds", "brief_minutes_before_open", "ntfy_topic", "ntfy_server",
+                 "public_url",
                  "webhook_url", "market", "timeframe", "initial_cash", "max_position_pct",
                  "max_gross_exposure", "max_daily_loss_pct", "rebalance_band_pct",
                  "stop_loss_pct", "take_profit_pct", "allow_fractional"):
@@ -371,3 +372,49 @@ def test_save_autopilot_alerts_market_and_risk(tmp_path):
     raw = yaml.safe_load(open(path))
     assert "autopilot" not in raw and "stop_loss_pct" not in raw["risk"]
     assert raw["notify"]["ntfy_topic"] == "my-topic-123"         # masked in, kept
+
+
+# --- the public URL (the push's Approve/Skip buttons) ------------------------------
+
+def test_public_url_is_saved_shown_unmasked_and_hinted(tmp_path):
+    path = _config(tmp_path, "notify:\n  ntfy_topic: my-topic-123\n")
+    client = _client(tmp_path, path)
+    doc = _doc(client)
+    assert doc["notify"]["public_url"] is None
+    doc["notify"]["public_url"] = "http://192.168.1.20:8000/"
+    resp = _post(client, doc)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["settings"]["notify"]["public_url"] == "http://192.168.1.20:8000"
+    raw = yaml.safe_load(open(path))
+    assert raw["notify"] == {"ntfy_topic": "my-topic-123",          # the topic kept
+                             "public_url": "http://192.168.1.20:8000"}
+    assert _doc(client)["notify"]["public_url"] == "http://192.168.1.20:8000"
+    page = client.get("/settings").text
+    assert "Lets the phone push carry Approve and Skip buttons." in page
+
+    doc = _doc(client)
+    doc["notify"]["public_url"] = None                             # cleared
+    assert _post(client, doc).status_code == 200
+    assert "public_url" not in yaml.safe_load(open(path))["notify"]
+
+
+@pytest.mark.parametrize("url", ["bot.example.net", "ftp://bot.example.net", "http://",
+                                 "https://bot.example.net/?a=1", "https://u:p@bot.example.net",
+                                 'https://bot.example.net/"x', "https://bot,example.net",
+                                 "https://böt.example.net", "http://host:99999", 42])
+def test_save_rejects_a_public_url_that_is_not_an_http_address(tmp_path, url):
+    path = _config(tmp_path)
+    client = _client(tmp_path, path)
+    before = open(path).read()
+    doc = _doc(client)
+    doc["notify"]["public_url"] = url
+    resp = _post(client, doc)
+    assert resp.status_code == 400 and "notify.public_url" in resp.json()["detail"]
+    assert open(path).read() == before
+
+
+def test_a_public_url_with_a_path_is_accepted(tmp_path):
+    client = _client(tmp_path, _config(tmp_path))
+    doc = _doc(client)
+    doc["notify"]["public_url"] = "https://example.net/tradebot"
+    assert _post(client, doc).status_code == 200

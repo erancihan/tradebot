@@ -9,7 +9,9 @@ sentence for the page.
 
 from __future__ import annotations
 
+import re
 from typing import Any
+from urllib.parse import urlsplit
 
 from ...config import Settings
 from ...data.alpaca_data import _TIMEFRAME_ALIASES
@@ -33,6 +35,7 @@ def validate(doc: dict[str, Any]) -> Settings:
     except (TypeError, ValueError, KeyError, AttributeError) as exc:
         raise InvalidSettings(_reason(exc)) from exc
     _check_numbers(settings)
+    _check_public_url(settings.notify_public_url)
     for section, build in (
         ("strategy", lambda: _build_strategy(settings)),
         ("portfolio.selector", settings.build_selector),
@@ -65,6 +68,9 @@ def _check_shape(doc: dict[str, Any]) -> None:
     for block in ("strategy", "portfolio", "risk", "notify", "autopilot"):
         if doc.get(block) is not None and not isinstance(doc[block], dict):
             raise InvalidSettings(f"{block} must be an object")
+    notify = doc.get("notify") or {}
+    if isinstance(notify.get("public_url"), str):      # the file says what is used
+        notify["public_url"] = notify["public_url"].strip().rstrip("/") or None
 
 
 def _check_numbers(settings: Settings) -> None:
@@ -75,3 +81,24 @@ def _check_numbers(settings: Settings) -> None:
     brief = settings.brief_minutes_before_open
     if brief is not None and (not isinstance(brief, int) or not 0 <= brief <= 720):
         raise InvalidSettings("autopilot.brief_minutes_before_open must be 0 to 720 minutes")
+
+
+#: Characters ntfy's Actions header would split on, plus anything non-ASCII.
+_UNSAFE_URL = re.compile(r"[\s\"',;]|[^\x21-\x7e]")
+
+
+def _check_public_url(url: str | None) -> None:
+    """An http(s) address with a host, safe to put in an ntfy Actions header."""
+    if url is None:
+        return
+    reason = "notify.public_url must be an http(s) address, e.g. http://192.168.1.20:8000"
+    if not isinstance(url, str) or _UNSAFE_URL.search(url):
+        raise InvalidSettings(reason)
+    try:
+        parts = urlsplit(url)
+        parts.port                      # raises on a malformed port
+    except ValueError as exc:
+        raise InvalidSettings(reason) from exc
+    if parts.scheme not in ("http", "https") or not parts.hostname \
+            or parts.query or parts.fragment or parts.username:
+        raise InvalidSettings(reason)
