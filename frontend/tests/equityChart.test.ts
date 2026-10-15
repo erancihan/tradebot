@@ -4,7 +4,7 @@
 
 import type { LineSeriesOption } from "echarts";
 
-import { benchmarkOnSnapshots, equityOption } from "../src/charts/equityChart";
+import { benchmarkOnSnapshots, equityOption, orderTraded } from "../src/charts/equityChart";
 import type { EquitySeries } from "../src/types";
 import { check } from "./harness";
 
@@ -56,3 +56,17 @@ for (const benchmark of [[], null]) {
   const none = equityOption({ ...bare, benchmark }).series as LineSeriesOption[];
   check(none.length === 1, `no line for ${JSON.stringify(benchmark)}`);
 }
+
+// A cancelled, expired or rejected order that filled nothing gets no pin; one
+// that filled part before it was cancelled, or was never asked about, does.
+const cancelled = { ...order, status: "canceled", filled_qty: 0 };
+const noPins = equityOption(bare, [cancelled]).series as LineSeriesOption[];
+check(noPins[0].markPoint === undefined, "a cancelled unfilled order has no pin");
+for (const status of ["expired", "rejected"]) {
+  check(!orderTraded({ ...order, status, filled_qty: null }), `${status} unfilled: no pin`);
+}
+check(orderTraded({ ...order, status: "canceled", filled_qty: 1 }), "a partial fill keeps its pin");
+check(orderTraded({ ...order, status: null }), "an order not asked about keeps its pin");
+const mixedPins = equityOption(bare, [order, cancelled]).series as LineSeriesOption[];
+const kept = (mixedPins[0].markPoint as { data: unknown[] }).data;
+check(kept.length === 1, `only the traded order is pinned: ${kept.length}`);

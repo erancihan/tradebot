@@ -25,17 +25,27 @@ export function axisLabels(timestamps: string[]): string[] {
   return daily ? dates : timestamps.map(shortTs);
 }
 
+/** Terminal states in which an order may have moved nothing. */
+const UNFILLED = new Set(["canceled", "expired", "rejected"]);
+
+/** Whether an order traded: a cancelled, expired or rejected one with nothing
+ * filled did not, so it gets no pin. Not asked yet or working: it counts. */
+export function orderTraded(order: OrderRow): boolean {
+  return !(UNFILLED.has(order.status ?? "") && !order.filled_qty);
+}
+
 /** Place each order on the equity line at its nearest-in-time snapshot. */
 function orderMarkPoints(
   series: EquitySeries,
   orders: OrderRow[],
   labels: string[],
 ): MarkPointComponentOption | undefined {
-  if (orders.length === 0 || series.points.length === 0) {
+  const traded = orders.filter(orderTraded);
+  if (traded.length === 0 || series.points.length === 0) {
     return undefined;
   }
   const times = series.points.map((p) => Date.parse(p.ts));
-  const data = orders.map((order) => {
+  const data = traded.map((order) => {
     const t = Date.parse(order.ts);
     let best = 0;
     let bestDiff = Infinity;

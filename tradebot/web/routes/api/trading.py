@@ -56,7 +56,9 @@ def orders(mode: str | None = None, limit: int = 100,
            repo: TradingRepository = Depends(get_trading_repo)):
     return [
         OrderRow(ts=r["ts"], symbol=r["symbol"], side=r["side"],
-                 qty=float(r["qty"]), mode=r["mode"], status=r["status"])
+                 qty=float(r["qty"]), mode=r["mode"], status=r["status"],
+                 price=r.get("price"), filled_qty=r.get("filled_qty"),
+                 fill_price=r.get("fill_price"), filled_at=r.get("filled_at"))
         for r in repo.recent_orders(limit=limit, mode=mode)
     ]
 
