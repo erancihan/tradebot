@@ -46,14 +46,35 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    // A 400 carries the server's reason (e.g. "not a symbol: 1X"); show it.
     const detail = await response
       .json()
-      .then((data: { detail?: unknown }) => (typeof data.detail === "string" ? data.detail : ""))
+      .then((data: { detail?: unknown }) => detailText(data.detail))
       .catch(() => "");
     throw new Error(detail || `Request failed (${response.status}): ${url}`);
   }
   return (await response.json()) as T;
+}
+
+interface ValidationIssue {
+  loc?: unknown[];
+  msg?: unknown;
+}
+
+// The server's reason for a refusal. A 400 carries a string ("not a symbol:
+// 1X"); FastAPI's 422 carries a list of {loc, msg}, shown as "field: msg"
+// with the field taken from the end of `loc` (its head is just "body").
+function detailText(detail: unknown): string {
+  if (typeof detail === "string") return detail;
+  if (!Array.isArray(detail)) return "";
+  return detail
+    .map((issue: ValidationIssue) => {
+      const msg = typeof issue?.msg === "string" ? issue.msg : "";
+      const loc = Array.isArray(issue?.loc) ? issue.loc : [];
+      const field = loc.length > 1 ? loc.slice(1).join(".") : loc.join(".");
+      return field && msg ? `${field}: ${msg}` : msg;
+    })
+    .filter((text) => text.length > 0)
+    .join("; ");
 }
 
 export function getEquity(mode?: string): Promise<EquitySeries> {

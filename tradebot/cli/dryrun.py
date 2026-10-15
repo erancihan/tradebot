@@ -123,7 +123,9 @@ def _drive_replay(engine, data, args) -> None:
 
     steps = 0
     while True:
-        engine.rebalance()
+        # The replay's "now" is its newest bar, so the daily-loss session
+        # follows the tape rather than the wall clock.
+        engine.rebalance(now=data.timestamp.to_pydatetime())
         steps += 1
         if args.iterations and steps >= args.iterations:
             break

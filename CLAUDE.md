@@ -46,7 +46,7 @@ tradebot/
   advisor/       propose (bars + account -> Proposal), explain, types
   engine/        core (Engine.step -> PassOutcome), signals, orders, pending
   autopilot/     state, schedule, runner (Autopilot, injected clock/sleep/calendar),
-                 approvals, brief (MorningBrief)
+                 approvals, background, brief (MorningBrief), session
   storage/       SQLite tradebot.db mixins: orders, bars, weights, proposals, autopilot, watchlist
   cli/           build_parser/main + one module per command
   arena/         api, loader, interfaces, adapters, simulation, scenario, runner +
@@ -125,21 +125,20 @@ config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])
   aim for 150 (`tests/test_code_shape.py`). Test modules have no module limit.
 - Split along section comments, one concern per file. Keep package re-exports
   so imports in `tests/` and `algos/` stay unchanged.
-- Type hints throughout, `from __future__ import annotations` in every module.
-  Comments explain why, not what.
+- Type hints, `from __future__ import annotations` everywhere; comments explain why.
 
 ## Dev commands
 
 ```bash
 make install | install-web | test | demo | dryrun | arena | web   # web serves :8000
-cd frontend && npm run typecheck | build | watch:js                  # after install-web
+cd frontend && npm run typecheck | test | build | watch:js           # after install-web
 ```
 CLI: `tradebot {backtest,run,status,demo,arena,data,universe}`, `tradebot-web
 [--config PATH]` (default `./config.yaml` when present, else SPY/QQQ defaults.
 A Settings save creates `./config.yaml`). `run --dry-run` / `--replay` forward-test.
 Arena: `arena {list,run,validate,history,show,league,season,gate,journal}`.
 Season: `arena season {create,seed,list,standings,run}`.
-CI (`.github/workflows/ci.yml`) runs offline pytest, `tsc --noEmit` and a
+CI (`.github/workflows/ci.yml`) runs offline pytest, `tsc --noEmit`, `npm test` and a
 build on every push and PR, with no credentials.
 
 ## Conventions
@@ -160,14 +159,13 @@ build on every push and PR, with no credentials.
   would trade (`test_propose_matches_engine_rebalance_deltas`).
 - **Bad prices are flat.** NaN, inf or non-positive prices never reach sizing.
   All three loops skip the symbol (`math.floor(NaN)` raises).
-- **Allocator history:** both loops pass `aligned.iloc[:i]` at fill bar `i`.
+- **Allocator history:** `aligned.iloc[:i]` at fill bar `i`. **ReplayData** advances once per step.
 - **Selectors are prefix-stable** (verdict at `t` from bars `<= t` and earlier
   verdicts). A ranked walk starts from an empty set, so a truncated frame
   changes the verdict: the engine recomputes from full stored history
   (`Engine._selector_frames`), and `record_bars` upserts forming bars.
 - **Composite selectors mask their own warmup** (`required_history - 1` rows).
   `exit_rank`: a held name stays droppable in any pool larger than `top_k`.
-- **ReplayData cursor** advances once per loop step, never inside `history()`.
 - **Cache coverage is a manifest** (`*.coverage.json`, gaps included), and it
   records the requested bounds: give `tradebot data pull` explicit `--start`/`--end`.
   Ranges are half-open (`_slice` drops the end date's 04:00/05:00 UTC session).
@@ -175,7 +173,7 @@ build on every push and PR, with no credentials.
 - **Cost model differs from production:** raw (not dividend-adjusted) bars, no
   daily-loss halt in simulation, 1 bp slippage, and synthetic `open(t) ==
   close(t-1)` hides signal-to-fill decay. Label this beside any quoted backtest.
-- **Window selection is a bias.** The sealed holdout is the only mitigation. Run it once, last.
+- **Window selection is a bias.** The sealed holdout is the only mitigation; run it once, last.
 - **Offline positions come from the order log** (signed sum per symbol for
   `settings.mode`, every order assumed filled), equity and cash from the newest
   snapshot, else `initial_cash`. Holdings use the same sum at the last cached
@@ -187,9 +185,9 @@ build on every push and PR, with no credentials.
   else `settings.symbols` (`symbols_service.with_active_symbols`, a copy). A
   watchlist edit stops a running autopilot (`autopilot_service.reset`), as a Settings save does.
   Symbols match `^[A-Z.\-]{1,10}$` after upper-casing.
-- **Contributions are not returns.** With `cash_flows`, metrics run on the
-  flow-free growth index (`backtest/flows.py`). `None` keeps the old path, and
-  the arena never passes flows. What-if cash lands on each month's first bar.
+- **Contributions are not returns.** With `cash_flows` metrics use the growth
+  index `equity_t / (equity_{t-1} + flow_t)`: a flow is invested at its bar's
+  open and earns that bar. The arena never passes flows. What-if cash: month's first bar.
 - **What-if books are fully investable** (`whatif_risk()`). The benchmark is
   equal-weight buy and hold with the same cash, so a buy-and-hold plan ties it.
 
@@ -237,15 +235,18 @@ build on every push and PR, with no credentials.
   errors. `deliver() -> bool` is only for the test-alert button ("not delivered").
 - **A pending batch expires, never executes late:** the next pass, an approval
   older than one `poll_seconds`, and switching off all expire it.
-- **A daily-loss halt turns the autopilot off.** The anchor is persisted per
-  scope (`autopilot/session.py`), so a restart or Settings save never re-anchors mid-day.
+- **The daily-loss breaker is per session day and flattens** (`engine/session.py`):
+  each pass rolls the anchor when `now`'s exchange date changes (a replay's `now` is
+  its newest bar); a breach closes every position and stays out that day. The
+  autopilot also turns off; its anchor persists per scope (`autopilot/session.py`).
 - **One lock, one connection:** the loop thread and web taps share the engine
   and SQLite (`check_same_thread=False`, WAL, `busy_timeout=5000`) under the
   Autopilot `RLock`. A line is `submitted` once the broker accepts it; later
   bookkeeping only logs. A mode switch wakes the loop.
-- **The web autopilot is paper or dry-run, never live** (`autopilot_build`).
-  The dry-run's virtual account does not survive a restart, the order log does.
-  `tradebot run --autopilot` builds exactly as `run`. A replay gets a simulated clock.
+- **The web autopilot is paper or dry-run, never live** (`autopilot_build`); a
+  dry-run's virtual account dies with a restart. `tradebot run --autopilot` builds as
+  `run`, keeps its state in scope `cli_<account>` (never the web's mode), expires no
+  pending lines at start, and a replay's clock reads its bars.
 - **With a morning brief, "off" keeps the loop alive** to send briefs from
   `engine.propose` (nothing stored). `brief_for` prevents resends. A brief-only
   loop is `tradebot run --autopilot --mode off`.
@@ -277,9 +278,8 @@ build on every push and PR, with no credentials.
 
 ## Docs policy
 
-- Documents state the final, expected state. Once a question is answered or a
-  decision made, write the answer and what happens next. Delete the question.
-- Keep only relevant documents: a paper trail only for what is done and the end goal.
+- Documents state the final, expected state: once a question is answered, write the
+  answer and what happens next, and delete the question. Keep only relevant documents.
 - An epic's plan folder under `docs/plans/` is deleted as the epic ships.
   Durable decisions go to `docs/adr/`. Research results go to
   `docs/research-record.md`.

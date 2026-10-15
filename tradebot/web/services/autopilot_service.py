@@ -59,7 +59,7 @@ def get(app) -> Autopilot:
 def view(app, notice: str | None = None) -> dict:
     pilot = current(app)
     if pilot is not None:
-        state, pending = pilot.state(), pilot.storage.pending_lines(pilot.scope)
+        state, pending = pilot.state(), pilot.storage.pending_lines(pilot.account)
     else:
         with Storage(app.state.trading_db) as st:
             state, pending = load_state(st, scope()), st.pending_lines(scope())

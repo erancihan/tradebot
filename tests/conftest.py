@@ -105,14 +105,22 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
 # machine that has one (this project now pulls real bars, so that is the normal
 # case) tests meant to exercise the no-credentials path silently made live HTTPS
 # calls instead. Neutralise dotenv, and make any outbound connection fail loudly
-# rather than depend on whoever's laptop is running the suite.
+# rather than depend on whoever's laptop is running the suite. Exported
+# variables are the same leak by another door: a shell with ALPACA_API_KEY set
+# sent four tests down the Alpaca path. They are removed for the session and
+# restored after it; a test that needs one sets it with monkeypatch.
+_SCRUBBED_ENV = ("ALPACA_API_KEY", "ALPACA_API_SECRET", "ALPACA_DATA_FEED",
+                 "TRADEBOT_WEB_TOKEN", "TRADEBOT_LIVE_CONFIRM")
+
 
 @pytest.fixture(autouse=True, scope="session")
 def _offline_guard():
+    import os
     import socket
 
     import tradebot.credentials as config_mod
 
+    saved_env = {name: os.environ.pop(name) for name in _SCRUBBED_ENV if name in os.environ}
     original_dotenv = config_mod._maybe_load_dotenv
     original_connect = socket.socket.connect
     # Exact matches, not prefixes: `str.startswith("")` is True for every string,
@@ -134,3 +142,4 @@ def _offline_guard():
     yield
     socket.socket.connect = original_connect
     config_mod._maybe_load_dotenv = original_dotenv
+    os.environ.update(saved_env)

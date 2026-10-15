@@ -285,3 +285,79 @@ def test_cli_run_replay_is_fully_offline(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "[DRY-RUN]" in out
     assert "Dry-run forward-test summary" in out
+
+
+# --- the daily-loss breaker in the plain run loop ---------------------------------
+
+class _Events:
+    def __init__(self) -> None:
+        self.events: list[dict] = []
+
+    def send(self, event: dict) -> None:
+        self.events.append(event)
+
+
+def _three_session_tape() -> pd.DataFrame:
+    """Hourly bars over three New York sessions: flat, a 5% fall, a recovery."""
+    days = ("2024-03-04", "2024-03-05", "2024-03-06")
+    index = pd.DatetimeIndex([ts for d in days for ts in pd.date_range(
+        f"{d} 14:30", periods=7, freq="h", tz="UTC")])
+    moves = [0.0] * 7 + [0.0, 0.0, -0.0125, -0.0125, -0.0125, -0.0125, 0.0] + [0.01] * 7
+    closes, price = [], 100.0
+    for move in moves:
+        price *= 1.0 + move
+        closes.append(price)
+    opens = [100.0, *closes[:-1]]
+    return pd.DataFrame({"open": opens, "close": closes,
+                         "high": [max(o, c) for o, c in zip(opens, closes)],
+                         "low": [min(o, c) for o, c in zip(opens, closes)],
+                         "volume": 1e6}, index=index)
+
+
+def _halting_engine(data, events=None):
+    settings = Settings(mode="paper", symbols=["X"], initial_cash=10_000, timeframe="1hour",
+                        strategy_name="buy_and_hold", strategy_params={})
+    settings.risk = RiskConfig(max_position_pct=1.0, max_daily_loss_pct=0.03)
+    broker = DryRunBroker(data, timeframe="1hour", initial_cash=10_000, slippage_bps=0)
+    engine = Engine(settings, broker, data, build_strategy("buy_and_hold", {}),
+                    RiskManager(settings.risk), mode_label="dry_run",
+                    enforce_live_ack=False, notifier=events)
+    return engine, broker
+
+
+def test_the_daily_loss_breaker_resets_each_session_day():
+    from argparse import Namespace
+
+    from tradebot.cli.dryrun import _drive_replay
+
+    data = ReplayData.from_single(_three_session_tape(), "X", warmup=2)
+    events = _Events()
+    engine, broker = _halting_engine(data, events)
+    passes: list[tuple[str, bool, float]] = []
+    real_step = engine.step
+
+    def step(*a, **kw):
+        outcome = real_step(*a, **kw)
+        passes.append((data.timestamp.strftime("%m-%d"), outcome.halted,
+                       broker.position("X").qty))
+        return outcome
+
+    engine.step = step
+    _drive_replay(engine, data, Namespace(iterations=None, speed=0))
+    halts = [e for e in events.events if e["type"] == "halt"]
+    assert len(halts) == 1                      # one halt, announced once
+    assert {day for day, halted, _ in passes if halted} == {"03-05"}
+    assert all(qty == 0.0 for _, halted, qty in passes if halted)   # flattened
+    assert passes[-1][0] == "03-06" and passes[-1][2] > 0           # trades again
+
+
+def test_a_daily_loss_halt_closes_open_positions():
+    df = synthetic_ohlcv(periods=10, seed=1)
+    data = ReplayData.from_single(df, "X", warmup=5)
+    engine, broker = _halting_engine(data)
+    engine.rebalance()
+    assert broker.position("X").qty > 0
+    engine.reset_session(start_equity=1_000_000.0)    # far above: the breaker trips
+    outcome = engine.step()
+    assert outcome.halted
+    assert broker.positions() == {}

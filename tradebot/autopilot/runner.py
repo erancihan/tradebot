@@ -19,6 +19,7 @@ from ..market import MarketCalendar, get_calendar
 from ..models import utcnow
 from . import schedule
 from .approvals import ApprovalsMixin
+from .background import BackgroundMixin
 from .brief import BriefMixin, MorningBrief
 from .session import SessionMixin
 from .state import AutopilotState, load_state, store_mode
@@ -28,16 +29,22 @@ log = logging.getLogger("tradebot.autopilot")
 HALT_ERROR = "daily loss halt"
 
 
-class Autopilot(ApprovalsMixin, BriefMixin, SessionMixin):
+class Autopilot(ApprovalsMixin, BackgroundMixin, BriefMixin, SessionMixin):
     def __init__(self, engine, storage, *, poll_seconds: float,
                  clock: Callable[[], datetime] = utcnow,
                  sleep: Callable[[float], object] | None = None,
                  calendar: MarketCalendar | None = None,
                  is_open: schedule.IsOpen | None = None,
                  next_open: schedule.NextOpen | None = None,
-                 notifier=None, brief_minutes: int | None = None) -> None:
+                 notifier=None, brief_minutes: int | None = None,
+                 scope: str | None = None) -> None:
         self.engine, self.storage = engine, storage
-        self.scope = engine.mode
+        # `account` keys what belongs to the account (pending lines, events);
+        # `scope` keys this runner's own state (mode, anchor, brief). They
+        # differ only for a headless CLI run, which must not switch the web's
+        # loop on or off behind the user's back.
+        self.account = engine.mode
+        self.scope = scope or engine.mode
         self.poll_seconds = float(poll_seconds)
         # The config's exchange unless one is injected; `is_open`/`next_open`
         # still override it singly (a replay is "always open").
@@ -69,15 +76,18 @@ class Autopilot(ApprovalsMixin, BriefMixin, SessionMixin):
 
     def state(self) -> AutopilotState:
         with self._lock:
-            return load_state(self.storage, self.scope, running=self._running)
+            return load_state(self.storage, self.scope, running=self._running,
+                              account=self.account)
 
-    def set_mode(self, mode: str) -> AutopilotState:
+    def set_mode(self, mode: str, *, expire_pending: bool = True) -> AutopilotState:
+        """Switch modes. ``expire_pending=False`` (a CLI start) leaves parked
+        lines alone: they may be the web user's, awaiting a tap."""
         with self._lock:
             store_mode(self.storage, self.scope, mode, self.clock())
-            if mode == "off":
+            if mode == "off" and expire_pending:
                 self._expire_pending()      # nobody is there to approve them now
-                if self.brief is None:      # with a brief, "off" still briefs
-                    self._stop.set()
+            if mode == "off" and self.brief is None:   # with a brief, "off" still briefs
+                self._stop.set()
             self._wake.set()
             return self.state()
 
@@ -129,7 +139,7 @@ class Autopilot(ApprovalsMixin, BriefMixin, SessionMixin):
 
     def _notify(self, event: dict) -> None:
         try:
-            self.notifier.send({"mode": self.scope, **event})
+            self.notifier.send({"mode": self.account, **event})
         except Exception:  # an observer never breaks the loop
             log.exception("Notifier failed for event %s", event.get("type"))
 
@@ -163,10 +173,6 @@ class Autopilot(ApprovalsMixin, BriefMixin, SessionMixin):
             times.append(state.next_pass_at)
         return min(times) if times else None
 
-    def _nap(self, seconds: float) -> None:
-        self._wake.wait(seconds)
-        self._wake.clear()
-
     def _safe_tick(self) -> AutopilotState | None:
         """A tick that cannot kill the loop: ``tick`` records pass errors; what
         is left (e.g. the store failing) has nowhere to go but the log."""
@@ -175,26 +181,3 @@ class Autopilot(ApprovalsMixin, BriefMixin, SessionMixin):
         except Exception:  # noqa: BLE001
             log.exception("Autopilot tick failed; retrying after one poll")
             return None
-
-    def start(self) -> bool:
-        """Run the loop on a background thread, once; returns whether it started.
-        Atomic, so two concurrent taps cannot start two loops. Its own lock, not
-        ``_lock``: the join below would deadlock on a tick waiting for that."""
-        with self._start_lock:
-            if self._thread is not None and self._thread.is_alive():
-                if not self._stop.is_set():
-                    return False
-                self._thread.join()         # an "off" is winding down: let it finish
-            self._stop.clear()
-            self._wake.clear()
-            self._running = True
-            self._thread = threading.Thread(target=self.run_forever, name="autopilot",
-                                            daemon=True)
-            self._thread.start()
-            return True
-
-    def stop(self, timeout: float | None = 5.0) -> None:
-        self._stop.set()
-        self._wake.set()
-        if self._thread is not None:
-            self._thread.join(timeout)

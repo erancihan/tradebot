@@ -3,37 +3,43 @@
 The engine is built exactly as `run` builds it (replay, dry-run or paper; a
 live config still needs the confirmation latch), then the same ``Autopilot``
 the web process owns drives it. A replay has no wall clock, so it gets a
-simulated one: every bar is "open" and each sleep advances one bar.
+simulated one: every bar is "open", each sleep advances one bar, and the
+clock reads the newest bar's timestamp.
 """
 
 from __future__ import annotations
 
 import argparse
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from ..models import utcnow
 from .common import _resolve_universe
 from .dryrun import _build_dry_engine, _print_dryrun_summary
 
 
 class _ReplayClock:
-    """Simulated time for a replay: sleeping advances the clock and one bar."""
+    """Simulated time for a replay: sleeping advances one bar, and "now" is
+    that bar's timestamp.
+
+    The clock follows the bars, not the requested sleep: a 300 s poll on a
+    daily tape would otherwise put ~288 bars in one session day, so the
+    daily-loss anchor would never reset and a slow fall would halt the run.
+    """
 
     def __init__(self, data, speed: float) -> None:
-        self.now: datetime = utcnow()
         self.data, self.speed = data, speed
+        self.now: datetime = data.timestamp.to_pydatetime()
         self.pilot = None
 
     def __call__(self) -> datetime:
         return self.now
 
     def sleep(self, seconds: float) -> None:
-        self.now += timedelta(seconds=seconds)
         if not self.data.has_next():
             self.pilot.stop(timeout=0)            # the tape ran out: end the run
             return
         self.data.advance()
+        self.now = self.data.timestamp.to_pydatetime()
         if self.speed:
             time.sleep(self.speed)
 
@@ -54,11 +60,14 @@ def run_autopilot(settings, args: argparse.Namespace) -> int:
     if replay:
         clock = _ReplayClock(data, args.speed)
         extra = dict(clock=clock, sleep=clock.sleep, is_open=lambda now: True)
+    # Its own state scope: the web's stored mode is what the next
+    # `tradebot-web` start resumes, so a headless run must never write it.
     pilot = Autopilot(engine, engine.storage, poll_seconds=settings.poll_seconds,
-                      calendar=get_calendar(settings.market), **extra)
+                      calendar=get_calendar(settings.market),
+                      scope=f"cli_{engine.mode}", **extra)
     if replay:
         clock.pilot = pilot
-    pilot.set_mode(args.mode)
+    pilot.set_mode(args.mode, expire_pending=False)
     print(f"[AUTOPILOT] mode={args.mode} account={engine.mode} on {settings.symbols} "
           f"with {engine.strategy.name}; every {settings.poll_seconds}s in {settings.market} hours.")
     if pilot.brief is not None:

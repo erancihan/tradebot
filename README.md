@@ -106,8 +106,10 @@ a paper pass trades. Nothing on Today places an order.
 
 The status card shows the mode, the loop, the account, the last and next pass,
 the pending count and the last error. If the daily-loss limit
-(`risk.max_daily_loss_pct`) trips, the autopilot switches itself **off**,
-shows `daily loss halt` and notifies you.
+(`risk.max_daily_loss_pct`) trips, the engine closes every open position,
+and the autopilot switches itself **off**, shows `daily loss halt` and
+notifies you. The limit is measured per exchange session day, so a plain
+`tradebot run` trades again at the next session.
 
 With keys the autopilot trades the **paper** account. Without them it runs a
 dry-run (simulated fills) over cached bars and labels the account `dry_run`.
@@ -571,6 +573,7 @@ RestartSec=60
 ```bash
 make test                          # pytest, fully offline, no credentials
 cd frontend && npm run typecheck   # strict tsc (needs make install-web)
+cd frontend && npm test            # behaviour tests (tests/*.test.ts) in Node, fetch stubbed
 cd frontend && npm run watch:js    # rebuild the bundle on change (also watch:css)
 ```
 

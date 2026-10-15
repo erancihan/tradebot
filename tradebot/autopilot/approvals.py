@@ -35,24 +35,24 @@ class ApprovalsMixin:
 
     def _pending_ids(self, line_ids: list[int]) -> list[int]:
         wanted = {int(i) for i in line_ids}
-        return [ln["id"] for ln in self.storage.pending_lines(self.scope)
+        return [ln["id"] for ln in self.storage.pending_lines(self.account)
                 if ln["id"] in wanted]
 
     def _pending_is_stale(self) -> bool:
-        lines = self.storage.pending_lines(self.scope)
+        lines = self.storage.pending_lines(self.account)
         if not lines:
             return False
         oldest = min(datetime.fromisoformat(ln["created_at"]) for ln in lines)
         return self.clock() - oldest > timedelta(seconds=self.poll_seconds)
 
     def _expire_pending(self) -> int:
-        ids = [ln["id"] for ln in self.storage.pending_lines(self.scope)]
+        ids = [ln["id"] for ln in self.storage.pending_lines(self.account)]
         if ids:
             self.storage.set_line_status(ids, "expired")
         return len(ids)
 
     def _announce_pending(self, batch_id: int | None) -> None:
-        lines = self.storage.pending_lines(self.scope)
+        lines = self.storage.pending_lines(self.account)
         if not lines:
             return
         self._notify({

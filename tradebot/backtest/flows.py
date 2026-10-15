@@ -30,11 +30,16 @@ def bar_cash_flows(cash_flows: dict | None, common: pd.DatetimeIndex) -> pd.Seri
 def growth_index(equity: pd.Series, flows: pd.Series, initial_cash: float) -> pd.Series:
     """Time-weighted growth of one unit of money, flows removed.
 
-    Each bar's return is ``(equity_t - flow_t) / equity_{t-1} - 1``: the flow
-    arrives before the bar is sized, so it earns that bar's return but is not
-    part of it. With no flows this is exactly ``equity / initial_cash``.
+    Each bar's return is ``equity_t / (equity_{t-1} + flow_t) - 1``. The
+    Backtester adds a flow before the bar is sized and invests it at that
+    bar's open, so the flow is part of the capital the bar's return is earned
+    on. Subtracting it from the end instead (``(equity_t - flow_t) /
+    equity_{t-1}``) credits the flow's own gain or loss to the old capital: a
+    10000 contribution on a 100 book that falls 3% reads as a -300% bar. With
+    no flows this is exactly ``equity / initial_cash``.
     """
     previous = equity.shift(1)
     previous.iloc[0] = initial_cash
-    ratio = (equity - flows) / previous.where(previous > 0)
+    base = previous + flows
+    ratio = equity / base.where(base > 0)
     return ratio.fillna(1.0).cumprod().rename("growth")
