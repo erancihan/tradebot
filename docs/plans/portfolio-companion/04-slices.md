@@ -46,4 +46,5 @@ merged to master from its `feat/<epic>` branch with a no-ff merge commit.
 - [ ] S5.1 ntfy phone alerts documented, one-tap test button on the Autopilot page
 - [ ] S5.2 watchlist (symbols the advisor scans) editable from the Today page
 - [x] S5.3 `MarketCalendar` protocol with `us_equities`, used by the season daemon and the autopilot, BIST stub with a holidays table
-- [ ] S5.4 further ideas evaluated, then built or recorded as an ADR "not now"
+- [x] S5.4 morning brief: the day's proposal sent through the notifier N minutes before each open, in any autopilot mode (`--mode off` runs it alone)
+- [ ] S5.5 further ideas evaluated, then built or recorded as an ADR "not now"

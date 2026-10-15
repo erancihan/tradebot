@@ -84,6 +84,8 @@ class Settings:
     #: Exchange calendar for scheduling (see tradebot.market). Alpaca is the
     #: only broker, so a non-US calendar changes when loops wake, not trading.
     market: str = "us_equities"
+    #: YAML `autopilot: {brief_minutes_before_open: N}`; None = no brief.
+    brief_minutes_before_open: int | None = None
 
     def __post_init__(self) -> None:
         if self.mode not in VALID_MODES:
@@ -192,4 +194,6 @@ class Settings:
             commission=float(raw.get("commission", 0.0)),
             slippage_bps=float(raw.get("slippage_bps", 1.0)),
             market=raw.get("market", "us_equities"),
+            brief_minutes_before_open=(raw.get("autopilot", {}) or {}).get(
+                "brief_minutes_before_open"),
         )

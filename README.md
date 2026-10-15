@@ -650,6 +650,31 @@ and the live latch all apply). In approve mode the parked trades are approved
 from the Autopilot page of a server that uses the same database; with paper
 credentials both submit to the same paper account.
 
+### Morning brief
+
+Set a lead time and the autopilot sends the day's proposal that many minutes
+before each open, as a short plain list through the notifier (log, webhook):
+
+```yaml
+autopilot:
+  brief_minutes_before_open: 30
+```
+
+```
+BUY 35 SPY (buy_and_hold signals long; buy.)
+BUY 38 QQQ (buy_and_hold signals long; buy.)
+```
+
+The brief is a preview: it asks the advisor for the same lines the Today page
+shows and stores, parks or submits nothing. It fires once per session, in any
+mode, as long as the loop runs. To get only the brief, with no trading:
+
+```bash
+tradebot run --config config.yaml --autopilot --mode off
+```
+
+The event is `{"type": "brief", "opens_at": ..., "text": ..., "lines": [...]}`.
+
 ### Market hours
 
 "Market hours" come from the config's `market:` calendar: `us_equities`

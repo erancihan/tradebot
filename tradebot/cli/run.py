@@ -40,9 +40,10 @@ def register(sub: argparse._SubParsersAction) -> None:
              "hours (every bar in a replay); --iterations caps the ticks",
     )
     r.add_argument(
-        "--mode", choices=("approve", "auto"), default="approve",
+        "--mode", choices=("off", "approve", "auto"), default="approve",
         help="autopilot mode: 'approve' parks each pass's trades for approval "
-             "on the Autopilot page; 'auto' submits them (default approve)",
+             "on the Autopilot page; 'auto' submits them; 'off' trades nothing "
+             "and only sends the morning brief (default approve)",
     )
     r.set_defaults(func=cmd_run)
 

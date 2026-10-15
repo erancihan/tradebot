@@ -50,6 +50,14 @@ poll_seconds: 300
 # wakes, never where orders go. Unknown names are rejected at load.
 market: us_equities
 
+# --- Autopilot (optional) -------------------------------------------------------
+# Morning brief: N minutes before each open the autopilot sends the day's
+# proposal as a short list (BUY 3 SPY (reason)) through the notifier. A preview
+# only: nothing is stored or submitted. Runs in every autopilot mode, including
+# `tradebot run --autopilot --mode off` (brief only). Omit to disable.
+# autopilot:
+#   brief_minutes_before_open: 30
+
 # Starting capital for backtests (paper/live read equity from the broker).
 initial_cash: 10000
 

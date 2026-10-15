@@ -42,6 +42,10 @@ def run_autopilot(settings, args: argparse.Namespace) -> int:
     from ..autopilot import Autopilot
     from ..market import get_calendar
 
+    if args.mode == "off" and not settings.brief_minutes_before_open:
+        print("--mode off only sends the morning brief; set "
+              "autopilot.brief_minutes_before_open in the config.")
+        return 2
     built = _build(settings, args)
     if built is None:
         return 2
@@ -57,6 +61,9 @@ def run_autopilot(settings, args: argparse.Namespace) -> int:
     pilot.set_mode(args.mode)
     print(f"[AUTOPILOT] mode={args.mode} account={engine.mode} on {settings.symbols} "
           f"with {engine.strategy.name}; every {settings.poll_seconds}s in {settings.market} hours.")
+    if pilot.brief is not None:
+        print(f"[AUTOPILOT] morning brief {settings.brief_minutes_before_open} min "
+              f"before each {settings.market} open.")
     try:
         ticks = pilot.run_forever(max_ticks=1 if args.once else args.iterations)
     except KeyboardInterrupt:

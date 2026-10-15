@@ -1,6 +1,7 @@
 """The autopilot runner: one pass per poll inside market hours.
 
-``tick()`` is one wake: if the mode is on and the market is open it runs one
+``tick()`` is one wake: it sends the morning brief when one is due (any
+mode, see ``brief``), and if the mode is on and the market is open it runs one
 engine pass (``auto`` submits, ``approve`` parks the trades as pending), then
 schedules the next pass. ``run_forever`` repeats ticks with an injected sleep,
 so the whole loop runs offline under a fake clock, the same pattern as the
@@ -19,6 +20,7 @@ from ..market import MarketCalendar, get_calendar
 from ..models import utcnow
 from . import schedule
 from .approvals import ApprovalsMixin
+from .brief import BriefMixin, MorningBrief
 from .state import AutopilotState, load_state, store_mode
 
 log = logging.getLogger("tradebot.autopilot")
@@ -26,14 +28,14 @@ log = logging.getLogger("tradebot.autopilot")
 HALT_ERROR = "daily loss halt"
 
 
-class Autopilot(ApprovalsMixin):
+class Autopilot(ApprovalsMixin, BriefMixin):
     def __init__(self, engine, storage, *, poll_seconds: float,
                  clock: Callable[[], datetime] = utcnow,
                  sleep: Callable[[float], object] | None = None,
                  calendar: MarketCalendar | None = None,
                  is_open: schedule.IsOpen | None = None,
                  next_open: schedule.NextOpen | None = None,
-                 notifier=None) -> None:
+                 notifier=None, brief_minutes: int | None = None) -> None:
         self.engine, self.storage = engine, storage
         self.scope = engine.mode
         self.poll_seconds = float(poll_seconds)
@@ -45,10 +47,15 @@ class Autopilot(ApprovalsMixin):
         self.is_open = is_open or self.calendar.is_open
         self.next_open = next_open or self.calendar.next_open
         self.notifier = notifier if notifier is not None else engine.notifier
+        minutes = (brief_minutes if brief_minutes is not None
+                   else getattr(engine.settings, "brief_minutes_before_open", None))
+        self.brief = MorningBrief(minutes, self.calendar) if minutes is not None else None
         self._lock = threading.RLock()
         self._stop = threading.Event()
-        # The default sleep is the stop event's wait, so "off" wakes the loop.
-        self._sleep = sleep if sleep is not None else self._stop.wait
+        # The default sleep waits on `_wake`, so a mode switch or a stop ends
+        # the nap at once instead of at the next scheduled pass or brief.
+        self._wake = threading.Event()
+        self._sleep = sleep if sleep is not None else self._nap
         self._thread: threading.Thread | None = None
         self._running = False
         self._session: object | None = None
@@ -67,7 +74,9 @@ class Autopilot(ApprovalsMixin):
             store_mode(self.storage, self.scope, mode, self.clock())
             if mode == "off":
                 self._expire_pending()      # nobody is there to approve them now
-                self._stop.set()
+                if self.brief is None:      # with a brief, "off" still briefs
+                    self._stop.set()
+            self._wake.set()
             return self.state()
 
     def _set(self, **values) -> None:
@@ -80,6 +89,7 @@ class Autopilot(ApprovalsMixin):
         next pass time. An exception is recorded, never raised."""
         with self._lock:
             now = self.clock()
+            self._maybe_brief(now)
             mode = self.state().mode
             if mode != "off":
                 if self.is_open(now):
@@ -130,15 +140,29 @@ class Autopilot(ApprovalsMixin):
             while (max_ticks is None or ticks < max_ticks) and not self._stop.is_set():
                 state = self._safe_tick()
                 ticks += 1
-                if state is not None and state.mode == "off":
+                if state is not None and state.mode == "off" and self.brief is None:
                     break
                 if max_ticks is None or ticks < max_ticks:
                     self._sleep(schedule.wait_seconds(
-                        self.clock(), state.next_pass_at if state else None,
-                        self.poll_seconds))
+                        self.clock(), self._wake_at(state), self.poll_seconds))
         finally:
             self._running = False
         return ticks
+
+    def _wake_at(self, state: AutopilotState | None) -> datetime | None:
+        """The earlier of the next pass (when on) and the next brief; None
+        (retry after one poll) when the tick itself failed."""
+        if state is None:
+            return None
+        with self._lock:
+            times = [self._brief_wake(self.clock())] if self.brief else []
+        if state.mode != "off" and state.next_pass_at:
+            times.append(state.next_pass_at)
+        return min(times) if times else None
+
+    def _nap(self, seconds: float) -> None:
+        self._wake.wait(seconds)
+        self._wake.clear()
 
     def _safe_tick(self) -> AutopilotState | None:
         """A tick that cannot kill the loop: a pass error is already recorded
@@ -157,6 +181,7 @@ class Autopilot(ApprovalsMixin):
                 return False
             self._thread.join()             # an "off" is winding down: let it finish
         self._stop.clear()
+        self._wake.clear()
         self._running = True
         self._thread = threading.Thread(target=self.run_forever, name="autopilot",
                                         daemon=True)
@@ -165,5 +190,6 @@ class Autopilot(ApprovalsMixin):
 
     def stop(self, timeout: float | None = 5.0) -> None:
         self._stop.set()
+        self._wake.set()
         if self._thread is not None:
             self._thread.join(timeout)
