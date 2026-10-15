@@ -20,7 +20,11 @@ CREATE TABLE IF NOT EXISTS orders (
     type            TEXT NOT NULL,
     broker_order_id TEXT,
     mode            TEXT NOT NULL,
-    price           REAL            -- the price the line was sized at; NULL if unknown
+    price           REAL,           -- the price the line was sized at; NULL if unknown
+    status          TEXT,           -- the broker's last word (OrderStatus); NULL = not asked yet
+    filled_qty      REAL,           -- shares filled so far, per the broker
+    fill_price      REAL,           -- average fill price; NULL until something filled
+    filled_at       TEXT
 );
 CREATE TABLE IF NOT EXISTS equity_snapshots (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -99,6 +103,10 @@ CREATE TABLE IF NOT EXISTS discover_runs (
 #: (table, column, declaration) added after the table first shipped.
 _ADDED_COLUMNS = (
     ("orders", "price", "REAL"),
+    ("orders", "status", "TEXT"),
+    ("orders", "filled_qty", "REAL"),
+    ("orders", "fill_price", "REAL"),
+    ("orders", "filled_at", "TEXT"),
 )
 
 

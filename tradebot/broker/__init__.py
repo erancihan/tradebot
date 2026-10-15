@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from .base import AccountSnapshot, Broker
+from .base import AccountSnapshot, Broker, OrderStatus
 from .dryrun import DryRunBroker
 
-__all__ = ["Broker", "AccountSnapshot", "DryRunBroker", "get_broker"]
+__all__ = ["Broker", "AccountSnapshot", "DryRunBroker", "OrderStatus", "get_broker"]
 
 
 def get_broker(*args, **kwargs):

@@ -17,7 +17,7 @@ import logging
 
 from ..models import Side
 from ..portfolio import Portfolio
-from .base import AccountSnapshot, Broker
+from .base import AccountSnapshot, Broker, OrderStatus
 from .brackets import BracketsMixin, _Bracket  # noqa: F401  (re-exported)
 
 log = logging.getLogger("tradebot.dryrun")
@@ -43,6 +43,8 @@ class DryRunBroker(BracketsMixin, Broker):
         self._marks: dict[str, float] = {}
         self._order_seq = 0
         self._brackets: dict[str, _Bracket] = {}
+        # Every order fills in full at once; kept so `order_status` can say so.
+        self._orders: dict[str, OrderStatus] = {}
 
     # --- price marking -------------------------------------------------------
     def _latest_price(self, symbol: str) -> float | None:
@@ -105,11 +107,18 @@ class DryRunBroker(BracketsMixin, Broker):
 
         self._order_seq += 1
         order_id = f"dryrun-{self._order_seq}"
+        self._orders[order_id] = OrderStatus("filled", float(order.qty), fill_price,
+                                             order.created_at)
         log.info(
             "[DRY-RUN] SIM FILL %s %.4f %s @ %.2f (no order sent)",
             order.side.value, order.qty, order.symbol, fill_price,
         )
         return order_id
+
+    def order_status(self, broker_order_id: str) -> OrderStatus | None:
+        """The simulated fill; None for an id this broker never issued (a
+        dry-run account dies with its process)."""
+        return self._orders.get(broker_order_id)
 
     def cancel_all(self) -> None:
         # No resting orders exist in dry-run; nothing to cancel.
