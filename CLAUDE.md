@@ -153,8 +153,7 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
 - **Change `advisor.propose`, not `Engine.rebalance`.** The engine calls
   `propose` and submits its lines, so a Today suggestion is exactly what a pass
   would trade (`test_propose_matches_engine_rebalance_deltas`).
-- **Bad prices are flat.** NaN, inf or non-positive prices never reach sizing.
-  All three loops skip the symbol (`math.floor(NaN)` raises).
+- **Bad prices are flat.** NaN, inf or non-positive prices never reach sizing. All three loops skip the symbol (`math.floor(NaN)` raises).
 - **Allocator history:** `aligned.iloc[:i]` at fill bar `i`. **ReplayData** advances once per step.
 - **Selectors are prefix-stable** (verdict at `t` from bars `<= t` and earlier
   verdicts). A ranked walk starts from an empty set, so a truncated frame
@@ -232,14 +231,16 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   pass re-enters. `DryRunBroker` fills stop before target, gap-through at the
   open, and only on a bar *after* the entry bar (a parked replay would book a
   phantom exit each pass). Streaming only speeds bar arrival; the `Engine` polls.
-- **A notifier never breaks a trade:** sends are wrapped, remote notifiers swallow
-  errors. `deliver() -> bool` is only for the test-alert button ("not delivered").
-- **A pending batch expires, never executes late:** the next pass, an approval
-  older than one `poll_seconds`, and switching off all expire it.
+- **A notifier never breaks a trade:** sends are wrapped, remote notifiers swallow errors. `deliver() -> bool` is only for the test-alert button ("not delivered").
+- **A pending batch is re-sized or expired, never executed late:** a pass proposing the same
+  `(symbol, action)` set refreshes it in place (sizing, prices, `created_at`; rejected lines stay
+  rejected; same batch id, so the push's link still works). A changed proposal, an approval older
+  than one `poll_seconds`, a halt, and switching off expire it. One push per batch, plus a reminder
+  every `links.ttl_seconds` (max(2 x poll, 30 min)), which is also the link TTL (`announced_*` state).
 - **Signed batch links** (`autopilot/links.py`; buttons when `safe_public_url(notify.public_url)`)
   are paper-only (other pushes get just "Open") and account-bound (`account:batch:verb:exp`); they act
   on that account's pending lines under the lock (`Autopilot.act_on_batch`; foreign batch = 409). Key
-  from `TRADEBOT_WEB_TOKEN`, else per-process; 2 x poll (min 10 min); single use per process (after a
+  from `TRADEBOT_WEB_TOKEN`, else per-process; `ttl_seconds`; single use per process (after a
   restart a used link acts again until `exp`). They skip the cookie gate, not the guard. **The ntfy topic grants approval.**
 - **The daily-loss breaker is per session day and flattens** (`engine/session.py`):
   each pass rolls the anchor when `now`'s exchange date changes (a replay's `now` is
@@ -262,9 +263,8 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   working directory (`Path.cwd()`, never upward; launchd's `WorkingDirectory`), `DOTENV_KEYS` only. A save merges
   the editable keys into the file on disk (mode, db_path, costs, universe kept), validates by building
   every component, writes atomically, then `autopilot_service.reset` stops the loop (stored mode kept).
-- **Alert destinations are masked both ways** (`settings_secrets`): a masked or
-  omitted value keeps the stored one only while it still points at the same host
-  or ntfy server; `""` deletes it. Settings responses are `Cache-Control: no-store`.
+- **Alert destinations are masked both ways** (`settings_secrets`): a masked or omitted value keeps the
+  stored one only while it still points at the same host or ntfy server; `""` deletes it. Settings responses are `Cache-Control: no-store`.
 - **Alpine state is a Proxy:** `structuredClone` throws on it (copy with JSON),
   and ECharts instances must live in a closure, not in Alpine state.
 - **Pydantic coercion:** `JobRequest.params` stays `dict | None` (float coercion breaks ints).
