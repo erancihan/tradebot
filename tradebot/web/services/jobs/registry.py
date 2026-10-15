@@ -111,12 +111,18 @@ class JobRegistry:
 
 
 #: Raised on purpose with a sentence for the person (no bars cached, a bad
-#: symbol): the sentence is the message. Anything else keeps its class name,
-#: because "KeyError: 'close'" is the whole clue.
+#: symbol): the sentence is the message. Exact types only: a subclass such as
+#: ``DailyLossLimitError`` or ``JSONDecodeError`` keeps its name as the clue,
+#: as does anything else ("KeyError: 'close'" is the whole clue).
 _EXPECTED = (RuntimeError, ValueError)
 
 
 def _error_text(exc: Exception) -> str:
-    if isinstance(exc, _EXPECTED) and str(exc):
+    if type(exc) in _EXPECTED and str(exc):
         return str(exc)
+    # The registries raise KeyError("Unknown strategy 'x'. Known: ...");
+    # str() would wrap that sentence in quotes, so show the sentence itself.
+    first = exc.args[0] if type(exc) is KeyError and exc.args else None
+    if isinstance(first, str) and " " in first:
+        return first
     return f"{type(exc).__name__}: {exc}"
