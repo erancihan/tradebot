@@ -216,3 +216,63 @@ def test_roundtrip_preserves_ohlcv(tmp_path):
     loaded = cache.load("Z", "1day")
     # The cache names the index 'timestamp' for CSV roundtrip; values must match.
     pd.testing.assert_frame_equal(loaded, df, check_freq=False, check_names=False)
+
+
+# --- a daily fetch never caches a forming bar ---------------------------------
+from datetime import datetime, timezone  # noqa: E402
+
+
+def _at(hour: int, minute: int = 0):
+    """A clock on Wednesday 2026-10-14 (a US trading day), UTC."""
+    return lambda: datetime(2026, 10, 14, hour, minute, tzinfo=timezone.utc)
+
+
+def _upto_today(asks):
+    def fetch(symbol, timeframe, start, end):
+        asks.append(end)
+        # A provider hands back whatever exists, today's forming bar included.
+        return _calendar_frame("2026-09-01", "2026-10-14")
+    return fetch
+
+
+def test_mid_session_a_daily_fetch_stops_at_the_previous_close(tmp_path):
+    asks = []
+    cache = BarCache(tmp_path, clock=_at(15))              # 11:00 New York
+    got = cache.get("F", "1day", start="2026-09-01", fetcher=_upto_today(asks))
+    assert asks == [pd.Timestamp("2026-10-13 20:00", tz="UTC")]   # Tuesday's close
+    assert got.index.max().date().isoformat() == "2026-10-13"
+    stored = cache.load("F", "1day")
+    assert stored.index.max().date().isoformat() == "2026-10-13"   # never cached
+    assert cache.coverage("F", "1day")[-1][1] == asks[0]
+
+
+def test_after_the_close_todays_bar_is_final_and_kept(tmp_path):
+    asks = []
+    cache = BarCache(tmp_path, clock=_at(21, 30))          # 17:30 New York
+    got = cache.get("F", "1day", start="2026-09-01", end="2026-10-15",
+                    fetcher=_upto_today(asks))
+    assert asks == [pd.Timestamp("2026-10-14 20:00", tz="UTC")]
+    assert got.index.max().date().isoformat() == "2026-10-14"
+    assert cache.load("F", "1day").index.max().date().isoformat() == "2026-10-14"
+
+
+def test_a_cached_file_is_never_updated_with_a_forming_bar(tmp_path):
+    seeded = _calendar_frame("2026-09-01", "2026-10-09")
+    BarCache(tmp_path).store("F", "1day", seeded)
+    cache = BarCache(tmp_path, clock=_at(15))
+    cache.get("F", "1day", start="2026-09-01", end="2026-10-14 23:59",
+              fetcher=_upto_today([]))
+    assert cache.load("F", "1day").index.max().date().isoformat() == "2026-10-13"
+    # The same ask again is covered through the clamp: no refetch loop.
+    cache.get("F", "1day", start="2026-09-01", end="2026-10-14 23:59", fetcher=None)
+
+
+def test_an_explicit_past_end_and_intraday_bars_are_unchanged(tmp_path):
+    asks = []
+    cache = BarCache(tmp_path, clock=_at(15))
+    cache.get("F", "1day", start="2026-09-01", end="2026-10-01",
+              fetcher=_upto_today(asks))
+    assert asks == [pd.Timestamp("2026-10-01", tz="UTC")]
+    cache.get("F", "1hour", start="2026-10-14", end="2026-10-14 15:00",
+              fetcher=_upto_today(asks))
+    assert asks[-1] == pd.Timestamp("2026-10-14 15:00", tz="UTC")

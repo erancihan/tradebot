@@ -25,6 +25,25 @@ def _ts(value) -> pd.Timestamp | None:
     return pd.Timestamp(value, tz="UTC") if pd.Timestamp(value).tzinfo is None else pd.Timestamp(value)
 
 
+#: Timeframe names that mean one bar per session.
+DAILY = frozenset({"1day", "1d", "day"})
+
+
+def complete_through(timeframe: str, end, now) -> pd.Timestamp | None:
+    """``end``, clamped for daily bars to the last completed session's close.
+
+    During market hours a provider returns today's still-forming daily bar;
+    cached as final, it would never be refetched. Intraday timeframes and an
+    ``end`` already in the past pass through unchanged.
+    """
+    if str(timeframe).lower() not in DAILY:
+        return end
+    from ..market.us import last_completed_close
+
+    done = pd.Timestamp(last_completed_close(now)).tz_convert("UTC")
+    return done if end is None or end > done else end
+
+
 def _merge_windows(
     windows: list[tuple[pd.Timestamp, pd.Timestamp]],
 ) -> list[tuple[pd.Timestamp, pd.Timestamp]]:

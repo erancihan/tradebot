@@ -162,13 +162,13 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   (`Engine._selector_frames`), and `record_bars` upserts forming bars.
 - **Composite selectors mask their own warmup** (`required_history - 1` rows).
   `exit_rank`: a held name stays droppable in any pool larger than `top_k`.
-- **Cache coverage is a manifest** (`*.coverage.json`, gaps included), and it
-  records the requested bounds: give `tradebot data pull` explicit `--start`/`--end`.
-  Ranges are half-open (`_slice` drops the end date's 04:00/05:00 UTC session); changing that needs a migration.
-- **Cost model differs from production:** raw (not dividend-adjusted) bars, no
-  daily-loss halt in simulation, 1 bp slippage, and synthetic `open(t) ==
-  close(t-1)` hides signal-to-fill decay. Label this beside any quoted backtest.
-- **Window selection is a bias.** The sealed holdout is the only mitigation; run it once, last.
+- **Cache coverage is a manifest** (`*.coverage.json`, gaps included) of the requested bounds:
+  give `tradebot data pull` explicit `--start`/`--end`. Ranges are half-open (`_slice` drops the
+  end date's 04:00/05:00 UTC session); changing that needs a migration. **A daily fetch never caches
+  a forming bar:** `BarCache` clamps the end to the last completed session (US close; `clock` injected).
+- **Cost model differs from production:** raw (not dividend-adjusted) bars, no daily-loss halt
+  in simulation, 1 bp slippage, and synthetic `open(t) == close(t-1)` hides signal-to-fill decay.
+  Label it beside any quoted backtest. **Window selection is a bias:** run the sealed holdout once, last.
 - **Offline positions come from the order log** (signed sum per symbol for
   `settings.mode`, every order assumed filled), equity and cash from the newest
   snapshot, else `initial_cash`. Holdings use the same sum at the last cached
@@ -258,10 +258,10 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   loop is `tradebot run --autopilot --mode off`.
 
 **Web and CI**
-- **The web writes `config.yaml` without comments. Secrets stay in `.env`.**
-  A save merges the editable keys into the file on disk (mode, db_path, costs,
-  universe kept), validates by building every component, writes atomically, then
-  `autopilot_service.reset` stops the loop and drops the runner (stored mode kept).
+- **The web writes `config.yaml` without comments. Secrets stay in `.env`**, read only from the
+  working directory (`Path.cwd()`, never upward; launchd's `WorkingDirectory`), `DOTENV_KEYS` only. A save merges
+  the editable keys into the file on disk (mode, db_path, costs, universe kept), validates by building
+  every component, writes atomically, then `autopilot_service.reset` stops the loop (stored mode kept).
 - **Alert destinations are masked both ways** (`settings_secrets`): a masked or
   omitted value keeps the stored one only while it still points at the same host
   or ntfy server; `""` deletes it. Settings responses are `Cache-Control: no-store`.

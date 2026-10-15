@@ -19,6 +19,13 @@ from tradebot.web import server  # noqa: E402
 from tradebot.web.app import create_app  # noqa: E402
 from tradebot.web.services import autopilot_service  # noqa: E402
 
+# The real loader, saved at collection: the suite's session `_offline_guard`
+# swaps in a no-op only after every module is imported.
+import tradebot.credentials as _credentials  # noqa: E402
+
+_REAL_LOAD_DOTENV = _credentials._maybe_load_dotenv
+assert _REAL_LOAD_DOTENV.__name__ == "_maybe_load_dotenv"
+
 KEY, SECRET, TOKEN = "PKSECRETKEYVALUE", "SECRETSECRETVALUE", "tok-secret-value-123"
 CONFIG = "mode: paper\nsymbols: [SPY, QQQ]\nstrategy:\n  name: buy_and_hold\n  params: {}\n"
 
@@ -110,3 +117,66 @@ def test_stopping_the_server_stops_a_running_autopilot_loop(tmp_path, monkeypatc
         assert pilot is not None and pilot._thread.is_alive()
     assert not pilot._thread.is_alive()          # the shutdown itself joined it
     assert pilot.running is False
+
+
+def test_check_reads_the_dotenv_in_the_working_directory(tmp_path, capsys, monkeypatch):
+    """The real loader, not the suite's no-op: `.env` comes from the cwd."""
+    from tradebot import credentials
+
+    monkeypatch.setattr(credentials, "_maybe_load_dotenv", _REAL_LOAD_DOTENV)
+    pytest.importorskip("dotenv")
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / ".env").write_text(f"TRADEBOT_WEB_TOKEN={TOKEN}\n")
+    monkeypatch.chdir(work)
+    monkeypatch.delenv("TRADEBOT_WEB_TOKEN", raising=False)
+    try:
+        code = server.main(["--check", "--config", _config(tmp_path),
+                            "--trading-db", str(tmp_path / "t.db")])
+        out = capsys.readouterr().out
+        assert code == 0 and "token=set" in out, out
+    finally:
+        import os
+
+        os.environ.pop("TRADEBOT_WEB_TOKEN", None)   # the loader set it for real
+
+
+def test_a_dotenv_above_the_working_directory_is_not_searched(tmp_path, monkeypatch):
+    from tradebot import credentials
+
+    pytest.importorskip("dotenv")
+    (tmp_path / ".env").write_text("TRADEBOT_WEB_TOKEN=from-a-parent\n")
+    work = tmp_path / "child"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    monkeypatch.delenv("TRADEBOT_WEB_TOKEN", raising=False)
+    _REAL_LOAD_DOTENV()
+    import os
+
+    assert "TRADEBOT_WEB_TOKEN" not in os.environ
+
+
+def test_only_the_allowlisted_keys_leave_the_dotenv(tmp_path, monkeypatch):
+    import os
+
+    from tradebot import credentials
+
+    pytest.importorskip("dotenv")
+    monkeypatch.chdir(tmp_path)
+    for name in credentials.DOTENV_KEYS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("TRADEBOT_DB", "set-wins.db")
+    monkeypatch.delenv("TRADEBOT_EVIL", raising=False)
+    path_before, pypath_before = os.environ.get("PATH"), os.environ.get("PYTHONPATH")
+    (tmp_path / ".env").write_text(
+        "PATH=/evil/bin\nPYTHONPATH=/evil/lib\nTRADEBOT_EVIL=1\n"
+        "TRADEBOT_DB=from-file.db\nTRADEBOT_CONFIG=/srv/config.yaml\n")
+    try:
+        _REAL_LOAD_DOTENV()
+        assert os.environ.get("PATH") == path_before
+        assert os.environ.get("PYTHONPATH") == pypath_before
+        assert "TRADEBOT_EVIL" not in os.environ
+        assert os.environ["TRADEBOT_DB"] == "set-wins.db"          # set variables win
+        assert os.environ["TRADEBOT_CONFIG"] == "/srv/config.yaml"
+    finally:
+        os.environ.pop("TRADEBOT_CONFIG", None)

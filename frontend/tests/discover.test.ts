@@ -16,7 +16,7 @@ stubFetch((url, init) => {
   }
   if (url === "/api/discover/run") return json({ job_id: "d1" });
   if (url === "/api/jobs/d1") {
-    return json({ id: "d1", kind: "discover", state: jobState, error: "RuntimeError: no cache" });
+    return json({ id: "d1", kind: "discover", state: jobState, error: "no cached daily bars to search" });
   }
   if (url === "/partials/discover") return new Response(partial);
   if (url === "/api/discover/add") {
@@ -52,7 +52,7 @@ function mount() {
   const { page, rows } = mount();
   await page.find();
   check(page.state === "error", `state is "error", got "${page.state}"`);
-  check(page.error.includes("no cache"), `the error names the failure: "${page.error}"`);
+  check(page.error.includes("no cached daily bars"), `the error names the failure: "${page.error}"`);
   check(rows.innerHTML === "", "no rows on a failed search");
   jobState = "done";
 }

@@ -65,6 +65,30 @@ class JobRegistry:
         self._pool.submit(self._run, job.id, kind, params)
         return job.id
 
+    def find_active(self, kind: str) -> str | None:
+        """The id of a pending or running job of ``kind``, if there is one."""
+        with self._lock:
+            return self._active(kind)
+
+    def submit_once(self, kind: str, params: dict) -> str:
+        """Single flight: reuse a pending or running ``kind`` job, else submit.
+
+        Check and insert happen under one lock, so two taps racing each other
+        still start one job.
+        """
+        with self._lock:
+            active = self._active(kind)
+            if active is not None:
+                return active
+            job = Job(id=uuid.uuid4().hex[:12], kind=kind)
+            self._jobs[job.id] = job
+        self._pool.submit(self._run, job.id, kind, params)
+        return job.id
+
+    def _active(self, kind: str) -> str | None:
+        return next((j.id for j in self._jobs.values()
+                     if j.kind == kind and j.state in ("pending", "running")), None)
+
     def get(self, job_id: str) -> Job | None:
         with self._lock:
             return self._jobs.get(job_id)
@@ -87,12 +111,18 @@ class JobRegistry:
 
 
 #: Raised on purpose with a sentence for the person (no bars cached, a bad
-#: symbol): the sentence is the message. Anything else keeps its class name,
-#: because "KeyError: 'close'" is the whole clue.
+#: symbol): the sentence is the message. Exact types only: a subclass such as
+#: ``DailyLossLimitError`` or ``JSONDecodeError`` keeps its name as the clue,
+#: as does anything else ("KeyError: 'close'" is the whole clue).
 _EXPECTED = (RuntimeError, ValueError)
 
 
 def _error_text(exc: Exception) -> str:
-    if isinstance(exc, _EXPECTED) and str(exc):
+    if type(exc) in _EXPECTED and str(exc):
         return str(exc)
+    # The registries raise KeyError("Unknown strategy 'x'. Known: ...");
+    # str() would wrap that sentence in quotes, so show the sentence itself.
+    first = exc.args[0] if type(exc) is KeyError and exc.args else None
+    if isinstance(first, str) and " " in first:
+        return first
     return f"{type(exc).__name__}: {exc}"

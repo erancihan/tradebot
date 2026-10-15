@@ -119,5 +119,23 @@ def test_cached_daily_symbols_lists_the_daily_cache_only(tmp_path):
 
 
 def test_as_of_date_type_is_accepted():
-    frames_for, _ = _fetch(_frames(names=["SA"]))
-    assert discover(frames_for, ["SA"], as_of=date(2099, 1, 1)).rows
+    """A plain ``date`` cuts: every bar after it is dropped, not just labelled."""
+    frames = _frames(names=["SA"])
+    frames_for, _ = _fetch(frames)
+    last = frames["SA"].index[-1]
+    assert discover(frames_for, ["SA"], as_of=date(2099, 1, 1)).provenance["bars"] == 300
+    cut = (last - pd.Timedelta(days=10)).date()
+    result = discover(frames_for, ["SA"], as_of=cut)
+    assert pd.Timestamp(result.provenance["end"]).date() == cut
+    assert result.provenance["bars"] == 290
+    assert result.rows[0].price == pytest.approx(float(frames["SA"]["close"].iloc[-11]))
+
+
+def test_a_frame_the_cache_stopped_updating_is_dropped_as_stale():
+    frames = _frames(names=["FRESH", "EDGE", "OLD"])
+    frames["EDGE"] = frames["EDGE"].iloc[:-5]       # five sessions behind: kept
+    frames["OLD"] = frames["OLD"].iloc[:-6]         # six behind: stale
+    frames_for, _ = _fetch(frames)
+    result = discover(frames_for, list(frames), top_n=3)
+    assert sorted(r.symbol for r in result.rows) == ["EDGE", "FRESH"]
+    assert result.provenance["stale"] == 1 and result.provenance["screened"] == 2

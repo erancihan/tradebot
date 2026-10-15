@@ -68,8 +68,9 @@ def _check(args) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     # Before the parser reads its env defaults: launchd has no EnvironmentFile,
-    # so a service there gets TRADEBOT_WEB_TOKEN from the working directory's
-    # .env, as the Alpaca keys already do. Set variables still win.
+    # so a service there gets TRADEBOT_WEB_TOKEN from the `.env` in its
+    # WorkingDirectory (only there, never searched for), as the Alpaca keys
+    # do. Variables already set win.
     from ..credentials import _maybe_load_dotenv
 
     _maybe_load_dotenv()

@@ -180,3 +180,112 @@ def test_add_stops_a_running_autopilot(tmp_path, offline):
     assert autopilot_service.current(client.app) is None
     pilot._thread.join(5)
     assert not pilot.running
+
+
+def _alpaca_client(tmp_path, monkeypatch, fetcher):
+    monkeypatch.setattr(advisor_service, "_credentials",
+                        lambda: AlpacaCredentials(api_key="k", api_secret="s"))
+    monkeypatch.setattr(advisor_service, "build_default_fetcher", lambda: fetcher)
+    monkeypatch.setattr(advisor_service, "_paper_broker", lambda creds: _FakeBroker())
+    monkeypatch.setattr(discover_job, "_universe", _FakeUniverse)
+    return _client(tmp_path, _config(tmp_path))
+
+
+def test_a_search_where_every_fetch_fails_errors_and_keeps_the_last_run(tmp_path,
+                                                                        monkeypatch):
+    calls: list[str] = []
+    good = _window_fetcher(calls)
+    state = {"down": False}
+
+    def fetch(symbol, timeframe, start, end):
+        if state["down"]:
+            raise ConnectionError("network unreachable")
+        return good(symbol, timeframe, start, end)
+
+    client = _alpaca_client(tmp_path, monkeypatch, fetch)
+    assert _run(client)["state"] == "done"
+    before = client.get("/api/discover").json()["run"]
+    for sym in ("AAA", "BBB", "VTI"):             # nothing cached: every name refetches
+        for p in (tmp_path / "cache" / "1day").glob(f"{sym}.*"):
+            p.unlink()
+    state["down"] = True
+    job = _run(client)
+    assert job["state"] == "error"
+    assert "could be fetched" in job["error"] and "ConnectionError" in job["error"]
+    after = client.get("/api/discover").json()["run"]
+    assert after["id"] == before["id"] and after["rows"] == before["rows"]
+
+
+def test_a_search_where_some_fetches_fail_says_how_many(tmp_path, monkeypatch):
+    calls: list[str] = []
+    good = _window_fetcher(calls)
+
+    def fetch(symbol, timeframe, start, end):
+        if symbol == "VTI":
+            raise TimeoutError("slow")
+        return good(symbol, timeframe, start, end)
+
+    client = _alpaca_client(tmp_path, monkeypatch, fetch)
+    job = _run(client)
+    assert job["state"] == "done", job["error"]
+    assert job["provenance"]["failed"] == 1
+    assert job["provenance"]["failed_error"] == "TimeoutError"
+    body = client.get("/partials/discover").text
+    assert "1 name could not be fetched" in body and "data-discover-failed" in body
+    assert sorted(_rows(body)) == ["AAA", "BBB"]
+
+
+def test_a_second_search_while_one_runs_reuses_its_job(tmp_path, monkeypatch):
+    import threading
+
+    from tradebot.web.services.jobs import registry
+
+    release, started = threading.Event(), threading.Event()
+
+    def slow(params):
+        started.set()
+        release.wait(10)
+        return {"summary": {"rows": 0}, "provenance": {}}
+
+    monkeypatch.setitem(registry._RUNNERS, "discover", slow)
+    client = _client(tmp_path, _config(tmp_path))
+    first = client.post("/api/discover/run", headers=POST_HEADERS).json()["job_id"]
+    assert started.wait(5)
+    second = client.post("/api/discover/run", headers=POST_HEADERS).json()["job_id"]
+    assert second == first
+    assert client.app.state.jobs.find_active("discover") == first
+    release.set()
+    assert _wait(client, first)["state"] == "done"
+    third = client.post("/api/discover/run", headers=POST_HEADERS).json()["job_id"]
+    assert third != first                      # finished: a new tap is a new search
+    _wait(client, third)
+
+
+def test_the_card_listens_for_today_watchlist_edits(tmp_path):
+    body = _client(tmp_path, _config(tmp_path)).get("/today").text
+    card = body[body.index('x-data="discover"'):]
+    assert '@watchlist-edited.window="onWatchlistEdited()"' in card[:card.index(">")]
+
+
+def test_a_bar_dated_after_now_is_never_read(tmp_path, offline):
+    """The job's `as_of` (now's date) is a real cut, not just a label."""
+    from datetime import timezone
+
+    from tradebot.config import Settings
+
+    _seed_pool(tmp_path)
+    cache = BarCache(tmp_path / "cache")
+    full = cache.load("AAA", "1day")
+    now = full.index[-11].to_pydatetime().astimezone(timezone.utc)   # ten bars early
+    job = discover_job._run_discover({
+        "settings": Settings(symbols=["SPY", "QQQ"]), "trading_db": str(tmp_path / "t.db"),
+        "cache_dir": str(tmp_path / "cache"), "now": now})
+    prov = job["provenance"]
+    assert prov["as_of"] == now.date().isoformat()
+    assert pd.Timestamp(prov["end"]) == full.index[-11] < full.index[-1]
+    assert prov["bars"] == 3 * 290                       # ten later bars per name cut
+    with Storage(tmp_path / "t.db") as st:
+        rows = st.latest_discover_run()["rows"]
+    prices = {r["symbol"]: r["price"] for r in rows}
+    for sym, price in prices.items():
+        assert price == pytest.approx(float(cache.load(sym, "1day")["close"].iloc[-11]))

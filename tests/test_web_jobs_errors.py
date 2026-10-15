@@ -19,3 +19,21 @@ def test_an_expected_failure_is_its_own_sentence():
 def test_an_unexpected_failure_keeps_its_class_as_the_clue():
     assert _error_text(KeyError("close")) == "KeyError: 'close'"
     assert _error_text(RuntimeError("")) == "RuntimeError: "
+
+
+def test_a_subclass_of_an_expected_type_keeps_its_class():
+    class DailyLimit(ValueError):
+        pass
+
+    assert _error_text(DailyLimit("halted for the day")) == "DailyLimit: halted for the day"
+
+
+def test_a_registry_key_error_is_its_sentence_without_quotes():
+    from tradebot.strategies.registry import build_strategy
+
+    with pytest.raises(KeyError) as info:
+        build_strategy("nope")
+    text = _error_text(info.value)
+    assert text.startswith("Unknown strategy 'nope'. Known: ")
+    assert not text.startswith(("KeyError", '"'))
+    assert _error_text(KeyError("close")) == "KeyError: 'close'"     # still the clue

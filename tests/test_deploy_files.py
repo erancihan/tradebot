@@ -56,3 +56,17 @@ def test_the_deploy_readme_says_to_check_before_enabling():
     text = (DEPLOY / "README.md").read_text()
     assert "tradebot-web --check" in text
     assert text.index("--check") < text.index("systemctl daemon-reload")
+
+
+def test_check_runs_after_the_chown_as_the_service_user():
+    text = (DEPLOY / "README.md").read_text()
+    linux = text[text.index("## Linux (systemd)"):text.index("## macOS (launchd)")]
+    mac = text[text.index("## macOS (launchd)"):]
+    chown = next(line for line in linux.splitlines() if "chown -R" in line)
+    assert "/PATH/TO/tradebot/data" in chown.split()        # the bar cache too
+    assert linux.index("chown -R") < linux.index("tradebot-web --check")
+    assert mac.index("cp .env.example") < mac.index("tradebot-web --check")
+    for flow in (linux, mac):
+        check = next(line for line in flow.splitlines() if "tradebot-web --check" in line)
+        assert not check.lstrip().startswith("sudo")        # as YOUR_USER, not root
+    assert "root" in text and "with `sudo`" in text
