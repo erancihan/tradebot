@@ -429,3 +429,13 @@ def test_a_public_url_with_a_path_is_accepted(tmp_path):
     doc = _doc(client)
     doc["notify"]["public_url"] = "https://example.net/tradebot"
     assert _post(client, doc).status_code == 200
+
+
+def test_today_links_are_thumb_sized_and_footnotes_readable(tmp_path):
+    # The setup card's Settings link and the History link were 20px tall;
+    # slate-600 footnotes on slate-950 read at about 2.6:1.
+    body = _client(tmp_path, _config(tmp_path)).get("/today").text
+    card = body.split("data-setup-card")[1].split("</section>")[0]
+    assert 'href="/settings" class="inline-flex min-h-[40px]' in card
+    assert 'class="flex min-h-[44px] items-center text-sm text-emerald-400' in body
+    assert '<p class="text-xs text-slate-600"' not in body
