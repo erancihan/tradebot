@@ -231,8 +231,8 @@ build on every push and PR, with no credentials.
 **Live execution and autopilot**
 - **A bracket protects between passes, it does not veto a signal:** the next
   pass re-enters. `DryRunBroker` fills stop before target, gap-through at the
-  open. `check_brackets` is duck-typed, not on the ABC. Streaming only speeds
-  bar arrival: the `Engine` keeps polling on purpose.
+  open, and only on a bar *after* the entry bar (a parked replay would book a
+  phantom exit each pass). Streaming only speeds bar arrival; the `Engine` polls.
 - **A notifier never breaks a trade:** every send is wrapped and remote
   notifiers swallow errors. `deliver() -> bool` exists only for the test-alert
   button, so a mistyped topic reads "not delivered".

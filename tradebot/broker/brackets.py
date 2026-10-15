@@ -22,6 +22,9 @@ class _Bracket:
     stop: float | None
     target: float | None
     entry: float
+    # Timestamp of the bar the entry filled on. That bar's high/low include
+    # prices from before the fill, so only a strictly later bar may fire a leg.
+    entry_bar: object = None
 
 
 def exit_price(bracket: _Bracket, high: float, low: float, open_: float,
@@ -59,8 +62,10 @@ class BracketsMixin:
         if not opens_exposure(qty_before, after - qty_before):
             return
         if getattr(order, "has_bracket", False):
+            bar = self._latest_bar(order.symbol)
             self._brackets[order.symbol] = _Bracket(
-                stop=order.stop_loss, target=order.take_profit, entry=fill_price
+                stop=order.stop_loss, target=order.take_profit, entry=fill_price,
+                entry_bar=None if bar is None else bar.name,
             )
 
     def _latest_bar(self, symbol: str):
@@ -79,7 +84,10 @@ class BracketsMixin:
           intrabar path, so we assume the worse ordering);
         - a bar that *gaps through* a stop fills at the open, not at the stop
           price — a stop is a trigger, not a guaranteed price;
-        - a target never fills better than its limit, even on a favourable gap.
+        - a target never fills better than its limit, even on a favourable gap;
+        - a leg is only tested on a bar **after** the entry bar. A data source
+          parked on its newest bar (the web dry-run) would otherwise re-test the
+          entry bar every pass and book a phantom exit and re-entry each time.
 
         Duck-typed rather than added to the `Broker` ABC: brackets are resting
         orders the real broker manages itself, so only the simulator needs a
@@ -92,7 +100,8 @@ class BracketsMixin:
                 self._brackets.pop(symbol, None)
                 continue
             bar = self._latest_bar(symbol)
-            if bar is None:
+            if bar is None or (bracket.entry_bar is not None
+                               and not bar.name > bracket.entry_bar):
                 continue
             price, reason = exit_price(bracket, float(bar["high"]), float(bar["low"]),
                                        float(bar["open"]), pos.qty > 0)
