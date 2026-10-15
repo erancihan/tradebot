@@ -25,6 +25,8 @@ import urllib.request
 from typing import Protocol
 from urllib.parse import urlsplit
 
+from .notify_actions import LinkSigner, actions_header, ntfy_text  # noqa: F401 (re-export)
+
 log = logging.getLogger("tradebot.notify")
 
 
@@ -129,13 +131,17 @@ class NtfyNotifier:
 
     ntfy shows the body as the notification text and the ``Title`` header as
     its heading, so the event is flattened to one readable line instead of
-    JSON. Failures are logged and swallowed, as for the webhook.
+    JSON. With ``public_url`` and ``link_signer`` a pending batch also gets
+    Approve/Skip/Open buttons (``notify_actions``). Failures are logged and
+    swallowed, as for the webhook.
     """
 
-    def __init__(self, topic: str, server: str = "https://ntfy.sh",
-                 timeout: float = 5.0) -> None:
+    def __init__(self, topic: str, server: str = "https://ntfy.sh", timeout: float = 5.0,
+                 *, public_url: str | None = None,
+                 link_signer: LinkSigner | None = None) -> None:
         self.url = f"{server.rstrip('/')}/{topic.strip('/')}"
         self.timeout = timeout
+        self.public_url, self.link_signer = public_url, link_signer
 
     def send(self, event: dict) -> None:
         self.deliver(event)
@@ -143,12 +149,14 @@ class NtfyNotifier:
     def deliver(self, event: dict) -> bool:
         """Send one event; True when the server accepted it."""
         title = f"tradebot: {event.get('type', 'event')}"
-        req = urllib.request.Request(
-            self.url, data=ntfy_text(event).encode("utf-8"), method="POST",
-            # A header must be latin-1; a symbol or reason never needs more.
-            headers={"Title": title.encode("latin-1", "replace").decode("latin-1"),
-                     "Content-Type": "text/plain; charset=utf-8"},
-        )
+        # A header must be latin-1; a symbol or reason never needs more.
+        headers = {"Title": title.encode("latin-1", "replace").decode("latin-1"),
+                   "Content-Type": "text/plain; charset=utf-8"}
+        actions = actions_header(event, self.public_url, self.link_signer)
+        if actions:
+            headers["Actions"] = actions
+        req = urllib.request.Request(self.url, data=ntfy_text(event).encode("utf-8"),
+                                     method="POST", headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 return resp.status < 400
@@ -158,36 +166,30 @@ class NtfyNotifier:
             return False
 
 
-def ntfy_text(event: dict) -> str:
-    """One line a person can read on a lock screen."""
-    if "message" in event:
-        return str(event["message"])
-    rest = " ".join(f"{k}={v}" for k, v in event.items()
-                    if k not in ("type", "lines") and v is not None)
-    lines = [f"{ln.get('action', '')} {ln.get('qty', '')} {ln.get('symbol', '')}".strip()
-             for ln in event.get("lines") or []]
-    return "\n".join([rest, *lines]).strip() or str(event.get("type", "event"))
-
-
 def notifier_channels(webhook_url: str | None = None, ntfy_topic: str | None = None,
-                      ntfy_server: str | None = None) -> list[tuple[str, Notifier]]:
+                      ntfy_server: str | None = None, *, public_url: str | None = None,
+                      link_signer: LinkSigner | None = None) -> list[tuple[str, Notifier]]:
     """(name, notifier) for every configured channel, the log always first."""
     channels: list[tuple[str, Notifier]] = [("log", LogNotifier())]
     if webhook_url:
         channels.append(("webhook", WebhookNotifier(webhook_url)))
     if ntfy_topic:
-        channels.append(("ntfy", NtfyNotifier(ntfy_topic, ntfy_server or "https://ntfy.sh")))
+        channels.append(("ntfy", NtfyNotifier(ntfy_topic, ntfy_server or "https://ntfy.sh",
+                                              public_url=public_url,
+                                              link_signer=link_signer)))
     return channels
 
 
 def build_notifier(webhook_url: str | None = None, ntfy_topic: str | None = None,
-                   ntfy_server: str | None = None) -> Notifier:
+                   ntfy_server: str | None = None, *, public_url: str | None = None,
+                   link_signer: LinkSigner | None = None) -> Notifier:
     """The configured notifier: log-only by default, plus webhook and ntfy when set.
 
     The log is always included, never replaced: the log line is the local
     audit trail and stays useful when a remote endpoint is down.
     """
-    channels = notifier_channels(webhook_url, ntfy_topic, ntfy_server)
+    channels = notifier_channels(webhook_url, ntfy_topic, ntfy_server,
+                                 public_url=public_url, link_signer=link_signer)
     if len(channels) == 1:
         return channels[0][1]
     return MultiNotifier(n for _, n in channels)
