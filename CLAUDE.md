@@ -172,7 +172,8 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   and batches page on a `(ts, id)` keyset each (`X-History-Next`). `orders.price` is the sizing
   price (NULL on a flatten or old row); `schema.migrate` adds a later column on open, the web never.
   The performance card compares with equal-weight buy and hold of the active list from cached daily
-  closes (`services/benchmark.py`), no fetch; absent (with a note) without bars.
+  closes (`services/benchmark.py`, bought at the last close before the first snapshot), no fetch;
+  absent (with a note) without bars.
 - **The Today refresh** gives the selector the whole cached history and the strategy the last
   `required_history + 30` bars, so engine and web can differ when their histories start on different days.
 - **One list for suggestions and the autopilot:** the watchlist when not empty,

@@ -1,9 +1,10 @@
 """History's yardstick: equal-weight buy and hold of the active symbol list.
 
 "Is the bot beating just holding the list?" The answer is a plain index of
-cached daily closes: at the first session on or after ``since`` each symbol
-gets ``start_equity / n``, and every later close is worth
-``start_equity * mean_i(close_i,t / close_i,t0)``. Pure and offline: the
+cached daily closes: at the last session close on or before ``since`` (the
+price the list could have been bought at that morning; the next close when
+no earlier one is cached) each symbol gets ``start_equity / n``, and every
+later close is worth ``start_equity * mean_i(close_i,t / close_i,t0)``. Pure and offline: the
 web layer reads the bar cache and never fetches, so without cached daily
 bars there is no benchmark and the note says why.
 """
@@ -11,7 +12,7 @@ bars there is no benchmark and the note says why.
 from __future__ import annotations
 
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pandas as pd
 
@@ -39,19 +40,19 @@ def window_closes(frames: dict[str, pd.DataFrame], since: datetime,
                   until: datetime) -> tuple[pd.DataFrame, list[str], list[str]]:
     """``(closes, used, dropped)`` over the sessions from ``since`` to ``until``.
 
-    The start is the first session on or after ``since``'s date that any frame
-    has. A symbol is used when it has a close at that start; one that lacks it
-    (or has no bars in the window) is dropped. The window ends at the last
-    session every used symbol has, so no point is a carried-forward guess.
+    The start is the last session close on or before ``since``'s date (the
+    newest one any frame has), else the first session after it. A symbol is
+    used when it has a close at that start; one that lacks it (or has no bars
+    in the window) is dropped. The window ends at the last session every used
+    symbol has, so no point is a carried-forward guess.
     """
     series = {s: c for s, c in ((s, _clean_closes(f)) for s, f in frames.items())
               if c is not None}
-    series = {s: c[(c.index >= since.date()) & (c.index <= until.date())]
-              for s, c in series.items()}
-    starts = [c.index[0] for c in series.values() if not c.empty]
-    if not starts:
+    series = {s: c[c.index <= until.date()] for s, c in series.items()}
+    t0 = _start(series, since)
+    if t0 is None:
         return pd.DataFrame(), [], sorted(frames)
-    t0 = min(starts)
+    series = {s: c[c.index >= t0] for s, c in series.items()}
     used = [s for s in frames if s in series and not series[s].empty
             and series[s].index[0] == t0]
     dropped = [s for s in frames if s not in used]
@@ -61,6 +62,19 @@ def window_closes(frames: dict[str, pd.DataFrame], since: datetime,
     closes = pd.DataFrame({s: series[s] for s in used}).sort_index()
     closes = closes[closes.index <= end].ffill()     # a one-name gap mid-window holds
     return closes, used, dropped
+
+
+def _start(series: dict[str, pd.Series], since: datetime):
+    """The session the list is bought at: the newest close on or before
+    ``since``'s date, else the earliest one after it; None without closes."""
+    day = since.date()
+    before = [c.index[c.index <= day][-1] for c in series.values()
+              if not c[c.index <= day].empty]
+    if before:
+        return max(before)
+    after = [c.index[c.index > day][0] for c in series.values()
+             if not c[c.index > day].empty]
+    return min(after) if after else None
 
 
 def buy_and_hold(frames: dict[str, pd.DataFrame], start_equity: float,
@@ -100,7 +114,10 @@ def compare(cache_dir: str, symbols: list[str], start_equity: float,
     elif not used and not parts:
         parts = [f"no cached daily closes in the window for {', '.join(symbols)}"]
     series = _index(closes, start_equity) if used else None
+    # The pull the note suggests starts a week earlier: the start close is before `since`.
+    pull_start = (since - timedelta(days=7)).date().isoformat()
     return {"series": series, "symbols": used, "requested": list(symbols), "source": SOURCE,
+            "pull_start": pull_start,
             "since": series.index[0].isoformat() if series is not None else None,
             "until": series.index[-1].isoformat() if series is not None else None,
             "note": "; ".join(parts) or None}
@@ -127,7 +144,8 @@ def card(bench: dict | None, start: float, pct: float | None) -> dict:
     """The performance card's third cell: alpha against holding the list."""
     if bench is None or bench["series"] is None:
         return {"present": False, "note": bench["note"] if bench else None,
-                "missing": bench["requested"] if bench else []}
+                "missing": bench["requested"] if bench else [],
+                "pull_start": bench["pull_start"] if bench else None}
     now = float(bench["series"].iloc[-1])
     bench_pct = now / start - 1.0 if start else None
     shown = bench["symbols"][:SHOWN_SYMBOLS]

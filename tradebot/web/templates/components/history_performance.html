@@ -37,7 +37,7 @@
   {% if bench and not bench.present %}
     <p class="text-xs text-slate-500 break-words" data-no-benchmark>
       No comparison with holding the list{% if bench.note %}: {{ bench.note }}{% endif %}.
-      Pull daily bars with <code>tradebot data pull --symbols {{ bench.missing | join(' ') or 'SPY' }} --timeframe 1day --start {{ perf.since[:10] }} --end {{ perf.as_of[:10] }}</code>
+      Pull daily bars with <code>tradebot data pull --symbols {{ bench.missing | join(' ') or 'SPY' }} --timeframe 1day --start {{ bench.pull_start }} --end {{ perf.as_of[:10] }}</code>
       to compare against holding the list.
     </p>
   {% elif bench and bench.note %}
