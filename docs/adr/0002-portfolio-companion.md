@@ -118,3 +118,17 @@ One new core concept, the proposal, feeds three flows.
   without cached daily bars the card names the `tradebot data pull` command instead.
 - `/api/equity` carries the daily points, the symbols, the window and the source
   (`cache`); the chart places each close at its nearest snapshot as a dashed line.
+
+## Addendum 2026-10-15: fills
+- An order is logged when the broker accepts it, at the price it was sized at.
+  What the broker did with it (status, filled quantity, average fill price,
+  fill time) is stored on the same row once the broker reports it
+  (`Broker.order_status`; a broker that cannot report returns None).
+- The bot asks about open orders of the last 7 days at three points only: the
+  start of each autopilot pass, the Today refresh job (paper orders, with keys)
+  and right after it submits. A page load never calls the broker for this. A
+  failed lookup is logged and never breaks a pass or a suggestion.
+- History shows the fill and the slippage against the sizing price over the
+  filled shares (positive = it cost money). Positions summed from the order log
+  count the filled quantity when known: a cancelled, expired or rejected order
+  counts only what filled before it ended, and an order not yet reported counts in full.

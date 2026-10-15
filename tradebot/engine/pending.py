@@ -15,7 +15,7 @@ from datetime import datetime
 from functools import partial
 
 from ..advisor import Proposal, ProposalLine
-from . import orders
+from . import fills, orders
 from .orders import RebalanceAction
 
 log = logging.getLogger("tradebot.engine")
@@ -59,4 +59,6 @@ def submit_stored(engine, line_ids: list[int],
             actions.append(orders.submit_line(engine, line, on_submitted=mark, now=now))
         except Exception:  # one bad symbol must not block the rest of the batch
             log.exception("Approved line %s (%s) failed to submit", row["id"], line.symbol)
+    if any(a.submitted_id for a in actions):   # usually filled at once: one look
+        fills.reconcile_quietly(engine, now=now)
     return actions

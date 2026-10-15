@@ -12,6 +12,8 @@ from ._db import _read
 
 
 Cursor = tuple[str, int]
+#: Order columns added after the table first shipped (``storage/schema.py``).
+_LATE_COLUMNS = ("price", "status", "filled_qty", "fill_price", "filled_at")
 
 
 def _page_clause(mode: str, ts_col: str, before: Cursor | None) -> tuple[str, tuple]:
@@ -25,12 +27,14 @@ def _page_clause(mode: str, ts_col: str, before: Cursor | None) -> tuple[str, tu
 def orders_page(db_path: str, mode: str, before: Cursor | None, limit: int) -> list[dict]:
     """Orders for one mode, newest first. ``SELECT *`` on purpose: this reader
     is read-only and must not migrate, so a log written before ``price``
-    existed comes back without it (the page then shows the quantity only)."""
+    existed comes back without it (the page then shows the quantity only),
+    and one written before the fill columns comes back unasked ("submitted")."""
     where, args = _page_clause(mode, "ts", before)
     rows = _read(db_path, f"SELECT * FROM orders {where} ORDER BY ts DESC, id DESC LIMIT ?",
                  (*args, int(limit)))
     for row in rows:
-        row.setdefault("price", None)
+        for column in _LATE_COLUMNS:
+            row.setdefault(column, None)
     return rows
 
 

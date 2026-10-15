@@ -269,8 +269,11 @@ Alpaca. Approve links in phone alerts outlive a restart only with
   cached daily closes, drawn as a dashed line on the small equity chart). Below it one timeline mixes the
   orders the bot sent (symbol, side, shares, and the amount at the price the
   trade was sized at) with each proposal batch (its trades by status: suggested,
-  pending, approved, rejected, submitted or expired). Tap a batch for each
-  line's reason. **Show more** loads older entries. Today links here too.
+  pending, approved, rejected, submitted or expired). Each order also says what
+  the broker did with it ("filled 13 sh @ $767.24 +$5.07 vs plan", partial,
+  cancelled, rejected, or submitted until the broker has been asked); the bot
+  asks at each autopilot pass, on a Today refresh and right after it orders.
+  Tap a batch for each line's reason. **Show more** loads older entries. Today links here too.
 - **Dashboard** (`/`): equity curve, account stats, orders, positions and the
   target allocations of the latest rebalance.
 - **Run** (`/run`): a backtest or dry-run on synthetic or cached real bars.

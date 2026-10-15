@@ -5,12 +5,26 @@
 {% for e in history.events %}
   {% set when = e.ts[:16] | replace('T', ' ') %}
   {% if e.kind == 'order' %}
-    <li class="flex items-center gap-3 px-3 py-3" data-event="order" data-symbol="{{ e.symbol }}">
+    <li class="flex items-start gap-3 px-3 py-3" data-event="order" data-symbol="{{ e.symbol }}">
       <span class="rounded border px-2 py-0.5 text-xs font-semibold uppercase {{ 'border-emerald-700 bg-emerald-900/60 text-emerald-300' if e.side == 'buy' else 'border-rose-700 bg-rose-900/60 text-rose-300' }}">{{ e.side }}</span>
       <span class="font-mono text-base font-semibold text-slate-100">{{ e.symbol }}</span>
-      <span class="min-w-0 flex-1 truncate text-sm text-slate-300" data-order-size>
-        {{ '%g' | format(e.qty) }} sh{% if e.notional is not none %} · {{ e.notional | money }}{% endif %}
-      </span>
+      <div class="min-w-0 flex-1 break-words text-sm leading-snug">
+        <p class="text-slate-300" data-order-size>
+          {{ '%g' | format(e.qty) }} sh{% if e.notional is not none %} · {{ e.notional | money }}{% endif %}
+        </p>
+        <p class="text-xs text-slate-400" data-fill="{{ e.status or 'submitted' }}">
+          {%- if e.status == 'filled' and e.fill_price is not none -%}
+            filled {{ '%g' | format(e.filled_qty) }} sh @ {{ e.fill_price | money }}
+          {%- elif e.status == 'partially_filled' or (e.status in ('canceled', 'expired') and e.filled_qty) -%}
+            partial {{ '%g' | format(e.filled_qty or 0) }} of {{ '%g' | format(e.qty) }}{% if e.fill_price is not none %} @ {{ e.fill_price | money }}{% endif %}
+            {%- if e.status in ('canceled', 'expired') %}, {{ 'cancelled' if e.status == 'canceled' else 'expired' }}{% endif %}
+          {%- elif e.status == 'canceled' -%}cancelled
+          {%- elif e.status in ('rejected', 'expired') -%}{{ e.status }}
+          {%- else -%}submitted
+          {%- endif -%}
+          {%- if e.slippage is not none %} <span class="whitespace-nowrap text-slate-500" data-slippage>{{ '+' if e.slippage >= 0 else '−' }}{{ e.slippage | abs | money }} vs plan</span>{% endif %}
+        </p>
+      </div>
       <time class="shrink-0 text-xs text-slate-500" datetime="{{ e.ts }}">{{ when }}</time>
     </li>
   {% else %}

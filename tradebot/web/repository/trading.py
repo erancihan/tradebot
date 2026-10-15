@@ -28,14 +28,15 @@ class TradingRepository:
         return rows
 
     def recent_orders(self, limit: int = 50, mode: str | None = None) -> list[dict]:
+        """Newest orders; ``status`` is the broker's last word, None until asked
+        (``SELECT *``: an unmigrated log lacks the column, this reader never adds it)."""
         where = "WHERE mode = ?" if mode else ""
         params = (mode, limit) if mode else (limit,)
-        return _read(
-            self.db_path,
-            f"SELECT ts, symbol, side, qty, type, broker_order_id, mode FROM orders "
-            f"{where} ORDER BY id DESC LIMIT ?",
-            params,
-        )
+        rows = _read(self.db_path, f"SELECT * FROM orders {where} ORDER BY id DESC LIMIT ?",
+                     params)
+        for row in rows:
+            row.setdefault("status", None)
+        return rows
 
     def modes(self) -> list[str]:
         rows = _read(self.db_path, "SELECT DISTINCT mode FROM equity_snapshots ORDER BY mode")

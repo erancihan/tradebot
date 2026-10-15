@@ -15,6 +15,7 @@ import threading
 from datetime import datetime
 from typing import Callable
 
+from ..engine import fills
 from ..market import MarketCalendar, get_calendar
 from ..models import utcnow
 from . import schedule
@@ -119,6 +120,7 @@ class Autopilot(ApprovalsMixin, BackgroundMixin, BriefMixin, SessionMixin):
             self._begin_session(day)
         if mode != "approve":
             self._expire_pending()          # nobody approves under `auto`
+        fills.reconcile_quietly(self.engine, now=now)   # last pass's fills first
         try:
             # Unrecorded: `_park` carries an unchanged batch over instead.
             outcome = self.engine.step(submit=(mode == "auto"), now=now, record=False)
