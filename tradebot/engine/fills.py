@@ -27,6 +27,15 @@ def _row_changed(row: dict, status) -> bool:
                                       status.fill_price, filled_at)
 
 
+#: A broker's filled quantity may exceed the logged one by this much (rounding).
+QTY_TOLERANCE = 1e-6
+
+
+def _overfilled(row: dict, status) -> bool:
+    """More shares filled than the row ordered: the id names another order."""
+    return float(status.filled_qty) > float(row["qty"]) + QTY_TOLERANCE
+
+
 def reconcile_orders(broker, storage, mode: str, *, now: datetime | None = None,
                      lookback_days: int = LOOKBACK_DAYS) -> int:
     """Ask ``broker`` about each open order of ``mode``; returns rows changed.
@@ -41,6 +50,11 @@ def reconcile_orders(broker, storage, mode: str, *, now: datetime | None = None,
         try:
             status = broker.order_status(row["broker_order_id"])
             if status is None or not _row_changed(row, status):
+                continue
+            if _overfilled(row, status):
+                log.warning("Order %s (%s) reports %s filled of %s ordered; not stored",
+                            row["broker_order_id"], row["symbol"], status.filled_qty,
+                            row["qty"])
                 continue
             storage.set_order_fill(row["id"], status)
             changed += 1

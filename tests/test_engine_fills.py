@@ -238,3 +238,30 @@ def test_the_today_sync_lookback_runs_from_the_given_now(tmp_path, monkeypatch):
     assert advisor_service.sync_fills(ScriptedBroker({"p": FILLED}), db, now=NOW) == 1
     with Storage(db) as st:
         assert _row(st, paper)["status"] == "filled"
+
+
+# --- ids across processes -----------------------------------------------------
+
+def test_a_second_dry_run_broker_never_claims_an_earlier_ones_order(tmp_path):
+    """A dry-run account dies with its process, but the log does not: a new
+    broker's first order must not share an id with an old logged one."""
+    first = DryRunBroker(StubData({"SPY": 100.0}), initial_cash=10_000)
+    second = DryRunBroker(StubData({"SPY": 50.0}), initial_cash=10_000)
+    old_id = first.submit(Order("SPY", 3, Side.BUY, created_at=NOW))
+    second.submit(Order("SPY", 40, Side.BUY, created_at=NOW))
+    with Storage(tmp_path / "t.db") as st:
+        row_id = _log(st, old_id, qty=3, mode="dry_run")
+        engine = SimpleNamespace(broker=second, storage=st, mode="dry_run")
+        assert fills.reconcile(engine, now=NOW) == 0
+        assert _row(st, row_id)["status"] is None
+
+
+def test_reconcile_refuses_a_fill_larger_than_the_order(tmp_path, caplog):
+    with Storage(tmp_path / "t.db") as st:
+        row_id = _log(st, "x", qty=3)
+        engine = SimpleNamespace(broker=ScriptedBroker({"x": FILLED}), storage=st,
+                                 mode="paper")
+        with caplog.at_level("WARNING", logger="tradebot.fills"):
+            assert fills.reconcile(engine, now=NOW) == 0
+        assert _row(st, row_id)["status"] is None
+        assert "13.0 filled of 3.0 ordered" in caplog.text
