@@ -57,7 +57,8 @@ tradebot/
                  run_forever, start/stop thread; injected clock/sleep/is_open),
                  approvals (approve, reject, expiry, pending_trades notification)
   storage/       SQLite tradebot.db: schema, orders, bars, weights, proposals (batch header
-                 + lines with a status), autopilot (autopilot_state scope/key/value)
+                 + lines with a status), autopilot (autopilot_state scope/key/value),
+                 watchlist (the Today page's symbols)
                  (Storage = mixins; check_same_thread=False for the autopilot)
   cli/           __init__ (build_parser, main), common, demo, backtest, run, dryrun,
                  autopilot (run --autopilot, replay clock), status,
@@ -73,12 +74,14 @@ tradebot/
                  process: view, set_mode, approve, reject, resume, shutdown),
                  autopilot_build (paper broker or dry-run over cached bars), cache,
                  consortium, whatif_presets, notify_service (test alert),
+                 symbols_service (watchlist else config: resolve, active_symbols,
+                 with_active_symbols, edits),
                  jobs/ {registry, frames, frames_many, backtest, dryrun, proposal, whatif,
                  catalog}), schemas/ (+ proposal, whatif), routes/ (pages incl. /today
                  /whatif and /autopilot, partials incl. /partials/proposal and
-                 /partials/autopilot, sse, api/ {trading, arena, jobs, proposal, whatif,
-                 autopilot, notify}), templates/ (pages/today.html, pages/whatif.html,
-                 pages/autopilot.html, components/proposal_list.html,
+                 /partials/autopilot, /partials/watchlist, sse, api/ {trading, arena, jobs,
+                 proposal, whatif, autopilot, notify, watchlist}), templates/ (pages/today.html, pages/whatif.html,
+                 pages/autopilot.html, components/proposal_list.html, components/watchlist.html,
                  components/autopilot_panel.html, components/pending_trades.html,
                  components/tabbar.html), app lifespan resumes/stops the autopilot,
                  static-src/ (PWA manifest + icons, committed), static/ (built, gitignored)
@@ -227,6 +230,12 @@ build on every push and PR, with no credentials.
   verdict depends on where its frame starts, so the engine (which reads its
   own stored bars) and the web refresh (which reads the bar cache) can pick
   differently when those histories start on different days.
+- **One list for suggestions and the autopilot.** When the watchlist is not
+  empty, the Today refresh job and `autopilot_build` both scan it instead of
+  `settings.symbols`, through `symbols_service.with_active_symbols` (a copy;
+  the server's settings are never mutated). The web autopilot is built once,
+  on first use, so a watchlist edit reaches a running autopilot only after a
+  server restart. Symbols must match `^[A-Z.\-]{1,10}$` after upper-casing.
 - **Contributions are not returns.** `Backtester.run(..., cash_flows=...)` adds
   cash before a bar is sized. `BacktestResult` then reports `total_contributed`
   and `money_gain`, and computes return, CAGR, Sharpe and drawdown on the

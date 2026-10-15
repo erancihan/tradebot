@@ -38,4 +38,16 @@ class ProposalEnvelope(BaseModel):
     configured: bool                  # a config file was loaded
     config_hint: str | None = None    # the command that creates one, when not
     symbols: list[str] = []
+    symbol_source: str = "config"     # "watchlist" | "config": which list `symbols` is
     proposal: ProposalView | None = None
+
+
+class WatchlistChange(BaseModel):
+    """Exactly one of: symbols to add, symbols to remove."""
+    add: list[str] | None = None
+    remove: list[str] | None = None
+
+
+class WatchlistView(BaseModel):
+    symbols: list[str]
+    source: str                       # "watchlist" | "config"

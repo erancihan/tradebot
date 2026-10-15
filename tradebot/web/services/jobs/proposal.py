@@ -13,9 +13,10 @@ def _run_proposal(params: dict) -> tuple[dict, None, dict]:
     from ....risk import RiskManager
     from ....storage import Storage
     from ....strategies import build_strategy
-    from .. import advisor_service
+    from .. import advisor_service, symbols_service
 
-    settings = params["settings"]
+    with Storage(params["trading_db"]) as store:     # the watchlist, when set
+        settings = symbols_service.with_active_symbols(params["settings"], store)
     strategy = build_strategy(settings.strategy_name, settings.strategy_params)
     selector, allocator = settings.build_selector(), settings.build_allocator()
     overlays = settings.build_overlays()

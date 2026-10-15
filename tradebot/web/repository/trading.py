@@ -141,3 +141,8 @@ class TradingRepository:
 
     def latest_equity_for(self, mode: str) -> dict | None:
         return _proposals.latest_equity(self.db_path, mode)
+
+    def watchlist(self) -> list[str]:
+        """The Today page's watchlist (``storage/watchlist.py``), oldest first."""
+        rows = _read(self.db_path, "SELECT symbol FROM watchlist ORDER BY rowid")
+        return [r["symbol"] for r in rows]

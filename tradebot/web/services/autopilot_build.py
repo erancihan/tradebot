@@ -16,6 +16,7 @@ from ...autopilot import Autopilot
 from ...config import AlpacaCredentials
 from ...data.cache import BarCache
 from ...storage import Storage
+from . import symbols_service
 from .jobs.frames import _pull_hint
 
 
@@ -24,6 +25,8 @@ def build(settings, *, trading_db: str, cache_dir: str) -> Autopilot:
     from ...risk import RiskManager
     from ...strategies import build_strategy
 
+    with Storage(trading_db) as store:   # the Today page's watchlist, when set
+        settings = symbols_service.with_active_symbols(settings, store)
     creds = AlpacaCredentials.from_env()
     broker, data, label = (_paper(creds) if creds is not None
                            else _dry_run(settings, cache_dir))

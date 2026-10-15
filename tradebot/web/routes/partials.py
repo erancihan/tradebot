@@ -70,6 +70,15 @@ def proposal(request: Request, repo: TradingRepository = Depends(get_trading_rep
     )
 
 
+@router.get("/watchlist", response_class=HTMLResponse)
+def watchlist(request: Request, repo: TradingRepository = Depends(get_trading_repo)):
+    state = request.app.state
+    return templates.TemplateResponse(
+        request, "components/watchlist.html",
+        {"today": advisor_service.view(repo, state.settings, state.settings_path)},
+    )
+
+
 @router.get("/autopilot", response_class=HTMLResponse)
 def autopilot(request: Request):
     return templates.TemplateResponse(

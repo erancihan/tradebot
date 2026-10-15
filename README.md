@@ -623,7 +623,16 @@ suggestion is computed by `advisor.propose`, the same function the engine runs
 before it submits, so a suggestion is exactly what a paper pass would trade.
 Nothing on this page places an order.
 
-The page advises on the symbols and strategy stack in the server's settings:
+Below the list sits your **watchlist**: type a symbol and tap **Add**, tap the
+cross on a chip to remove it. While the watchlist has any symbols, the refresh
+and the autopilot scan those instead of the config's `symbols`; when it is
+empty the page says the config symbols are in use. (A running autopilot picks
+up watchlist edits after `tradebot-web` restarts.) API: `GET /api/watchlist`
+returns `{symbols, source}` (`watchlist` or `config`), `POST /api/watchlist`
+takes `{"add": [...]}` or `{"remove": [...]}`.
+
+The page advises on the strategy stack (and, without a watchlist, the symbols)
+in the server's settings:
 
 ```bash
 tradebot-web --config config.yaml   # default: ./config.yaml if present, else SPY + QQQ
