@@ -4,9 +4,9 @@
 // delegated from the section root and read data-* attributes, so swapped-in
 // buttons work without re-binding.
 
-import { commandAutopilot, getPartial } from "../api/client";
+import { commandAutopilot, getPartial, sendTestAlert } from "../api/client";
 import { refs } from "../alpine";
-import type { AutopilotCommand, AutopilotModeKey } from "../types";
+import type { AutopilotCommand, AutopilotModeKey, NotifyTestResult } from "../types";
 
 const POLL_MS = 10_000;
 const MODES: readonly string[] = ["off", "approve", "auto"];
@@ -31,10 +31,19 @@ function ids(csv: string): number[] {
     .filter((n) => Number.isFinite(n));
 }
 
+// What the test-alert button reports back, in one line.
+export function alertSummary(result: NotifyTestResult): string {
+  const remote = result.channels.filter((c) => c !== "log");
+  if (remote.length === 0) return "Only the log is configured: set notify.ntfy_topic in the config.";
+  if (result.sent) return `Sent through ${remote.join(" and ")}.`;
+  return `Not delivered through ${result.failed.join(" and ")}; check the server log.`;
+}
+
 export function autopilot() {
   return {
     busy: false,
     error: "",
+    alert: "",
 
     init() {
       window.setInterval(() => {
@@ -55,6 +64,15 @@ export function autopilot() {
         this.error = err instanceof Error ? err.message : String(err);
       } finally {
         this.busy = false;
+      }
+    },
+
+    async testAlert() {
+      this.alert = "Sending…";
+      try {
+        this.alert = alertSummary(await sendTestAlert());
+      } catch (err) {
+        this.alert = err instanceof Error ? err.message : String(err);
       }
     },
 

@@ -7,6 +7,7 @@ so in their names; the job labels the result synthetic as well.
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 from . import cache_service
@@ -16,6 +17,10 @@ PREFERRED = ("SPY", "QQQ", "IWM", "DIA", "VTI")
 MAX_PRESET_SYMBOLS = 6
 SYNTHETIC_SYMBOLS = ["SYN_A", "SYN_B", "SYN_C", "SYN_D"]
 SYNTHETIC_WINDOW = ("2021-01-04", "2024-12-31")
+#: A real preset needs this much calendar overlap across its symbols; a
+#: symbol pulled for a different period would leave a window too short to say
+#: anything, or none at all, and the preset would fail on first tap.
+MIN_SHARED_DAYS = 90
 
 
 def _request(symbols: list[str], source: str, start: str | None, end: str | None,
@@ -53,9 +58,23 @@ def _build(symbols: list[str], source: str, start, end, label: str) -> list[dict
 
 
 def _pick(entries: list[dict]) -> list[dict]:
+    """Up to six cached symbols, familiar ones first, that share a real window."""
     rank = {s: i for i, s in enumerate(PREFERRED)}
     ordered = sorted(entries, key=lambda e: (rank.get(e["symbol"], len(rank)), e["symbol"]))
-    return ordered[:MAX_PRESET_SYMBOLS]
+    chosen: list[dict] = []
+    for entry in ordered:
+        trial = [*chosen, entry]
+        if not chosen or _shared_days(trial) >= MIN_SHARED_DAYS:
+            chosen = trial
+        if len(chosen) == MAX_PRESET_SYMBOLS:
+            break
+    return chosen
+
+
+def _shared_days(entries: list[dict]) -> int:
+    start = date.fromisoformat(max(e["first"] for e in entries)[:10])
+    end = date.fromisoformat(min(e["last"] for e in entries)[:10])
+    return (end - start).days
 
 
 def presets(cache_dir: str | Path) -> list[dict]:

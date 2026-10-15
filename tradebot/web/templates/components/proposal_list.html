@@ -1,5 +1,6 @@
-{#- Today: account strip + suggested trades. Served for first paint and swapped
-    in after a refresh, so the markup lives in one place. Expects `today`. -#}
+{#- Today: account strip, holdings, suggested trades. Served for first paint and
+    swapped in after a refresh, so the markup lives in one place. Expects
+    `today` and `holdings`. -#}
 {% set p = today.proposal %}
 {% if p %}
   <div class="grid grid-cols-3 gap-2 rounded-lg border border-slate-800 bg-slate-900/40 p-3">
@@ -24,6 +25,8 @@
     {%- if prov.bars %} · {{ prov.bars | length }} symbols{% endif %}
     · computed {{ p.created_at[:16] | replace('T', ' ') }} UTC
   </p>
+
+  {% include "components/holdings.html" %}
 
   {% if p.lines %}
     <ul class="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900/40">
@@ -55,11 +58,13 @@
 {% else %}
   <div class="space-y-2 rounded-lg border border-dashed border-slate-800 p-4 text-sm text-slate-400" data-empty>
     <p>No suggestions yet. Tap Refresh to compute today's trades for
-      {{ today.symbols | join(', ') }}.</p>
+      {{ today.symbols | join(', ') }}
+      ({{ 'your watchlist' if today.symbol_source == 'watchlist' else 'the config symbols' }}).</p>
     {% if today.config_hint %}
       <p class="text-slate-500">No config file found, so the defaults are used. Create one
         to choose symbols and a strategy:</p>
       <code class="block overflow-x-auto rounded bg-slate-900 px-2 py-1 font-mono text-xs text-slate-300">{{ today.config_hint }}</code>
     {% endif %}
   </div>
+  {% include "components/holdings.html" %}
 {% endif %}

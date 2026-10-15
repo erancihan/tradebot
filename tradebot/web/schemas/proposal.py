@@ -38,4 +38,33 @@ class ProposalEnvelope(BaseModel):
     configured: bool                  # a config file was loaded
     config_hint: str | None = None    # the command that creates one, when not
     symbols: list[str] = []
+    symbol_source: str = "config"     # "watchlist" | "config": which list `symbols` is
     proposal: ProposalView | None = None
+
+
+class WatchlistChange(BaseModel):
+    """Exactly one of: symbols to add, symbols to remove."""
+    add: list[str] | None = None
+    remove: list[str] | None = None
+
+
+class WatchlistView(BaseModel):
+    symbols: list[str]
+    source: str                       # "watchlist" | "config"
+
+
+class HoldingRow(BaseModel):
+    symbol: str
+    qty: float
+    price: float                      # last cached close (or cost basis, see as_of)
+    value: float
+    weight: float | None = None       # value / equity
+    as_of: str | None = None          # the close's date, or "cost basis"
+
+
+class HoldingsView(BaseModel):
+    source: str                       # "alpaca" | "log"
+    equity: float
+    rows: list[HoldingRow] = []
+    skipped: list[str] = []           # held, but no cached bars to price them
+    note: str | None = None

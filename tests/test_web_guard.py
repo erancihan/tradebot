@@ -232,3 +232,48 @@ def test_a_login_that_is_not_a_form_is_refused(tmp_path):
     r = client.post("/login", json={"token": TOKEN})
     assert r.status_code == 415
     assert "set-cookie" not in r.headers
+
+
+def _raw_login(app, chunks: list[bytes], content_length: int | None) -> int:
+    """Drive the ASGI app directly so the body can disagree with its headers.
+
+    An HTTP client fixes Content-Length up to match what it sends, which is
+    exactly the lie these tests need to tell.
+    """
+    import asyncio
+
+    headers = [(b"host", b"localhost"),
+               (b"content-type", b"application/x-www-form-urlencoded")]
+    if content_length is None:
+        headers.append((b"transfer-encoding", b"chunked"))
+    else:
+        headers.append((b"content-length", str(content_length).encode()))
+    scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+             "method": "POST", "scheme": "http", "path": "/login", "raw_path": b"/login",
+             "root_path": "", "query_string": b"", "headers": headers,
+             "client": ("127.0.0.1", 5000), "server": ("localhost", 80)}
+    messages = [{"type": "http.request", "body": c, "more_body": i < len(chunks) - 1}
+                for i, c in enumerate(chunks)]
+    sent: list[dict] = []
+
+    async def receive() -> dict:
+        return messages.pop(0) if messages else {"type": "http.disconnect"}
+
+    async def send(message: dict) -> None:
+        sent.append(message)
+
+    asyncio.run(app(scope, receive, send))
+    return next(m["status"] for m in sent if m["type"] == "http.response.start")
+
+
+def test_a_chunked_login_body_without_a_length_is_refused(tmp_path):
+    app = _app(tmp_path, access_token=TOKEN)
+    assert _raw_login(app, [b"token=", TOKEN.encode()], content_length=None) == 413
+
+
+def test_a_login_body_longer_than_its_declared_length_is_refused(tmp_path):
+    app = _app(tmp_path, access_token=TOKEN)
+    body = f"token={TOKEN}".encode()
+    assert _raw_login(app, [body[:8], body[8:]], content_length=len(body)) == 303
+    assert _raw_login(app, [body[:8], body[8:], b"&pad=" + b"x" * 64],
+                      content_length=len(body)) == 413

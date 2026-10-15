@@ -13,10 +13,23 @@ function shortTs(ts: string): string {
   return ts.slice(0, 19).replace("T", " ");
 }
 
+/**
+ * Axis labels for a series of timestamps. Daily bars carry a clock time that
+ * is only the session's UTC stamp (04:00 or 05:00 with DST), so when no two
+ * points fall on the same date the time is noise and the label is the date.
+ * Intraday series (several points a day) keep the time.
+ */
+export function axisLabels(timestamps: string[]): string[] {
+  const dates = timestamps.map((ts) => ts.slice(0, 10));
+  const daily = new Set(dates).size === dates.length;
+  return daily ? dates : timestamps.map(shortTs);
+}
+
 /** Place each order on the equity line at its nearest-in-time snapshot. */
 function orderMarkPoints(
   series: EquitySeries,
   orders: OrderRow[],
+  labels: string[],
 ): MarkPointComponentOption | undefined {
   if (orders.length === 0 || series.points.length === 0) {
     return undefined;
@@ -37,7 +50,7 @@ function orderMarkPoints(
     const buy = order.side === "buy";
     return {
       name: `${order.side} ${order.qty} ${order.symbol}`,
-      coord: [shortTs(point.ts), point.equity],
+      coord: [labels[best], point.equity],
       value: buy ? "B" : "S",
       symbol: "pin" as const,
       symbolSize: 26,
@@ -50,7 +63,7 @@ function orderMarkPoints(
 /** ECharts option for a single {index, equity} curve (the run page). */
 export function curveOption(name: string, curve: EquityCurve): EChartsOption {
   const option = baseLineOption();
-  option.xAxis = { ...option.xAxis, data: curve.index.map(shortTs) };
+  option.xAxis = { ...option.xAxis, data: axisLabels(curve.index) };
   option.series = [
     {
       name,
@@ -91,7 +104,8 @@ export function comparisonOption(plan: EquityCurve, benchmark: EquityCurve | nul
 /** ECharts option for a single equity curve with buy/sell markers (dashboard). */
 export function equityOption(series: EquitySeries, orders: OrderRow[] = []): EChartsOption {
   const option = baseLineOption();
-  option.xAxis = { ...option.xAxis, data: series.points.map((p) => shortTs(p.ts)) };
+  const labels = axisLabels(series.points.map((p) => p.ts));
+  option.xAxis = { ...option.xAxis, data: labels };
   option.series = [
     {
       name: "equity",
@@ -102,7 +116,7 @@ export function equityOption(series: EquitySeries, orders: OrderRow[] = []): ECh
       lineStyle: { color: LINE_COLORS[0], width: 2 },
       itemStyle: { color: LINE_COLORS[0] },
       data: series.points.map((p) => p.equity),
-      markPoint: orderMarkPoints(series, orders),
+      markPoint: orderMarkPoints(series, orders, labels),
     },
   ];
   return option;
@@ -157,7 +171,7 @@ export function arenaOption(detail: ArenaRunDetail): EChartsOption {
     (acc, c) => (c.index.length > acc.length ? c.index : acc),
     [],
   );
-  option.xAxis = { ...option.xAxis, data: longest.map(shortTs) };
+  option.xAxis = { ...option.xAxis, data: axisLabels(longest) };
   option.legend = { textStyle: { color: "#cbd5e1" }, top: 0 };
   option.grid = { ...option.grid, top: 36 };
   option.series = detail.curves.map((curve, i) => ({

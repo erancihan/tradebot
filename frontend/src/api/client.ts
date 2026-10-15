@@ -10,10 +10,13 @@ import type {
   EquitySeries,
   JobRequest,
   JobView,
+  NotifyTestResult,
   OrderRow,
   ProposalEnvelope,
   SeasonDetail,
   StrategySpec,
+  WatchlistChange,
+  WatchlistView,
   WhatIfRequest,
 } from "../types";
 
@@ -40,7 +43,12 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`Request failed (${response.status}): ${url}`);
+    // A 400 carries the server's reason (e.g. "not a symbol: 1X"); show it.
+    const detail = await response
+      .json()
+      .then((data: { detail?: unknown }) => (typeof data.detail === "string" ? data.detail : ""))
+      .catch(() => "");
+    throw new Error(detail || `Request failed (${response.status}): ${url}`);
   }
   return (await response.json()) as T;
 }
@@ -113,4 +121,12 @@ export function getAutopilot(): Promise<AutopilotView> {
 
 export function commandAutopilot(body: AutopilotCommand): Promise<AutopilotView> {
   return postJson<AutopilotView>("/api/autopilot", body);
+}
+
+export function sendTestAlert(): Promise<NotifyTestResult> {
+  return postJson<NotifyTestResult>("/api/notify/test", {});
+}
+
+export function changeWatchlist(body: WatchlistChange): Promise<WatchlistView> {
+  return postJson<WatchlistView>("/api/watchlist", body);
 }

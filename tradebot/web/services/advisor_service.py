@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from ...config import AlpacaCredentials
 from ...data.cache import BarCache, build_default_fetcher
 from ..repository import TradingRepository
+from . import symbols_service
 from .jobs.frames import _pull_hint
 
 #: Bars beyond the stack's longest warmup, so a signal is never computed on
@@ -34,10 +35,12 @@ CONFIG_HINT = "cp config.example.yaml config.yaml"
 def view(repo: TradingRepository, settings, settings_path: str | None) -> dict:
     """Latest proposal for the server's mode, plus how to get started."""
     stored = repo.latest_proposal(mode=settings.mode)
+    active = symbols_service.resolve(settings, repo)
     return {
         "configured": settings_path is not None,
         "config_hint": None if settings_path else CONFIG_HINT,
-        "symbols": list(settings.symbols),
+        "symbols": active["symbols"],
+        "symbol_source": active["source"],
         "proposal": _shape(stored) if stored else None,
     }
 

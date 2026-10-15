@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from . import arena, autopilot, jobs, proposal, trading, whatif
+from . import arena, autopilot, jobs, notify, proposal, trading, watchlist, whatif
 
 router = APIRouter(prefix="/api")
 router.include_router(trading.router)
@@ -17,3 +17,5 @@ router.include_router(jobs.router)
 router.include_router(proposal.router)
 router.include_router(whatif.router)
 router.include_router(autopilot.router)
+router.include_router(notify.router)
+router.include_router(watchlist.router)

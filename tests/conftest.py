@@ -101,7 +101,7 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
 # --- offline-first backstop ---------------------------------------------------
 # The suite is meant to run with no credentials and no network. Deleting the
 # ALPACA_* env vars is not enough on its own: `AlpacaCredentials.from_env()`
-# calls `_maybe_load_dotenv()`, which re-reads a `.env` from the CWD — so on a
+# calls `_maybe_load_dotenv()` (tradebot.credentials), which re-reads a `.env` from the CWD — so on a
 # machine that has one (this project now pulls real bars, so that is the normal
 # case) tests meant to exercise the no-credentials path silently made live HTTPS
 # calls instead. Neutralise dotenv, and make any outbound connection fail loudly
@@ -111,7 +111,7 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
 def _offline_guard():
     import socket
 
-    import tradebot.config as config_mod
+    import tradebot.credentials as config_mod
 
     original_dotenv = config_mod._maybe_load_dotenv
     original_connect = socket.socket.connect

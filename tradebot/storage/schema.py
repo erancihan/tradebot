@@ -73,4 +73,8 @@ CREATE TABLE IF NOT EXISTS autopilot_state (
     value  TEXT,
     PRIMARY KEY (scope, key)
 );
+CREATE TABLE IF NOT EXISTS watchlist (
+    symbol    TEXT PRIMARY KEY,     -- upper-case, validated by the web layer
+    added_at  TEXT NOT NULL
+);
 """

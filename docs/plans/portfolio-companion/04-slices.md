@@ -42,9 +42,9 @@ merged to master from its `feat/<epic>` branch with a no-ff merge commit.
 - [x] S4.5 `tradebot run --autopilot` headless parity
 
 ## E5: Expansion
-- [ ] S5.0 polish from the phone smoke test: equity chart axis shows dates only on daily bars, What-if presets use real cached symbols when a cache exists (verified synthetic fallback works)
-- [ ] S5.1 ntfy phone alerts documented, one-tap test button on the Autopilot page
-- [ ] S5.2 watchlist (symbols the advisor scans) editable from the Today page
+- [x] S5.0 polish from the phone smoke test: equity chart axis shows dates only on daily bars, What-if presets use real cached symbols when a cache exists (verified synthetic fallback works)
+- [x] S5.1 ntfy phone alerts documented, one-tap test button on the Autopilot page
+- [x] S5.2 watchlist (symbols the advisor scans) editable from the Today page; holdings card on Today (`/api/holdings`, broker positions with credentials, else the order log at the last cached close; uncached symbols are named, not priced)
 - [x] S5.3 `MarketCalendar` protocol with `us_equities`, used by the season daemon and the autopilot, BIST stub with a holidays table
 - [x] S5.4 morning brief: the day's proposal sent through the notifier N minutes before each open, in any autopilot mode (`--mode off` runs it alone)
-- [ ] S5.5 further ideas evaluated, then built or recorded as an ADR "not now"
+- [x] S5.5 further ideas evaluated: decisions recorded in `03-program-design.md` section "Decided not now"

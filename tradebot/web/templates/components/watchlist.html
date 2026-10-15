@@ -1,0 +1,19 @@
+{#- Today: the watchlist chips. Served for first paint and swapped in after an
+    add or remove. Each chip's button carries data-remove-symbol; one delegated
+    click handler in today.ts reads it. Expects `today`. -#}
+{% if today.symbol_source == 'watchlist' %}
+  <ul class="flex flex-wrap gap-2" data-watchlist>
+    {% for sym in today.symbols %}
+      <li class="flex items-center rounded-full border border-slate-700 bg-slate-900 pl-3 text-sm font-mono text-slate-100">
+        {{ sym }}
+        <button type="button" data-remove-symbol="{{ sym }}" aria-label="Remove {{ sym }}"
+                class="ml-1 min-h-[40px] min-w-[40px] rounded-full text-slate-400 hover:text-rose-300">&times;</button>
+      </li>
+    {% endfor %}
+  </ul>
+  <p class="text-xs text-slate-500" data-symbol-source>Suggestions and the autopilot use this watchlist.</p>
+{% else %}
+  <p class="text-sm text-slate-400" data-symbol-source>Your watchlist is empty, so the config symbols
+    are used: <span class="font-mono text-slate-200">{{ today.symbols | join(', ') }}</span>.
+    Add a symbol to scan your own list instead.</p>
+{% endif %}

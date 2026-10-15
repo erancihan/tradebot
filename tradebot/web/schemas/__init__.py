@@ -32,6 +32,10 @@ from .proposal import (  # noqa: F401
     ProposalLineView,
     ProposalView,
     ProposalEnvelope,
+    HoldingRow,
+    HoldingsView,
+    WatchlistChange,
+    WatchlistView,
 )
 from .whatif import WhatIfRequest  # noqa: F401
 from .season import (  # noqa: F401

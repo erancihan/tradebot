@@ -16,7 +16,7 @@ must change.
 - [x] E2 — What-if simulator (historical theoretical cases, multi-symbol, DCA, benchmark)
 - [x] E3 — Suggestions (what to buy / sell today, with reasons)
 - [x] E4 — Autopilot (managed paper/live engine with approve or auto mode)
-- [ ] E5 — Expansion (phone alerts via ntfy, watchlists, market/broker abstraction for BIST)
+- [x] E5 — Expansion (phone alerts via ntfy, watchlists, market/broker abstraction for BIST)
 
 ## Slices
 See `04-slices.md` (checked off there).

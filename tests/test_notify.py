@@ -20,6 +20,7 @@ from tradebot.engine import Engine
 from tradebot.notify import (
     LogNotifier,
     MultiNotifier,
+    NtfyNotifier,
     NullNotifier,
     WebhookNotifier,
     build_notifier,
@@ -180,3 +181,78 @@ def test_config_reads_the_notify_block():
     assert settings.notify_webhook_url == "http://127.0.0.1:9/x"
     assert isinstance(settings.build_notifier(), MultiNotifier)
     assert isinstance(Settings.from_dict({}).build_notifier(), LogNotifier)
+
+
+# --- ntfy (phone alerts) --------------------------------------------------------
+
+class PlainTextServer:
+    """A loopback HTTP server that records each POST's path, headers and body."""
+
+    def __init__(self, requests: int = 1) -> None:
+        received: list[dict] = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):                   # noqa: N802 (stdlib naming)
+                length = int(self.headers.get("Content-Length", 0))
+                received.append({"path": self.path, "headers": dict(self.headers),
+                                 "body": self.rfile.read(length).decode("utf-8")})
+                self.send_response(200)
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        self.received = received
+        self.server = HTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self.server.server_port}"
+
+        def serve() -> None:
+            for _ in range(requests):
+                self.server.handle_request()
+
+        threading.Thread(target=serve, daemon=True).start()
+
+    def close(self) -> None:
+        self.server.server_close()
+
+
+def test_ntfy_posts_plain_text_with_a_title_header():
+    server = PlainTextServer()
+    try:
+        ok = NtfyNotifier("my-topic", server=server.url + "/").deliver(
+            {"type": "order", "symbol": "SPY", "side": "buy", "qty": 3, "stop_loss": None})
+    finally:
+        server.close()
+    assert ok is True
+    (got,) = server.received
+    assert got["path"] == "/my-topic"
+    assert got["headers"]["Title"] == "tradebot: order"
+    assert got["headers"]["Content-Type"].startswith("text/plain")
+    assert got["body"] == "symbol=SPY side=buy qty=3"        # None fields dropped
+
+
+def test_ntfy_text_prefers_a_message_and_lists_pending_lines():
+    from tradebot.notify import ntfy_text
+
+    assert ntfy_text({"type": "test", "message": "hello"}) == "hello"
+    text = ntfy_text({"type": "pending_trades", "count": 1,
+                      "lines": [{"symbol": "QQQ", "action": "buy", "qty": 2}]})
+    assert text == "count=1\nbuy 2 QQQ"
+
+
+def test_ntfy_failure_is_swallowed_and_reported():
+    assert NtfyNotifier("t", server="http://127.0.0.1:1", timeout=1).deliver({"type": "x"}) is False
+    NtfyNotifier("t", server="http://127.0.0.1:1", timeout=1).send({"type": "x"})
+
+
+def test_config_reads_the_ntfy_topic():
+    settings = Settings.from_dict({"notify": {"ntfy_topic": "abc",
+                                              "ntfy_server": "http://127.0.0.1:9"}})
+    assert (settings.notify_ntfy_topic, settings.notify_ntfy_server) == (
+        "abc", "http://127.0.0.1:9")
+    built = settings.build_notifier()
+    assert isinstance(built, MultiNotifier)
+    assert [type(n) for n in built.notifiers] == [LogNotifier, NtfyNotifier]
+    assert built.notifiers[1].url == "http://127.0.0.1:9/abc"
+    default = Settings.from_dict({"notify": {"ntfy_topic": "abc"}}).build_notifier()
+    assert default.notifiers[1].url == "https://ntfy.sh/abc"

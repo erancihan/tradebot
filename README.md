@@ -238,6 +238,25 @@ notify:
 Delivery failures are logged and swallowed. An unreachable endpoint slows a pass
 by at most the 5s timeout; it never halts trading.
 
+### Phone alerts (ntfy)
+
+[ntfy](https://ntfy.sh) pushes the same events to your phone as plain text,
+with no account:
+
+1. Install the ntfy app (Android or iOS).
+2. Pick a long, hard-to-guess topic name and subscribe to it in the app (a
+   topic on ntfy.sh is public to anyone who knows its name).
+3. Set it in the config and restart `tradebot-web`:
+
+```yaml
+notify:
+  ntfy_topic: tradebot-pick-a-long-random-name
+  # ntfy_server: https://ntfy.example.com    # optional, for a self-hosted server
+```
+
+Tap **Send test alert** on the Autopilot page (or `POST /api/notify/test`) to
+check it: the page says which channels accepted the message.
+
 ## Portfolio: selection + allocation
 
 By default every symbol gets the same fixed `max_position_pct` slug of equity.
@@ -596,6 +615,13 @@ band. The account strip on top shows equity, cash and where they came from:
 `paper (Alpaca)` with credentials, `paper (from log)` from the local SQLite log
 (positions are the signed sum of logged orders), or `paper (starting cash)`.
 
+Under the account strip a **Holdings** card lists what the account owns:
+quantity, last price, value and weight (value / equity). With credentials it
+reads the paper account's positions; without them it sums the order log for
+the server's mode. Prices are the last cached close (a held symbol with no
+cached bars is named instead of guessed). API: `GET /api/holdings` returns
+`{source, equity, rows: [{symbol, qty, price, value, weight, as_of}], skipped}`.
+
 Tap **Refresh** to compute a new proposal on the server. It reads bars through
 the local cache and fetches missing bars only when Alpaca credentials are in the
 server's environment; without them it uses cached bars and, for a symbol that
@@ -604,7 +630,16 @@ suggestion is computed by `advisor.propose`, the same function the engine runs
 before it submits, so a suggestion is exactly what a paper pass would trade.
 Nothing on this page places an order.
 
-The page advises on the symbols and strategy stack in the server's settings:
+Below the list sits your **watchlist**: type a symbol and tap **Add**, tap the
+cross on a chip to remove it. While the watchlist has any symbols, the refresh
+and the autopilot scan those instead of the config's `symbols`; when it is
+empty the page says the config symbols are in use. (A running autopilot picks
+up watchlist edits after `tradebot-web` restarts.) API: `GET /api/watchlist`
+returns `{symbols, source}` (`watchlist` or `config`), `POST /api/watchlist`
+takes `{"add": [...]}` or `{"remove": [...]}`.
+
+The page advises on the strategy stack (and, without a watchlist, the symbols)
+in the server's settings:
 
 ```bash
 tradebot-web --config config.yaml   # default: ./config.yaml if present, else SPY + QQQ
@@ -621,8 +656,8 @@ Open `/autopilot` (the second tab on a phone) and pick one of three modes:
   **Approve all**. Only the approved trades are submitted. A batch is sized at
   the prices of its pass, so it expires when the next pass replaces it, or when
   you approve it more than one poll interval later; it is never executed late.
-  Each new batch sends a `pending_trades` notification (point
-  `notify.webhook_url` at an ntfy topic to get it on your phone).
+  Each new batch sends a `pending_trades` notification (set
+  `notify.ntfy_topic` to get it on your phone, see Phone alerts).
 - **Automatic**: every pass submits its trades. Each order is notified.
 
 The status card shows the mode, whether the loop is running, the account,
@@ -714,7 +749,8 @@ day of each month, and runs equal-weight buy and hold over the same symbols
 with the same cash as the benchmark. The result card leads with the money
 gain (final value minus everything put in), then the comparison with buy and
 hold; growth and worst drop leave contributions out. Presets come from what
-is cached (synthetic, and labelled so, when the cache is empty), the date
+is cached (familiar index funds first, only symbols that share a window;
+synthetic, and labelled so, when the cache is empty), the date
 pickers are bounded by cache coverage, and an uncached range shows the exact
 `tradebot data pull` command. API: `POST /api/whatif` (polled through
 `/api/jobs/{id}`) and `GET /api/whatif/presets`.

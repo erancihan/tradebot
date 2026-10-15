@@ -16,6 +16,7 @@ from ..services import (
     advisor_service,
     autopilot_service,
     consortium_service,
+    holdings_service,
     metrics_service,
 )
 
@@ -66,6 +67,27 @@ def proposal(request: Request, repo: TradingRepository = Depends(get_trading_rep
     state = request.app.state
     return templates.TemplateResponse(
         request, "components/proposal_list.html",
+        {"today": advisor_service.view(repo, state.settings, state.settings_path),
+         "holdings": _holdings(state)},
+    )
+
+
+@router.get("/holdings", response_class=HTMLResponse)
+def holdings(request: Request):
+    return templates.TemplateResponse(
+        request, "components/holdings.html", {"holdings": _holdings(request.app.state)})
+
+
+def _holdings(state) -> dict:
+    return holdings_service.view(state.settings, trading_db=state.trading_db,
+                                 cache_dir=state.cache_dir)
+
+
+@router.get("/watchlist", response_class=HTMLResponse)
+def watchlist(request: Request, repo: TradingRepository = Depends(get_trading_repo)):
+    state = request.app.state
+    return templates.TemplateResponse(
+        request, "components/watchlist.html",
         {"today": advisor_service.view(repo, state.settings, state.settings_path)},
     )
 

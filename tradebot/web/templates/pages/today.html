@@ -25,6 +25,21 @@
     {% include "components/proposal_list.html" %}
   </div>
 
+  <div class="space-y-3 rounded-lg border border-slate-800 bg-slate-900/40 p-3"
+       @click="onWatchlistClick($event)">
+    <h2 class="text-sm font-semibold text-slate-200">Watchlist</h2>
+    <div x-ref="watchlist" class="space-y-2">
+      {% include "components/watchlist.html" %}
+    </div>
+    <form class="flex gap-2" @submit.prevent="addSymbol()">
+      <input type="text" x-model="newSymbol" placeholder="Symbol, e.g. VTI" maxlength="10"
+             autocapitalize="characters" autocomplete="off" aria-label="Symbol to add"
+             class="min-h-[48px] min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 font-mono text-base uppercase text-slate-100">
+      <button type="submit" :disabled="!newSymbol.trim()"
+              class="min-h-[48px] rounded-lg bg-slate-700 px-4 text-base font-semibold text-white hover:bg-slate-600 disabled:opacity-50">Add</button>
+    </form>
+  </div>
+
   <p class="text-xs text-slate-600">Suggestions only: nothing here places an order.</p>
 </section>
 {% endblock %}

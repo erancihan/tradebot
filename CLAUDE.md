@@ -41,7 +41,8 @@ tradebot/
                  (cash flows + the flow-free growth index)
   whatif/        plan (WhatIfPlan, WhatIfResult, monthly_cash_flows), run (run_whatif,
                  plan_backtester, whatif_risk), compare (benchmark_plan, comparison)
-  walkforward.py portfolio.py  models.py  notify.py  config.py
+  walkforward.py portfolio.py  models.py  config.py
+  notify.py      Notifier: Log, Null, Webhook, Ntfy (phone push), Multi; build_notifier
   consortium/    voice, consensus, panel
   broker/        base (Broker ABC), alpaca (lazy SDK), dryrun + brackets (BracketsMixin)
   data/          synthetic + factor_panel, cache + coverage, replay, csv, alpaca_data, stream
@@ -58,7 +59,8 @@ tradebot/
                  approvals (approve, reject, expiry, pending_trades notification),
                  brief (MorningBrief, compose, BriefMixin)
   storage/       SQLite tradebot.db: schema, orders, bars, weights, proposals (batch header
-                 + lines with a status), autopilot (autopilot_state scope/key/value)
+                 + lines with a status), autopilot (autopilot_state scope/key/value),
+                 watchlist (the Today page's symbols)
                  (Storage = mixins; check_same_thread=False for the autopilot)
   cli/           __init__ (build_parser, main), common, demo, backtest, run, dryrun,
                  autopilot (run --autopilot, replay clock), status,
@@ -73,13 +75,18 @@ tradebot/
                  advisor (Today view + build_inputs), autopilot (one Autopilot per
                  process: view, set_mode, approve, reject, resume, shutdown),
                  autopilot_build (paper broker or dry-run over cached bars), cache,
-                 consortium, whatif_presets,
+                 consortium, whatif_presets, notify_service (test alert),
+                 symbols_service (watchlist else config: resolve, active_symbols,
+                 with_active_symbols, edits),
+                 holdings_service (Today holdings: paper broker, else order log
+                 priced at the last cached close),
                  jobs/ {registry, frames, frames_many, backtest, dryrun, proposal, whatif,
                  catalog}), schemas/ (+ proposal, whatif), routes/ (pages incl. /today
                  /whatif and /autopilot, partials incl. /partials/proposal and
-                 /partials/autopilot, sse, api/ {trading, arena, jobs, proposal, whatif,
-                 autopilot}), templates/ (pages/today.html, pages/whatif.html,
-                 pages/autopilot.html, components/proposal_list.html,
+                 /partials/autopilot, /partials/watchlist, /partials/holdings, sse, api/ {trading, arena, jobs,
+                 proposal, whatif, autopilot, notify, watchlist}), templates/ (pages/today.html, pages/whatif.html,
+                 pages/autopilot.html, components/proposal_list.html, components/watchlist.html,
+                 components/holdings.html,
                  components/autopilot_panel.html, components/pending_trades.html,
                  components/tabbar.html), app lifespan resumes/stops the autopilot,
                  static-src/ (PWA manifest + icons, committed), static/ (built, gitignored)
@@ -226,11 +233,24 @@ build on every push and PR, with no credentials.
   positions by summing signed orders per symbol for the server's mode (every
   order is assumed filled in full, as in the dry-run broker). Equity and cash
   come from the newest equity snapshot for that mode, else `initial_cash`.
+- **The holdings card agrees with the proposal's "held" column.** Offline it
+  reads the same signed order-log sum for `settings.mode` (so a web autopilot
+  running as `dry_run` does not show there), priced at the last cached close;
+  a held symbol with no cached bars is listed under "skipped", never priced at
+  a guess. With credentials it reads the paper broker and falls back to the
+  cost basis (labelled) for an uncached symbol, and to the log (with a note)
+  when the broker does not answer. It never fetches bars.
 - **The Today refresh gives the selector the whole cached history** and the
   strategy only the last `required_history + 30` bars. A ranked selector's
   verdict depends on where its frame starts, so the engine (which reads its
   own stored bars) and the web refresh (which reads the bar cache) can pick
   differently when those histories start on different days.
+- **One list for suggestions and the autopilot.** When the watchlist is not
+  empty, the Today refresh job and `autopilot_build` both scan it instead of
+  `settings.symbols`, through `symbols_service.with_active_symbols` (a copy;
+  the server's settings are never mutated). The web autopilot is built once,
+  on first use, so a watchlist edit reaches a running autopilot only after a
+  server restart. Symbols must match `^[A-Z.\-]{1,10}$` after upper-casing.
 - **Contributions are not returns.** `Backtester.run(..., cash_flows=...)` adds
   cash before a bar is sized. `BacktestResult` then reports `total_contributed`
   and `money_gain`, and computes return, CAGR, Sharpe and drawdown on the
@@ -308,8 +328,11 @@ build on every push and PR, with no credentials.
 - **Streaming only speeds arrival.** `StreamSeasonFeed` buffers pushed bars into
   the pull-shaped feed. The `Engine` keeps polling on purpose.
 - **A notifier never breaks a trade.** `Engine._notify` wraps every send and
-  `WebhookNotifier` swallows network errors. `build_notifier` always includes
-  the log notifier.
+  `WebhookNotifier` / `NtfyNotifier` swallow network errors. `build_notifier`
+  always includes the log notifier (`notifier_channels` lists log, webhook,
+  ntfy as configured). Both remote notifiers also have `deliver() -> bool`,
+  used only by the test-alert button (`notify_service.send_test`), so a
+  mistyped topic reads "not delivered" instead of a silent "sent".
 
 **Consortium**
 - **It obeys every decision-rule invariant.** `prepare()` sees the whole frame,
@@ -377,6 +400,18 @@ build on every push and PR, with no credentials.
   same-origin guard (`POST /login`, a plain form, is its only exemption;
   the token is never accepted in a URL). Build test clients with `tests/web_client.local_client`
   (Host `localhost`): `testserver` is deliberately not on the allowlist.
+- **Chart axes drop the clock on daily data.** `equityChart.ts axisLabels`
+  shows dates only when no two points share a date (daily bars carry a
+  04:00/05:00 UTC session stamp that is noise); intraday series keep the time.
+  Order pins use the same labels, so a pin always lands on an axis category.
+- **The login body is bounded twice:** `Content-Length` must be present and at
+  most 4096, and the streamed body may not exceed what it declared (a chunked
+  body without a length gets 413). `test_web_guard.py` drives the raw ASGI app
+  for these, because an HTTP client corrects a lying length.
+- **What-if presets are real when anything daily is cached,** familiar index
+  funds first, and only symbols that share at least 90 days with the rest
+  (`whatif_presets.MIN_SHARED_DAYS`), so a preset never fails on first tap.
+  An empty cache falls back to labelled synthetic presets.
 - **A green local suite is not a green CI.** Check the actual CI run before
   you claim a gate passed.
 

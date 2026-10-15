@@ -1,4 +1,4 @@
-"""JSON for the Today page: the latest proposal and the refresh that makes one."""
+"""JSON for the Today page: the latest proposal, its refresh, and the holdings."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, Request
 
 from ...dependencies import get_trading_repo
 from ...repository import TradingRepository
-from ...schemas import ProposalEnvelope
-from ...services import advisor_service
+from ...schemas import HoldingsView, ProposalEnvelope
+from ...services import advisor_service, holdings_service
 
 router = APIRouter()
 
@@ -27,3 +27,10 @@ def refresh(request: Request):
         "cache_dir": state.cache_dir,
     })
     return {"job_id": job_id}
+
+
+@router.get("/holdings", response_model=HoldingsView)
+def holdings(request: Request):
+    state = request.app.state
+    return holdings_service.view(state.settings, trading_db=state.trading_db,
+                                 cache_dir=state.cache_dir)

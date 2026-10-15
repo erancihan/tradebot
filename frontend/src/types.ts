@@ -182,8 +182,17 @@ export interface ProposalEnvelope {
   configured: boolean;
   config_hint?: string | null;
   symbols: string[];
+  symbol_source: string; // "watchlist" | "config"
   proposal?: ProposalView | null;
 }
+
+// GET/POST /api/watchlist: the active list and where it came from.
+export interface WatchlistView {
+  symbols: string[];
+  source: string; // "watchlist" | "config"
+}
+
+export type WatchlistChange = { add: string[] } | { remove: string[] };
 
 export interface WhatIfRequest {
   symbols: string[];
@@ -244,4 +253,11 @@ export interface AutopilotView {
   modes: { key: AutopilotModeKey; label: string }[];
   pending: ProposalLine[];
   notice?: string | null;
+}
+
+// POST /api/notify/test: every configured channel, and the ones that refused.
+export interface NotifyTestResult {
+  sent: boolean;
+  channels: string[];
+  failed: string[];
 }

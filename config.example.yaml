@@ -152,3 +152,5 @@ risk:
 # failures are logged and swallowed — an unreachable endpoint never halts trading.
 # notify:
 #   webhook_url: https://hooks.example.com/tradebot
+#   ntfy_topic: tradebot-pick-a-long-random-name   # phone alerts via the ntfy app
+#   ntfy_server: https://ntfy.sh                   # optional; default shown
