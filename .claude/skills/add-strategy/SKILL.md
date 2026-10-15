@@ -53,9 +53,8 @@ backtest, live, and the arena.
    `SmaCrossover`/`RsiReversion` tests for the pattern. House rule: also give it
    a walk-forward smoke pass (see `test_new_strategies_pass_a_walk_forward_smoke`).
 
-4. **Verify**: `make test`. Optionally `tradebot demo --strategy my_strategy`
-   isn't wired automatically, but you can backtest via a `config.yaml` with
-   `strategy: { name: my_strategy, params: {...} }` and `tradebot backtest`.
+4. **Verify**: `make test`, then `tradebot demo --strategy my_strategy` (choices
+   come from the registry); it also shows up in Settings and What-if Compare.
 
 ## Notes
 - For a *stateful regime* (hold until exit), compute signals then `ffill` (see

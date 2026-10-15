@@ -70,7 +70,8 @@ db_path: tradebot.db
 
 # --- Strategy -----------------------------------------------------------------
 # Available: sma_crossover, rsi_reversion, buy_and_hold, donchian_breakout,
-#            macd_trend, bollinger_reversion, follow_leader, ensemble_vote
+#            macd_trend, bollinger_reversion, momentum, supertrend,
+#            follow_leader, ensemble_vote
 # (the meta strategies take `strategies: [{name, params}, ...]` to pick their
 #  roster; defaults to a mixed trend/mean-reversion four)
 strategy:
@@ -147,8 +148,8 @@ risk:
   # take_profit_pct: 0.15     # exit 15% above it
 
 # --- Notifications ------------------------------------------------------------
-# Order fills and circuit-breaker halts are always written to the log. Set a
-# webhook to also POST them as JSON (stdlib urllib; no new dependency). Delivery
+# Order fills, bracket exits, daily-loss halts, approval batches and the morning
+# brief always go to the log. Set a webhook to also POST them as JSON (stdlib urllib; no new dependency). Delivery
 # failures are logged and swallowed — an unreachable endpoint never halts trading.
 # notify:
 #   webhook_url: https://hooks.example.com/tradebot

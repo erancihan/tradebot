@@ -58,7 +58,7 @@ decisive FAIL. That is the honest result, not a bug.
 
 ## The gate
 
-`arena/gate.py`, run as `tradebot arena gate --candidate X --scenarios ...`.
+`arena/gate/`, run as `tradebot arena gate --candidate X --scenarios ...`.
 The baseline defaults to `buy_and_hold`. The exit code is the verdict. All
 criteria are required:
 

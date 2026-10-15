@@ -45,7 +45,7 @@ tradebot/
   data/          synthetic + factor_panel, cache + coverage, replay, csv, alpaca_data, stream
   market/        base (MarketCalendar, TableCalendar), us, bist, registry (CALENDARS)
   advisor/       propose (bars + account -> Proposal), explain, types
-  engine/        core (Engine.step -> PassOutcome), signals, orders, pending
+  engine/        core (Engine.step -> PassOutcome), signals, orders, pending, session (daily-loss anchor)
   autopilot/     state, schedule, runner (Autopilot, injected clock/sleep/calendar),
                  approvals, background, brief (MorningBrief), session, links (signed batch links)
   storage/       tradebot.db mixins: orders, bars, weights, proposals, autopilot, watchlist, discover
@@ -69,7 +69,7 @@ tradebot/
 algos/           12 contestants + canaries/ and consortium/ (both opt-in)
 scenarios/       regime library, factor library (xs_*), real_xs_* (+ sealed holdout), legacy real_*
 frontend/        TypeScript, Tailwind, Alpine, ECharts, esbuild (settings[Form].ts, history.ts, discover.ts)
-tests/  docs/ (research-record.md, adr/, plans/)  data/cache/ (gitignored)  Makefile
+tests/  docs/ (research-record.md, adr/; plans/<slug>/ only while an epic is open)  data/cache/ (gitignored)  Makefile
 config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])  deploy/ (systemd, launchd)
 ```
 
@@ -110,8 +110,8 @@ config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])  deploy
   offline (synthetic data, fake fetchers). Every feature keeps a credential-free path and offline tests.
 - **Credentials stay on the server.** The browser never receives them, and no
   config file holds them (`write_settings` refuses credential-looking keys). The
-  web fetches bars only through `BarCache` and only with credentials in the
-  server environment. Without them it uses cached bars and says so (`docs/adr/0001-server-side-refresh.md`).
+  web fetches bars through `BarCache`, except Discover's liquidity screen (one most-actives call plus a
+  ~55-day batched bar request, keys only), and only with credentials in the server environment. Without them it uses cached bars and says so (`docs/adr/0001-server-side-refresh.md`).
 - **Every result carries provenance:** source, symbols, window and bar count. Synthetic dates are labels, not forecasts.
 - **No inline JS in templates.** All browser code is type-checked TypeScript
   bundled by esbuild. Templates only present data.
@@ -195,8 +195,8 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   strategies (a roster) are skipped, a raising one is an `errors` entry, 120 s cap.
 
 **Arena and season**
-- **Isolation:** `process` (POSIX default) forks with a hard kill and never downgrades.
-  `thread` is soft (marks `TIMEOUT`, cannot kill). `auto` warns before falling back.
+- **Isolation:** `process` is the default for `arena run`/`gate`; `season create` defaults to `thread`.
+  `process` forks with a hard kill and never downgrades. `thread` is soft (marks `TIMEOUT`, cannot kill). `auto` warns before falling back.
   Never wrap a worker in a `ThreadPoolExecutor` context manager: its exit waits for the task.
 - **Sandbox:** process isolation hardens by default (no writes, empty network
   namespace) unless `--no-harden`. `--seccomp` denies `execve`/`ptrace`
@@ -274,8 +274,8 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
 - **State-changing requests need `X-Requested-With: tradebot`** (`web/guard.py`).
   Tests send `POST_HEADERS`, the TS client adds it in `postJson`. Middleware,
   outermost first: trusted host -> optional `TRADEBOT_WEB_TOKEN` gate -> guard.
-  `POST /login` and signed batch links are the exemptions; the token never rides in a URL. Test
-  clients use `tests/web_client.local_client` (Host `localhost`).
+  `POST /login` is the only guard exemption; signed batch links skip only the token gate. The token
+  never rides in a URL. Test clients use `tests/web_client.local_client` (Host `localhost`).
 - **The login body is bounded twice** (declared `Content-Length` <= 4096 and the
   streamed body). `test_web_guard.py` drives raw ASGI because clients fix lying lengths.
 - **Chart axes drop the clock on daily data.** What-if presets are real when daily bars are

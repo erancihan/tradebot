@@ -256,7 +256,7 @@ Alpaca. Approve links in phone alerts outlive a restart only with
 
 - **History** (`/history`): what the bot has done and decided, newest first,
   for the account the dashboard shows. A card compares equity now with the
-  first snapshot, beside a small equity chart. Below it one timeline mixes the
+  first of the last 2000 snapshots, beside a small equity chart. Below it one timeline mixes the
   orders the bot sent (symbol, side, shares, and the amount at the price the
   trade was sized at) with each proposal batch (its trades by status: suggested,
   pending, approved, rejected, submitted or expired). Tap a batch for each
@@ -269,8 +269,8 @@ Alpaca. Approve links in phone alerts outlive a restart only with
   equity curve update live over one SSE stream, with a pause toggle.
 - **Arena**, **Seasons**, **Consortium**: the [research views](#research-tooling).
 
-Run and What-if read only the local cache. The Today refresh is the one page
-action that fetches bars, and only with server-side keys. Empty pages say
+Run and What-if read only the local cache. Today's Refresh and Discover's Find
+candidates are the only page actions that fetch bars, and only with server-side keys. Empty pages say
 which command fills them.
 
 ## How it decides
@@ -349,7 +349,7 @@ tradebot run --config config.yaml                          # continuous paper lo
 tradebot status --config config.yaml                       # broker account snapshot
 tradebot universe --config config.yaml                     # screened universe (needs keys)
 tradebot data pull --symbols SPY QQQ --start 2024-01-01 --end 2025-01-01
-tradebot-web [--host H] [--port P] [--config F] [--allow-host H] [--token T]
+tradebot-web [--host H] [--port P] [--config F] [--allow-host H] [--token T] [--trading-db F] [--check]
 ```
 
 Always pass explicit `--start` and `--end` to `data pull`. The cache records
