@@ -182,6 +182,10 @@ export function changeWatchlist(body: WatchlistChange): Promise<WatchlistView> {
   return postJson<WatchlistView>("/api/watchlist", body);
 }
 
+export function runDiscover(): Promise<{ job_id: string }> {
+  return postJson<{ job_id: string }>("/api/discover/run", {});
+}
+
 export function getSettings(): Promise<SettingsView> {
   return getJson<SettingsView>("/api/settings");
 }
