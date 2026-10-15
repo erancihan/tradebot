@@ -111,6 +111,15 @@ def test_whatif_rejects_an_impossible_plan(tmp_path, body):
     assert _client(tmp_path).post("/api/whatif", headers=POST_HEADERS, json=body).status_code == 400
 
 
+@pytest.mark.parametrize("bad", ["../../../X", "SPY/..", "S P Y", "1X"])
+def test_whatif_refuses_a_symbol_that_is_not_one(tmp_path, bad):
+    """A symbol becomes a cache file name: never let a path reach BarCache."""
+    r = _client(tmp_path).post("/api/whatif", headers=POST_HEADERS,
+                               json={"symbols": ["SPY", bad], "source": "real"})
+    assert r.status_code == 400
+    assert "not a symbol" in r.json()["detail"]
+
+
 def test_whatif_job_runs_a_strategy_with_a_selector(tmp_path):
     _seed_cache(tmp_path, symbols=("AAA", "BBB", "CCC"))
     client = _client(tmp_path)
