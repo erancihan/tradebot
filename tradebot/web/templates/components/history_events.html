@@ -16,9 +16,9 @@
   {% else %}
     <li class="px-3 py-3" data-event="proposal" data-batch="{{ e.id }}">
       <details>
-        <summary class="flex cursor-pointer list-none items-center gap-3">
+        <summary class="flex cursor-pointer list-none items-start gap-3">
           <span class="rounded border border-slate-700 bg-slate-800 px-2 py-0.5 text-xs font-semibold uppercase text-slate-300">plan</span>
-          <span class="min-w-0 flex-1 truncate text-sm text-slate-300" data-summary>
+          <span class="min-w-0 flex-1 text-sm leading-snug text-slate-300" data-summary>
             {%- if e.trades %}{{ e.trades | length }} trade{{ '' if e.trades | length == 1 else 's' }}:
               {% for status, n in e.counts.items() %}{{ n }} {{ status }}{{ ', ' if not loop.last }}{% endfor %}
             {%- else %}No trades{% endif %}
