@@ -108,3 +108,18 @@ def test_manage_unlisted_false_keeps_today_off_off_list_names(tmp_path, offline)
     client = _client(tmp_path, _config(tmp_path, extra="manage_unlisted: false\n"))
     assert _refresh(client)["state"] == "done"
     assert list(_lines(client)) == ["SPY", "QQQ"]
+
+
+class _HoldsCrypto(_FakeBroker):
+    def positions(self):
+        return {**super().positions(),
+                "BTCUSD": Position("BTCUSD", 0.5, 60000.0, asset_class="crypto")}
+
+
+def test_today_ignores_a_crypto_position_as_the_engine_pass_does(tmp_path, monkeypatch):
+    """Today == a pass: the engine never reads a crypto position as an
+    off-list equity, so Today shows no line for it either."""
+    _online(monkeypatch, _HoldsCrypto())
+    client = _client(tmp_path, _config(tmp_path))
+    assert _refresh(client)["state"] == "done"
+    assert "BTCUSD" not in _lines(client)

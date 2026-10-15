@@ -240,3 +240,41 @@ def test_an_approved_swap_sells_first_too(tmp_path):
     ids = [ln["id"] for ln in engine.storage.pending_lines("dry_run")]
     engine.submit_lines(ids)
     assert broker.position("QQQ").is_flat and broker.position("IWM").qty == 50
+
+
+class _Flattenable:
+    """A broker holding an equity and a hand-bought crypto position."""
+
+    def __init__(self):
+        self.sent: list[Order] = []
+
+    def cancel_all(self):
+        pass
+
+    def positions(self):
+        from tradebot.models import Position
+
+        return {"SPY": Position("SPY", 4.0, 100.0),
+                "BTCUSD": Position("BTCUSD", 0.5, 60000.0, asset_class="crypto")}
+
+    def submit(self, order):
+        self.sent.append(order)
+        return f"o-{order.symbol}"
+
+
+def test_the_daily_loss_flatten_closes_equities_only():
+    """A hand-held crypto position is never the bot's to sell."""
+    from tradebot.engine.session import flatten
+
+    broker = _Flattenable()
+    engine = type("E", (), {"broker": broker, "storage": None, "mode": "paper"})()
+    assert flatten(engine) == ["SPY"]
+    assert [o.symbol for o in broker.sent] == ["SPY"]
+
+
+def test_is_equity_reads_the_asset_class():
+    from tradebot.models import Position, is_equity
+
+    assert is_equity(Position("SPY", 1.0))
+    assert not is_equity(Position("BTCUSD", 1.0, asset_class="crypto"))
+    assert is_equity(type("P", (), {"qty": 1.0})())      # no class: an equity

@@ -132,6 +132,13 @@ class Position:
         return (price - self.avg_price) * self.qty
 
 
+def is_equity(position) -> bool:
+    """Whether a broker position is an equity, the only class the bot trades.
+    A crypto or option position is never the bot's to size, close or flatten;
+    a position object without the field (an old fake) counts as an equity."""
+    return getattr(position, "asset_class", EQUITY) == EQUITY
+
+
 @dataclass
 class Trade:
     """A realised round-trip leg (a reduction/close of a position), or, from
