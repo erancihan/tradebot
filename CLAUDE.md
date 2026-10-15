@@ -266,8 +266,8 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   every component, writes atomically, then `autopilot_service.reset` stops the loop (stored mode kept).
 - **Alert destinations are masked both ways** (`settings_secrets`): a masked or omitted value keeps the
   stored one only while it still points at the same host or ntfy server; `""` deletes it. Settings responses are `Cache-Control: no-store`.
-- **Alpine state is a Proxy:** `structuredClone` throws on it (copy with JSON),
-  and ECharts instances must live in a closure, not in Alpine state.
+- **Alpine state is a Proxy:** `structuredClone` throws (copy with JSON); ECharts lives in a closure.
+  An x-show chart box is 0 wide at init (`charts/fit.ts` `fitToBox`); `$store` bindings need `x-data`.
 - **Pydantic coercion:** `JobRequest.params` stays `dict | None` (float coercion breaks ints).
 - **Starlette:** `templates.TemplateResponse(request, name, context)`. Equity curves serialise as
   `{index: [...], equity: [...]}`. Dashboard refresh is one SSE stream into an Alpine `live` store.
