@@ -8,12 +8,12 @@
 <section class="space-y-4">
   <div class="flex items-baseline justify-between">
     <h1 class="text-lg font-semibold text-slate-100">Consortium</h1>
-    <div class="flex gap-2 text-sm">
+    <div class="flex items-center gap-2 text-sm">
       <a href="/consortium?voice=equal"
-         class="{{ 'text-emerald-400' if voice == 'equal' else 'text-slate-400 hover:text-slate-200' }}">equal voice</a>
+         class="inline-flex min-h-[40px] items-center {{ 'text-emerald-400' if voice == 'equal' else 'text-slate-400 hover:text-slate-200' }}">equal voice</a>
       <span class="text-slate-700">·</span>
       <a href="/consortium?voice=hedge"
-         class="{{ 'text-emerald-400' if voice == 'hedge' else 'text-slate-400 hover:text-slate-200' }}">hedge voice</a>
+         class="inline-flex min-h-[40px] items-center {{ 'text-emerald-400' if voice == 'hedge' else 'text-slate-400 hover:text-slate-200' }}">hedge voice</a>
     </div>
   </div>
 
