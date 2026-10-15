@@ -14,6 +14,7 @@ from ..repository import ArenaRepository, TradingRepository
 from ..services import (
     account_service,
     advisor_service,
+    autopilot_service,
     consortium_service,
     metrics_service,
 )
@@ -66,6 +67,14 @@ def proposal(request: Request, repo: TradingRepository = Depends(get_trading_rep
     return templates.TemplateResponse(
         request, "components/proposal_list.html",
         {"today": advisor_service.view(repo, state.settings, state.settings_path)},
+    )
+
+
+@router.get("/autopilot", response_class=HTMLResponse)
+def autopilot(request: Request):
+    return templates.TemplateResponse(
+        request, "components/autopilot_panel.html",
+        {"autopilot": autopilot_service.view(request.app)},
     )
 
 

@@ -610,6 +610,46 @@ The page advises on the symbols and strategy stack in the server's settings:
 tradebot-web --config config.yaml   # default: ./config.yaml if present, else SPY + QQQ
 ```
 
+## Autopilot
+
+Open `/autopilot` (the second tab on a phone) and pick one of three modes:
+
+- **Off**: nothing runs.
+- **Approve first**: every `poll_seconds` inside US market hours the bot
+  computes the same proposal the Today page shows and lists its trades under
+  "Waiting for approval". Tap **Approve** or **Reject** per trade, or
+  **Approve all**. Only the approved trades are submitted. A batch is sized at
+  the prices of its pass, so it expires when the next pass replaces it, or when
+  you approve it more than one poll interval later; it is never executed late.
+  Each new batch sends a `pending_trades` notification (point
+  `notify.webhook_url` at an ntfy topic to get it on your phone).
+- **Automatic**: every pass submits its trades. Each order is notified.
+
+The status card shows the mode, whether the loop is running, the account,
+the last and next pass, the number of pending trades and the last error.
+If the daily-loss limit (`risk.max_daily_loss_pct`) trips, the autopilot
+switches itself **off**, shows `daily loss halt` and notifies you.
+
+The web autopilot trades the **paper** account when Alpaca credentials are in
+the server's environment. Without them it runs a dry-run (simulated fills)
+over the cached bars and labels the account `dry_run`; if a symbol is not
+cached the page shows the `tradebot data pull` command. It never reaches a
+live account. The loop runs as a thread inside `tradebot-web`; it resumes when
+the server restarts in a non-off mode and stops when the server stops.
+
+Run the same autopilot without the web server:
+
+```bash
+tradebot run --config config.yaml --autopilot --mode auto       # paper, market hours
+tradebot run --config config.yaml --autopilot --mode approve    # park trades for the web page
+tradebot run --config config.yaml --replay --autopilot --mode auto --iterations 50   # offline
+```
+
+It builds the engine exactly as `tradebot run` does (`--dry-run`, `--replay`
+and the live latch all apply). In approve mode the parked trades are approved
+from the Autopilot page of a server that uses the same database; with paper
+credentials both submit to the same paper account.
+
 ## Dashboard (web UI)
 
 A FastAPI dashboard visualises everything the bot records: the equity curve,

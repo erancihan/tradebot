@@ -3,6 +3,8 @@
 import type {
   AccountView,
   ArenaRunDetail,
+  AutopilotCommand,
+  AutopilotView,
   CacheEntry,
   CandleSeries,
   EquitySeries,
@@ -103,4 +105,12 @@ export function refreshProposal(): Promise<{ job_id: string }> {
 
 export function submitWhatIf(body: WhatIfRequest): Promise<{ job_id: string }> {
   return postJson<{ job_id: string }>("/api/whatif", body);
+}
+
+export function getAutopilot(): Promise<AutopilotView> {
+  return getJson<AutopilotView>("/api/autopilot");
+}
+
+export function commandAutopilot(body: AutopilotCommand): Promise<AutopilotView> {
+  return postJson<AutopilotView>("/api/autopilot", body);
 }

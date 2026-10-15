@@ -15,7 +15,7 @@ must change.
 - [x] E1 — housekeeping: docs to final state, CLI split, function-length gate, mobile-first shell + PWA
 - [x] E2 — What-if simulator (historical theoretical cases, multi-symbol, DCA, benchmark)
 - [x] E3 — Suggestions (what to buy / sell today, with reasons)
-- [ ] E4 — Autopilot (managed paper/live engine with approve or auto mode)
+- [x] E4 — Autopilot (managed paper/live engine with approve or auto mode)
 - [ ] E5 — Expansion (phone alerts via ntfy, watchlists, market/broker abstraction for BIST)
 
 ## Slices

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import mimetypes
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -14,6 +15,7 @@ from ..config import Settings
 from .access import AccessToken
 from .guard import SameOriginGuard
 from .routes import api, pages, partials, sse
+from .services import autopilot_service
 from .services.jobs import JobRegistry
 
 # Not every platform's mimetypes table knows the PWA manifest extension, and a
@@ -47,12 +49,21 @@ def load_settings(settings_path: str | None) -> tuple[Settings, str | None]:
     return Settings.from_yaml(settings_path), str(settings_path)
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    # The autopilot loop is a thread inside this process: resume it if the
+    # user left it on, and stop it with the server so no pass outlives it.
+    autopilot_service.resume(app)
+    yield
+    autopilot_service.shutdown(app)
+
+
 def create_app(trading_db: str = "tradebot.db", arena_db: str = "arena.db",
                season_db: str = "season.db", cache_dir: str = "data/cache",
                settings_path: str | None = None,
                allowed_hosts: list[str] | None = None,
                access_token: str | None = None) -> FastAPI:
-    app = FastAPI(title="tradebot dashboard", docs_url="/api/docs")
+    app = FastAPI(title="tradebot dashboard", docs_url="/api/docs", lifespan=_lifespan)
     app.state.settings, app.state.settings_path = load_settings(settings_path)
     app.state.trading_db = trading_db
     app.state.arena_db = arena_db

@@ -15,6 +15,7 @@ from ..repository import ArenaRepository, SeasonRepository, TradingRepository
 from ..services import (
     account_service,
     advisor_service,
+    autopilot_service,
     consortium_service,
     metrics_service,
     whatif_presets,
@@ -50,6 +51,14 @@ def today_page(request: Request, repo: TradingRepository = Depends(get_trading_r
     context = {"today": advisor_service.view(repo, state.settings, state.settings_path),
                "active": "today"}
     return templates.TemplateResponse(request, "pages/today.html", context)
+
+
+@router.get("/autopilot", response_class=HTMLResponse)
+def autopilot_page(request: Request):
+    """Phone-first: the autopilot's mode, its last and next pass, pending trades."""
+    return templates.TemplateResponse(
+        request, "pages/autopilot.html",
+        {"autopilot": autopilot_service.view(request.app), "active": "autopilot"})
 
 
 @router.get("/run", response_class=HTMLResponse)

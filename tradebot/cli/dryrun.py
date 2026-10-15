@@ -14,6 +14,22 @@ from .common import _resolve_universe
 
 def _run_dry(settings, args: argparse.Namespace) -> int:
     """Forward-test: the real-time loop with simulated fills, no orders sent."""
+    built = _build_dry_engine(settings, args)
+    if built is None:
+        return 2
+    engine, data, broker, storage, replay = built
+    src = "replay" if replay else "live data"
+    print(
+        f"[DRY-RUN] Forward-test ({src}) on {settings.symbols} with "
+        f"{engine.strategy.name}; virtual ${settings.initial_cash:,.0f}, no orders sent."
+    )
+    _drive_dry(engine, data, broker, storage, args, replay)
+    return 0
+
+
+def _build_dry_engine(settings, args: argparse.Namespace):
+    """(engine, data, broker, storage, replay) for a forward-test, or None
+    after printing why the market data is unavailable."""
     from ..broker.dryrun import DryRunBroker
     from ..engine import Engine
     from ..risk import RiskManager
@@ -21,38 +37,24 @@ def _run_dry(settings, args: argparse.Namespace) -> int:
     from ..strategies import build_strategy
 
     strategy = build_strategy(settings.strategy_name, settings.strategy_params)
-    risk = RiskManager(settings.risk)
     storage = Storage(settings.db_path)
     selector = settings.build_selector()
-
     replay = bool(args.replay or args.replay_csv)
     data = _dry_data(settings, strategy, storage, selector, args, replay)
     if data is None:
-        return 2
-
+        storage.close()
+        return None
     broker = DryRunBroker(
-        data,
-        timeframe=settings.timeframe,
-        initial_cash=settings.initial_cash,
-        slippage_bps=settings.slippage_bps,
-        commission=settings.commission,
+        data, timeframe=settings.timeframe, initial_cash=settings.initial_cash,
+        slippage_bps=settings.slippage_bps, commission=settings.commission,
     )
     engine = Engine(
-        settings, broker, data, strategy, risk, storage,
+        settings, broker, data, strategy, RiskManager(settings.risk), storage,
         mode_label="dry_run", enforce_live_ack=False,
-        allocator=settings.build_allocator(),
-        selector=selector,
-        overlays=settings.build_overlays(),
-        notifier=settings.build_notifier(),
+        allocator=settings.build_allocator(), selector=selector,
+        overlays=settings.build_overlays(), notifier=settings.build_notifier(),
     )
-
-    src = "replay" if replay else "live data"
-    print(
-        f"[DRY-RUN] Forward-test ({src}) on {settings.symbols} with "
-        f"{strategy.name}; virtual ${settings.initial_cash:,.0f}, no orders sent."
-    )
-    _drive_dry(engine, data, broker, storage, args, replay)
-    return 0
+    return engine, data, broker, storage, replay
 
 
 def _dry_data(settings, strategy, storage, selector, args, replay: bool):

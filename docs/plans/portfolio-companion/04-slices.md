@@ -35,11 +35,11 @@ merged to master from its `feat/<epic>` branch with a no-ff merge commit.
 - [x] S3b.3 optional access token (`TRADEBOT_WEB_TOKEN`): when set, every request needs the cookie set by the `/login` form (or a Bearer header); documented as the way to reach the app from a phone over the network
 
 ## E4: Autopilot
-- [ ] S4.1 tracer: `/autopilot` page shows state from `autopilot_state`, the toggle writes the mode
-- [ ] S4.2 `Autopilot` runner thread: passes on `poll_seconds` inside market hours, injected clock, offline test
-- [ ] S4.3 `approve` mode: pending proposals, approve and reject, submit only approved rows
-- [ ] S4.4 `auto` mode, notifications on fills and halts, stop on a daily-loss halt
-- [ ] S4.5 `tradebot run --autopilot` headless parity
+- [x] S4.1 tracer: `/autopilot` page shows state from `autopilot_state`, the toggle writes the mode
+- [x] S4.2 `Autopilot` runner thread: passes on `poll_seconds` inside market hours, injected clock, offline test
+- [x] S4.3 `approve` mode: pending proposals, approve and reject, submit only approved rows
+- [x] S4.4 `auto` mode, notifications on fills and halts, stop on a daily-loss halt
+- [x] S4.5 `tradebot run --autopilot` headless parity
 
 ## E5: Expansion
 - [ ] S5.0 polish from the phone smoke test: equity chart axis shows dates only on daily bars, What-if presets use real cached symbols when a cache exists (verified synthetic fallback works)

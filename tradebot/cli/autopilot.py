@@ -1,0 +1,89 @@
+"""`tradebot run --autopilot`: the web's Autopilot runner, headless.
+
+The engine is built exactly as `run` builds it (replay, dry-run or paper; a
+live config still needs the confirmation latch), then the same ``Autopilot``
+the web process owns drives it. A replay has no wall clock, so it gets a
+simulated one: every bar is "open" and each sleep advances one bar.
+"""
+
+from __future__ import annotations
+
+import argparse
+import time
+from datetime import datetime, timedelta
+
+from ..models import utcnow
+from .common import _resolve_universe
+from .dryrun import _build_dry_engine, _print_dryrun_summary
+
+
+class _ReplayClock:
+    """Simulated time for a replay: sleeping advances the clock and one bar."""
+
+    def __init__(self, data, speed: float) -> None:
+        self.now: datetime = utcnow()
+        self.data, self.speed = data, speed
+        self.pilot = None
+
+    def __call__(self) -> datetime:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.now += timedelta(seconds=seconds)
+        if not self.data.has_next():
+            self.pilot.stop(timeout=0)            # the tape ran out: end the run
+            return
+        self.data.advance()
+        if self.speed:
+            time.sleep(self.speed)
+
+
+def run_autopilot(settings, args: argparse.Namespace) -> int:
+    from ..autopilot import Autopilot
+
+    built = _build(settings, args)
+    if built is None:
+        return 2
+    engine, data, broker, replay = built
+    extra: dict = {}
+    if replay:
+        clock = _ReplayClock(data, args.speed)
+        extra = dict(clock=clock, sleep=clock.sleep, is_open=lambda now: True)
+    pilot = Autopilot(engine, engine.storage, poll_seconds=settings.poll_seconds, **extra)
+    if replay:
+        clock.pilot = pilot
+    pilot.set_mode(args.mode)
+    print(f"[AUTOPILOT] mode={args.mode} account={engine.mode} on {settings.symbols} "
+          f"with {engine.strategy.name}; every {settings.poll_seconds}s in market hours.")
+    try:
+        ticks = pilot.run_forever(max_ticks=1 if args.once else args.iterations)
+    except KeyboardInterrupt:
+        ticks = None
+        print("\n[AUTOPILOT] Interrupted.")
+    _report(pilot, ticks, broker)
+    engine.storage.close()
+    return 0
+
+
+def _build(settings, args):
+    """(engine, data, broker-or-None, replay) as `run` would choose, or None."""
+    if args.dry_run:
+        built = _build_dry_engine(settings, args)
+        if built is None:
+            return None
+        engine, data, broker, _, replay = built
+        return engine, data, broker, replay
+    if not _resolve_universe(settings):
+        return None
+    from .run import _build_paper_engine
+
+    engine = _build_paper_engine(settings)
+    return engine, engine.data, None, False
+
+
+def _report(pilot, ticks, broker) -> None:
+    state = pilot.state()
+    print(f"[AUTOPILOT] ticks={ticks} mode={state.mode} pending={state.pending} "
+          f"last_pass={state.last_pass_at} last_error={state.last_error}")
+    if broker is not None:
+        _print_dryrun_summary(broker)

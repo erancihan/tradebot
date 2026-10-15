@@ -34,6 +34,16 @@ def register(sub: argparse._SubParsersAction) -> None:
         "--speed", type=float, default=0.0,
         help="seconds to sleep between replay steps (default 0 = as fast as possible)",
     )
+    r.add_argument(
+        "--autopilot", action="store_true",
+        help="run the Autopilot headless: passes on poll_seconds inside market "
+             "hours (every bar in a replay); --iterations caps the ticks",
+    )
+    r.add_argument(
+        "--mode", choices=("approve", "auto"), default="approve",
+        help="autopilot mode: 'approve' parks each pass's trades for approval "
+             "on the Autopilot page; 'auto' submits them (default approve)",
+    )
     r.set_defaults(func=cmd_run)
 
 
@@ -56,31 +66,40 @@ def _build_live_components(settings):
     return broker, data, strategy, risk, storage
 
 
+def _build_paper_engine(settings):
+    """The paper/live engine exactly as ``run`` builds it (live stays gated)."""
+    from ..engine import Engine
+
+    broker, data, strategy, risk, storage = _build_live_components(settings)
+    if settings.universe_name:
+        storage.record_universe(settings.symbols, settings.mode)
+    return Engine(settings, broker, data, strategy, risk, storage,
+                  allocator=settings.build_allocator(),
+                  selector=settings.build_selector(),
+                  overlays=settings.build_overlays(),
+                  notifier=settings.build_notifier())
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     from ..config import Settings
-    from ..engine import Engine
 
     settings = Settings.from_yaml(args.config)
 
     # Replaying data only makes sense as a (offline) dry-run; imply the flag.
     if getattr(args, "replay", False) or getattr(args, "replay_csv", None):
         args.dry_run = True
+    if getattr(args, "autopilot", False):
+        from .autopilot import run_autopilot
+        return run_autopilot(settings, args)
     if args.dry_run:
         return _run_dry(settings, args)
 
     if not _resolve_universe(settings):
         return 2
-    broker, data, strategy, risk, storage = _build_live_components(settings)
-    if settings.universe_name:
-        storage.record_universe(settings.symbols, settings.mode)
-    engine = Engine(settings, broker, data, strategy, risk, storage,
-                    allocator=settings.build_allocator(),
-                    selector=settings.build_selector(),
-                    overlays=settings.build_overlays(),
-                    notifier=settings.build_notifier())
+    engine = _build_paper_engine(settings)
 
     mode = "LIVE (real money)" if settings.is_live else "paper"
-    print(f"Running in {mode} mode on {settings.symbols} with {strategy.name}.")
+    print(f"Running in {mode} mode on {settings.symbols} with {engine.strategy.name}.")
     if args.once:
         for action in engine.rebalance():
             print(f"  {action.symbol}: target={action.target} order_qty={action.order_qty}")

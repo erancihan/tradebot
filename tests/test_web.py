@@ -334,7 +334,7 @@ def test_manifest_is_served(client):
         assert png.content.startswith(b"\x89PNG")
 
 
-PAGES = ("/", "/today", "/run", "/whatif", "/chart", "/arena", "/seasons", "/consortium")
+PAGES = ("/", "/today", "/autopilot", "/run", "/whatif", "/chart", "/arena", "/seasons", "/consortium")
 
 
 def test_tabbar_renders_on_every_page(client):
@@ -350,7 +350,7 @@ def test_tabbar_marks_the_current_page(client):
     import re
 
     current = re.compile(r'href="([^"]+)"[^>]*\s+aria-current="page"')
-    for path in ("/", "/today", "/run", "/whatif", "/chart", "/arena"):
+    for path in ("/", "/today", "/autopilot", "/run", "/whatif", "/chart", "/arena"):
         body = client.get(path).text
         tabbar = body[body.index("data-tabbar"):]
         assert current.search(tabbar).group(1) == path, path

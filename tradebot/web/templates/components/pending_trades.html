@@ -1,0 +1,39 @@
+{#- Trades waiting for approval (approve mode). A batch expires when the next
+    pass replaces it, so these are only ever one poll interval old. -#}
+{% set pending = autopilot.pending %}
+<div class="space-y-2" data-pending>
+  <div class="flex items-center justify-between">
+    <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Waiting for approval</h2>
+    {% if pending %}
+      <button type="button" data-approve="{{ pending | map(attribute='id') | join(',') }}"
+              class="min-h-[44px] rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-500"
+              data-approve-all>Approve all</button>
+    {% endif %}
+  </div>
+  {% if pending %}
+    <ul class="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-900/40">
+      {% for line in pending %}
+        <li class="flex flex-col gap-2 px-3 py-3" data-pending-line="{{ line.id }}">
+          <div class="flex items-center gap-3">
+            <span class="w-16 font-mono text-base font-semibold text-slate-100">{{ line.symbol }}</span>
+            <span class="rounded border px-2 py-0.5 text-xs font-semibold uppercase {{ 'border-emerald-700 bg-emerald-900/60 text-emerald-300' if line.action == 'buy' else 'border-rose-700 bg-rose-900/60 text-rose-300' }}">{{ line.action }}</span>
+            <span class="ml-auto text-right text-sm text-slate-300">
+              {{ '%g' | format(line.order_qty | abs) }} sh · {{ line.notional | money }}</span>
+          </div>
+          <p class="text-xs text-slate-400">{{ line.reason }}</p>
+          <div class="grid grid-cols-2 gap-2">
+            <button type="button" data-approve="{{ line.id }}"
+                    class="min-h-[44px] rounded-lg border border-emerald-700 text-sm font-semibold text-emerald-300 hover:bg-emerald-900/40">Approve</button>
+            <button type="button" data-reject="{{ line.id }}"
+                    class="min-h-[44px] rounded-lg border border-slate-700 text-sm font-semibold text-slate-300 hover:bg-slate-800">Reject</button>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="rounded-lg border border-dashed border-slate-800 p-4 text-sm text-slate-500" data-no-pending>
+      {% if autopilot.state.mode == 'approve' %}Nothing waiting. The next pass inside market hours lists its trades here.
+      {% else %}Nothing waiting. In "Approve first" mode each pass lists its trades here for you to approve.{% endif %}
+    </p>
+  {% endif %}
+</div>

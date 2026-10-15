@@ -1,0 +1,40 @@
+{#- Autopilot: mode buttons, status card, pending trades. Served for first paint
+    and re-fetched after every tap and on a timer, so the markup lives here
+    only. Buttons carry data-* attributes; one delegated click handler in
+    autopilot.ts reads them, so swapped-in markup needs no re-binding.
+    Expects `autopilot`. -#}
+{% set s = autopilot.state %}
+{% macro when(value) -%}
+  {{ value[:16] | replace('T', ' ') ~ ' UTC' if value else '—' }}
+{%- endmacro %}
+<div class="grid grid-cols-3 gap-2" role="group" aria-label="Autopilot mode" data-modes>
+  {% for m in autopilot.modes %}
+    {% set on = s.mode == m.key %}
+    <button type="button" data-mode="{{ m.key }}" aria-pressed="{{ 'true' if on else 'false' }}"
+            class="min-h-[64px] rounded-lg border text-base font-semibold {{ 'border-emerald-500 bg-emerald-600 text-white' if on else 'border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800' }}">
+      {{ m.label }}
+    </button>
+  {% endfor %}
+</div>
+
+<dl class="grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-slate-800 bg-slate-900/40 p-3 text-sm" data-status>
+  <dt class="text-slate-500">Mode</dt>
+  <dd class="text-slate-100" data-mode-label>{{ s.mode_label }}</dd>
+  <dt class="text-slate-500">Loop</dt>
+  <dd data-running class="{{ 'text-emerald-400' if s.running else 'text-slate-400' }}">{{ 'running' if s.running else 'stopped' }}</dd>
+  <dt class="text-slate-500">Account</dt>
+  <dd class="text-slate-300" data-account>{{ s.account }}{% if s.account == 'dry_run' %} (cached bars, no credentials){% endif %}</dd>
+  <dt class="text-slate-500">Last pass</dt>
+  <dd class="text-slate-300" data-last-pass>{{ when(s.last_pass_at) }}</dd>
+  <dt class="text-slate-500">Next pass</dt>
+  <dd class="text-slate-300" data-next-pass>{{ when(s.next_pass_at) }}</dd>
+  <dt class="text-slate-500">Pending</dt>
+  <dd class="text-slate-300" data-pending-count>{{ s.pending }}</dd>
+</dl>
+
+{% if s.last_error %}
+  <p class="rounded-lg border border-amber-800 bg-amber-950/40 p-3 text-sm text-amber-300 break-words" data-last-error>
+    Last error: {{ s.last_error }}</p>
+{% endif %}
+
+{% include "components/pending_trades.html" %}

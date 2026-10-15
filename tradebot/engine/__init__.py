@@ -4,5 +4,6 @@ from __future__ import annotations
 
 from .core import Engine
 from .orders import RebalanceAction
+from .pending import PassOutcome
 
-__all__ = ["Engine", "RebalanceAction"]
+__all__ = ["Engine", "PassOutcome", "RebalanceAction"]
