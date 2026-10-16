@@ -21,9 +21,11 @@ from .jobs.frames import _pull_hint
 
 
 def build(settings, *, trading_db: str, cache_dir: str,
-          link_secret: bytes | None = None) -> Autopilot:
+          link_secret: bytes | None = None, links_persist: bool = False) -> Autopilot:
     """``link_secret`` signs the push's Approve/Skip links (``autopilot.links``),
-    armed for the paper account only: the dry-run push carries just "Open"."""
+    armed for the paper account only: the dry-run push carries just "Open".
+    ``links_persist``: the key survives restarts (it comes from the access
+    token), so a restart does not push an announced batch again."""
     from ...autopilot.links import link_signer
     from ...engine import Engine
     from ...risk import RiskManager
@@ -47,7 +49,8 @@ def build(settings, *, trading_db: str, cache_dir: str,
                     notifier=settings.build_notifier(
                         link_signer(link_secret, label, settings.poll_seconds)
                         if link_secret and label == "paper" else None))
-    return Autopilot(engine, storage, poll_seconds=settings.poll_seconds)
+    return Autopilot(engine, storage, poll_seconds=settings.poll_seconds,
+                     links_persist=links_persist)
 
 
 def _paper(creds):

@@ -5,9 +5,10 @@ carries that batch over: its pending lines and holds are re-sized in place,
 rejected lines stay rejected, and the batch id (so an earlier push's link)
 survives. A rejection (even of every line) holds until the proposal changes
 or the trading day ends. A changed proposal expires the batch and records a
-new one. A batch is pushed once per process (a restart may have changed the
-link key), then again only as a reminder every ``links.ttl_seconds`` (the link
-lifetime, so a push's buttons work until the next one arrives).
+new one. A batch is pushed once, then again only as a reminder every
+``links.ttl_seconds`` (the link lifetime, so a push's buttons work until the
+next one arrives). A restart pushes it again only when the link key is
+per-process (``links_persist`` False): the old push's buttons died with it.
 
 The lines are sized at the prices of the pass that last touched them. Once
 they are older than one poll interval those prices have moved, so a late
@@ -44,6 +45,7 @@ class ApprovalsMixin:
     """Mixed into ``Autopilot``; uses its engine, storage, clock and lock."""
 
     _announced_here: set[int]
+    links_persist: bool
 
     def approve(self, line_ids: list[int]) -> int:
         """Submit the chosen pending lines; returns how many were submitted.
@@ -123,8 +125,10 @@ class ApprovalsMixin:
 
     def _announce_due(self, batch_id: int | None, now: datetime) -> bool:
         raw = self.storage.autopilot_values(self.scope)
-        if (batch_id is None or batch_id not in self._announced_here
-                or raw.get("announced_batch") != str(batch_id)):
+        if batch_id is None or raw.get("announced_batch") != str(batch_id):
+            return True
+        # A key that survives restarts keeps the stored push's buttons alive.
+        if not self.links_persist and batch_id not in self._announced_here:
             return True
         last = raw.get("announced_at")
         if (last is None or now - datetime.fromisoformat(last)

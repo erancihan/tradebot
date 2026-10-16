@@ -10,6 +10,7 @@ clock reads the newest bar's timestamp.
 from __future__ import annotations
 
 import argparse
+import os
 import time
 from datetime import datetime
 
@@ -66,7 +67,8 @@ def run_autopilot(settings, args: argparse.Namespace) -> int:
     # `tradebot-web` start resumes, so a headless run must never write it.
     pilot = Autopilot(engine, engine.storage, poll_seconds=settings.poll_seconds,
                       calendar=get_calendar(settings.market),
-                      scope=f"cli_{engine.mode}", **extra)
+                      scope=f"cli_{engine.mode}", links_persist=_links_persist(),
+                      **extra)
     if replay:
         clock.pilot = pilot
     pilot.set_mode(args.mode, expire_pending=False)
@@ -83,6 +85,14 @@ def run_autopilot(settings, args: argparse.Namespace) -> int:
     _report(pilot, ticks, broker)
     engine.storage.close()
     return 0
+
+
+def _links_persist() -> bool:
+    """With the token in the environment the link key survives a restart
+    (``links.env_secret``), so a restart need not push a batch again."""
+    from ..autopilot.links import TOKEN_ENV
+
+    return bool(os.getenv(TOKEN_ENV))
 
 
 def _linked_notifier(settings, account: str):

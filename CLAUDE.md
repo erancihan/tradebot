@@ -237,9 +237,9 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   `(symbol, action)` set refreshes it in place (sizing, prices, holds, `created_at`, so History and
   Today show its latest refresh time; same batch id, so the push's link still works). A rejection,
   even Skip of every line, holds until the proposal changes or the session day ends (`waiting_batch`).
-  A changed proposal, an approval older than one `poll_seconds`, a failed pass, the wake after the close
-  (`schedule.next_pass` grants a pass inside hours one more; `tick` expires with no pass; a broker-closed pass too), a halt, and switching off expire it. One push per batch and process (a restart pushes again:
-  the link key may be new), plus a reminder every `links.ttl_seconds` (max(2 x poll, 30 min), also the
+  A changed proposal, an approval older than one `poll_seconds`, a failed pass, the wake after the close (`schedule.next_pass` grants a pass inside hours one more; `tick` expires with no pass; a broker-closed pass too), a halt, and switching off expire it. One push per batch; a restart pushes again
+  only when the link key is per-process (no `TRADEBOT_WEB_TOKEN`; `Autopilot(links_persist=)`), with the token
+  the stored state carries over. Then a reminder every `links.ttl_seconds` (max(2 x poll, 30 min), also the
   link TTL) or at once when a refresh grows a line's notional past `GROWTH_TOLERANCE` (10%) of what the push said (`announced_*` state).
 - **Signed batch links** (`autopilot/links.py`; buttons when `safe_public_url(notify.public_url)`)
   are paper-only (other pushes get just "Open") and account-bound (`account:batch:verb:exp`); they act

@@ -93,6 +93,19 @@ def _app(tmp_path, strategy="buy_and_hold"):
                       cache_dir=str(tmp_path / "cache"), settings_path=str(cfg))
 
 
+@pytest.mark.parametrize("token, lasting", [("s3cret", True), (None, False)])
+def test_the_web_pilots_links_persist_exactly_with_the_token(tmp_path, token, lasting):
+    """The link key derives from the access token, so only then does a stored
+    push survive a restart (no re-push of the same batch)."""
+    _seed_cache(tmp_path)
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("mode: paper\nsymbols: [SPY, QQQ]\n")
+    app = create_app(trading_db=str(tmp_path / "t.db"), arena_db=str(tmp_path / "a.db"),
+                     cache_dir=str(tmp_path / "cache"), settings_path=str(cfg),
+                     access_token=token)
+    assert autopilot_service.get(app).links_persist is lasting
+
+
 def _pending_pass(tmp_path):
     """Approve mode plus one pass, run in the test thread with the market open."""
     _seed_cache(tmp_path)

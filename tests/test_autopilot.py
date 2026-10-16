@@ -54,7 +54,8 @@ class Recorder:
 
 
 def build(tmp_path, *, now=OPEN_NOW, poll=300, risk: RiskConfig | None = None,
-          storage: Storage | None = None, label: str = "dry_run"):
+          storage: Storage | None = None, label: str = "dry_run",
+          links_persist: bool = False):
     frames = {s: synthetic_ohlcv(periods=80, drift=0.001, volatility=0.01, seed=i)
               for i, s in enumerate(SYMBOLS)}
     data = ReplayData(frames, warmup=60)
@@ -67,7 +68,8 @@ def build(tmp_path, *, now=OPEN_NOW, poll=300, risk: RiskConfig | None = None,
                     RiskManager(risk), storage, mode_label=label,
                     enforce_live_ack=False, notifier=notifier)
     clock = FakeClock(now)
-    pilot = Autopilot(engine, storage, poll_seconds=poll, clock=clock, sleep=clock.sleep)
+    pilot = Autopilot(engine, storage, poll_seconds=poll, clock=clock, sleep=clock.sleep,
+                      links_persist=links_persist)
     return pilot, broker, clock, notifier
 
 
@@ -490,6 +492,29 @@ def test_run_autopilot_headless_replay_ends_when_the_tape_does(tmp_path, capsys)
     assert "ticks=" in capsys.readouterr().out          # no cap, still terminated
 
 
+@pytest.mark.parametrize("token, lasting", [("s3cret", True), (None, False)])
+def test_the_headless_pilots_links_persist_with_the_token(tmp_path, monkeypatch,
+                                                          token, lasting):
+    """The CLI signs with ``env_secret``: stable exactly when the token is set."""
+    import tradebot.autopilot as autopilot_pkg
+
+    built: list = []
+
+    class Spy(Autopilot):
+        def __init__(self, *args, **kw):
+            super().__init__(*args, **kw)
+            built.append(self)
+
+    monkeypatch.setattr(autopilot_pkg, "Autopilot", Spy)
+    if token is None:
+        monkeypatch.delenv("TRADEBOT_WEB_TOKEN", raising=False)
+    else:
+        monkeypatch.setenv("TRADEBOT_WEB_TOKEN", token)
+    assert main(["run", "--config", _cli_config(tmp_path), "--replay", "--replay-periods",
+                 "80", "--autopilot", "--iterations", "1"]) == 0
+    assert [p.links_persist for p in built] == [lasting]
+
+
 class _Pushed:
     status = 200
 
@@ -784,6 +809,45 @@ def test_a_restarted_pilot_pushes_its_carried_batch_once(tmp_path):
     pilot.clock.sleep(300)
     pilot.tick()
     assert len(_pushes(notifier)) == 1                  # then quiet again
+
+
+def _restarted_with_lasting_links(tmp_path):
+    """A restart whose link key survives it (TRADEBOT_WEB_TOKEN set)."""
+    first, _, _, _, parked = _approve_pass(tmp_path)
+    pilot, _, clock, notifier = build(tmp_path, now=OPEN_NOW + timedelta(seconds=300),
+                                      storage=first.storage, links_persist=True)
+    return pilot, clock, notifier, parked
+
+
+def test_a_restart_with_lasting_links_does_not_push_the_batch_again(tmp_path):
+    """The push already on the phone still has working buttons, so a restart
+    (six in an hour on the soak) must not push the same batch again; the
+    reminder keeps its cadence from the stored push time."""
+    pilot, clock, notifier, parked = _restarted_with_lasting_links(tmp_path)
+    pilot.tick()
+    assert _pushes(notifier) == []
+    assert pilot.storage.pending_lines("dry_run")[0]["batch_id"] == parked[0]["batch_id"]
+    clock.now = OPEN_NOW + timedelta(seconds=ttl_seconds(pilot.poll_seconds) - 1)
+    pilot.tick()
+    assert _pushes(notifier) == []                      # not yet a link lifetime
+    clock.now = OPEN_NOW + timedelta(seconds=ttl_seconds(pilot.poll_seconds))
+    pilot.tick()
+    assert [p["batch_id"] for p in _pushes(notifier)] == [parked[0]["batch_id"]]
+    clock.sleep(300)
+    pilot.tick()
+    assert len(_pushes(notifier)) == 1                  # the reminder resets the wait
+
+
+def test_a_restart_with_lasting_links_still_pushes_a_grown_line(tmp_path, monkeypatch):
+    pilot, clock, notifier, parked = _restarted_with_lasting_links(tmp_path)
+    pilot.tick()
+    assert _pushes(notifier) == []
+    _spy_proposals(pilot, monkeypatch, _half_again)
+    clock.sleep(300)
+    pilot.tick()                                        # grown from the stored push
+    pushes = _pushes(notifier)
+    assert [p["batch_id"] for p in pushes] == [parked[0]["batch_id"]]
+    assert pushes[0]["lines"][0]["qty"] > parked[0]["order_qty"]
 
 
 def test_today_shows_the_carried_batch_over_an_older_suggestion(tmp_path):

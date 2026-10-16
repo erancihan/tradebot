@@ -38,7 +38,7 @@ class Autopilot(ApprovalsMixin, BackgroundMixin, BriefMixin, SessionMixin):
                  is_open: schedule.IsOpen | None = None,
                  next_open: schedule.NextOpen | None = None,
                  notifier=None, brief_minutes: int | None = None,
-                 scope: str | None = None) -> None:
+                 scope: str | None = None, links_persist: bool = False) -> None:
         self.engine, self.storage = engine, storage
         # `account` keys what belongs to the account (pending lines, events);
         # `scope` keys this runner's own state (mode, anchor, brief). They
@@ -69,8 +69,10 @@ class Autopilot(ApprovalsMixin, BackgroundMixin, BriefMixin, SessionMixin):
         self._thread: threading.Thread | None = None
         self._running = False
         self._session: object | None = None
-        # Batches this process pushed: after a restart a carried batch is
-        # pushed again, as the old process's link key may be gone.
+        # `links_persist`: the push's links are signed with a key that survives
+        # restarts (TRADEBOT_WEB_TOKEN), so the stored push carries over. Else
+        # a restart pushes a carried batch again: `_announced_here` is empty.
+        self.links_persist = links_persist
         self._announced_here: set[int] = set()
 
     # --- state -----------------------------------------------------------
