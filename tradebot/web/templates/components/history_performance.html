@@ -33,7 +33,7 @@
             {%- if bench.more %} +{{ bench.more }} more{% endif %} since {{ bench.since }}</p>
           <p>today's list {{ '+' if bench.pct >= 0 else '−' }}{{ (bench.pct | abs) | pct }}
             · account {{ '+' if bench.equity_pct >= 0 else '−' }}{{ (bench.equity_pct | abs) | pct }}
-            · cached closes</p>
+            · {{ 'cached and recorded closes' if bench.source == 'cache+recorded' else 'cached closes' }}</p>
         </div>
       </div>
     {% endif %}

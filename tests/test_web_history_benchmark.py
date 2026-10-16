@@ -109,3 +109,28 @@ def test_a_long_list_is_shortened_never_truncated(tmp_path):
         st.add_to_watchlist(names)
     body = _client(tmp_path).get("/partials/history/performance?mode=paper").text
     assert "Equal-weight AAA, BBB, CCC, DDD, EEE, FFF +2 more since" in body
+
+
+def test_the_autopilots_recorded_bars_keep_the_benchmark_current(tmp_path):
+    """The newest snapshot is Wed Oct 7, 14:30. The cache stops at Oct 1 while
+    the paper passes recorded Oct 1 .. Oct 7 (Oct 7 still forming): the
+    benchmark reaches Oct 6, the last completed session, without a refresh."""
+    with Storage(tmp_path / "t.db") as st:
+        _snapshot(st, T0, 10_000.0, "paper")                       # Thu Oct 1, 14:30
+        _snapshot(st, T0 + timedelta(days=6), 10_500.0, "paper")   # Wed Oct 7
+        st.record_bars("SPY", "1day", _bars([100.0, 102.0, 104.0, 106.0, 999.0]), "paper")
+        st.record_bars("QQQ", "1day", _bars([50.0, 51.0, 52.0, 53.0, 999.0]), "paper")
+        st.record_bars("SPY", "1day", _bars([1.0] * 6), "dry_run")
+        st._conn.commit()
+    cache = BarCache(tmp_path / "cache")
+    cache.store("SPY", "1day", _bars([100.0]))
+    cache.store("QQQ", "1day", _bars([50.0]))
+    client = _client(tmp_path)
+    data = client.get("/api/equity?mode=paper").json()
+    assert data["benchmark_until"] == "2026-10-06"
+    assert data["benchmark"][-1]["value"] == pytest.approx(10_600.0)
+    assert data["benchmark_source"] == "cache+recorded" and data["benchmark_note"] is None
+    for body in (client.get("/history?mode=paper").text,
+                 client.get("/partials/history/performance?mode=paper").text):
+        assert "through 2026-10-06" in body and "cached and recorded closes" in body
+        assert "bars stop at" not in body and "data-no-benchmark" not in body

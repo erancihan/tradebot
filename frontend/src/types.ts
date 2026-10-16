@@ -21,7 +21,7 @@ export interface EquitySeries {
   benchmark_symbols?: string[];
   benchmark_since?: string | null;
   benchmark_until?: string | null;
-  benchmark_source?: string | null; // "cache": never fetched
+  benchmark_source?: string | null; // "cache" | "cache+recorded": never fetched
   benchmark_note?: string | null;
 }
 

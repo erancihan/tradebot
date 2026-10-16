@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from ...market.us import ET, MARKET_CLOSE, next_open
-from . import benchmark, symbols_service
+from . import benchmark, benchmark_bars, symbols_service
 
 #: The card names at most this many symbols, then "+N more".
 SHOWN_SYMBOLS = 6
@@ -29,8 +29,10 @@ def for_snapshots(repo, settings, cache_dir: str, rows: list[dict]) -> dict | No
     since = datetime.fromisoformat(rows[0]["ts"])
     if len({r["mode"] for r in rows}) > 1:
         return benchmark.unavailable(symbols, since, MIXED_ACCOUNTS)
-    return benchmark.compare(cache_dir, symbols, float(rows[0]["equity"]), since,
-                             datetime.fromisoformat(rows[-1]["ts"]))
+    # The cache, extended by the bars this account's passes recorded.
+    frames, added = benchmark_bars.load(repo, cache_dir, symbols, rows[0]["mode"])
+    return benchmark.compare_frames(frames, symbols, float(rows[0]["equity"]), since,
+                                    datetime.fromisoformat(rows[-1]["ts"]), added)
 
 
 def equity_through(rows: list[dict], until: date) -> float:

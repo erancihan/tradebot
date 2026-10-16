@@ -7,9 +7,10 @@ snapshot was taken; the next close when no earlier one is cached) each
 symbol gets ``start_equity / n``, and every later close is worth
 ``start_equity * mean_i(close_i,t / close_i,t0)``. The list is today's
 active list, held from the start: a hindsight bias (a name added later
-counts from day one). Pure and offline: the web layer reads the bar cache and
-never fetches, so without cached daily bars there is no benchmark and the
-note says why. The History card around it is ``benchmark_card.py``.
+counts from day one). Pure and offline: the web layer reads the bar cache,
+extended by the account's recorded bars (``benchmark_bars.py``), and never
+fetches, so without daily bars there is no benchmark and the note says why.
+The History card around it is ``benchmark_card.py``.
 """
 
 from __future__ import annotations
@@ -25,6 +26,8 @@ from ...market.us import last_completed_close
 #: Daily closes only: the benchmark is a session-by-session yardstick.
 TIMEFRAME = "1day"
 SOURCE = "cache"
+#: Recorded bars (the autopilot's own, all but each symbol's newest) are in the window.
+SOURCE_RECORDED = "cache+recorded"
 
 
 def as_utc(ts: datetime) -> datetime:
@@ -138,9 +141,18 @@ def _notes(series: dict[str, pd.Series], uncached: list[str], dropped: list[str]
 
 def compare(cache_dir: str, symbols: list[str], start_equity: float,
             since: datetime, until: datetime) -> dict:
+    """``compare_frames`` over the cached daily bars alone."""
+    return compare_frames(load_frames(cache_dir, symbols), symbols, start_equity,
+                          since, until)
+
+
+def compare_frames(frames: dict[str, pd.DataFrame | None], symbols: list[str],
+                   start_equity: float, since: datetime, until: datetime,
+                   recorded: dict[str, set] | None = None) -> dict:
     """The benchmark and its provenance: ``{series, symbols, since, until,
-    source, note}``; ``series`` is None (and ``note`` says why) without bars."""
-    frames = load_frames(cache_dir, symbols)
+    source, note}``; ``series`` is None (and ``note`` says why) without bars.
+    ``recorded`` names the session dates recorded bars added per symbol: the
+    source says so when one of them is inside the window."""
     uncached = [s for s, f in frames.items() if f is None or f.empty]
     cached = {s: f for s, f in frames.items() if s not in uncached}
     closes, used, dropped = window_closes(cached, since, until)
@@ -151,9 +163,12 @@ def compare(cache_dir: str, symbols: list[str], start_equity: float,
     elif not used and not parts:
         parts = [f"no cached daily closes in the window for {', '.join(symbols)}"]
     series = _index(closes, start_equity) if used else None
+    window = set(closes.index) if used else set()
+    source = SOURCE_RECORDED if any(window & (recorded or {}).get(s, set())
+                                    for s in used) else SOURCE
     # The pull the note suggests starts a week earlier: the start close is before `since`.
     pull_start = (since - timedelta(days=7)).date().isoformat()
-    return {"series": series, "symbols": used, "requested": list(symbols), "source": SOURCE,
+    return {"series": series, "symbols": used, "requested": list(symbols), "source": source,
             "pull_start": pull_start,
             "since": series.index[0].isoformat() if series is not None else None,
             "until": series.index[-1].isoformat() if series is not None else None,
