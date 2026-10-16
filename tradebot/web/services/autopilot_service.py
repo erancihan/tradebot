@@ -54,7 +54,9 @@ def get(app) -> Autopilot:
             try:
                 pilot = autopilot_build.build(
                     state.settings, trading_db=state.trading_db, cache_dir=state.cache_dir,
-                    link_secret=getattr(state, "link_secret", None))
+                    link_secret=getattr(state, "link_secret", None),
+                    # The token derives the link key, so it survives a restart.
+                    links_persist=bool(getattr(state, "token_required", False)))
             # ValueError: a stored config a component rejects (e.g. a
             # hand-edited negative brief). Reported, never a 500 or a server
             # that fails to start.

@@ -133,7 +133,8 @@ Like any watchlist edit, it stops a running autopilot. The last run survives a r
   An approval more than one poll interval after the last pass expires the
   batch, and so does the close: it never executes late or at the next open. The phone gets one push per batch, then a
   reminder every 2 x `poll_seconds` (at least 30 minutes), or sooner when a
-  re-sized line grows more than 10% past what the push said.
+  re-sized line grows more than 10% past what the push said. With
+  `TRADEBOT_WEB_TOKEN` set, a restart does not push the same batch again.
 - **Automatic.** Every pass submits its trades.
 
 The status card shows the mode, the loop, the account, the last and next pass,
@@ -215,7 +216,8 @@ after a restart a used link can act again until it expires, on lines still
 pending. A tap after a pass replaced the batch with different trades does
 nothing. The signing key comes from `TRADEBOT_WEB_TOKEN`; without a token it
 is random per server process, so a restart kills old links and the next push
-brings fresh ones. A hand-edited `public_url` that is not a plain http(s)
+brings fresh ones. With the token set the old push's links keep working, so a
+restart does not push the same batch again. A hand-edited `public_url` that is not a plain http(s)
 address gives a push without buttons and a warning in the log.
 
 **With `public_url` set, the ntfy topic itself grants approval** of the bot's

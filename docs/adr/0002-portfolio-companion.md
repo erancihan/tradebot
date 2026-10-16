@@ -78,12 +78,14 @@ One new core concept, the proposal, feeds three flows.
   the first tick after the close (or a pass the broker reports closed), a
   daily-loss halt, switching off and the first automatic pass expire the batch.
   A late approval never executes, and nothing waits overnight for the open.
-- Each process pushes a batch once (without `TRADEBOT_WEB_TOKEN` a restart
-  changes the link key, so the old push's buttons stop working), then again as
-  a reminder every `links.ttl_seconds(poll)` = max(2 x `poll_seconds`, 30
-  minutes). An approval means what the phone showed: when a refresh grows a
+- A batch is pushed once, then again as a reminder every
+  `links.ttl_seconds(poll)` = max(2 x `poll_seconds`, 30 minutes). An approval means what the phone showed: when a refresh grows a
   pending line's notional by more than 10% over the last push, the batch is
-  pushed again at once, with the new sizes.
+  pushed again at once, with the new sizes. A restart pushes the batch again
+  only without `TRADEBOT_WEB_TOKEN`: then the link key is per-process and the
+  old push's buttons stop working. With the token the key survives, so the
+  stored push (batch, time, sizes) carries over; on the paper soak six restarts
+  in an hour had sent six identical pushes of one batch.
 - With `notify.public_url` set, the paper account's push carries Approve all,
   Skip and Open; every other push (dry-run, replay, live) carries only Open.
   Approve and Skip POST signed links: capability tokens scoped to one account,
