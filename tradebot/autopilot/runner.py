@@ -111,8 +111,9 @@ class Autopilot(ApprovalsMixin, BackgroundMixin, BriefMixin, SessionMixin):
                 if self.is_open(now):
                     self._pass(mode, now)
                 elif self._expire_pending():
-                    # Nothing passes until the open; the session's sizing is
-                    # dead, and a late approval must not queue for the open.
+                    # The wake after the close, or a start while closed: nothing
+                    # passes until the open, the batch's sizing is dead, and a
+                    # late approval must not queue for the open.
                     log.info("Market closed: expired the waiting batch")
                 self._set(next_pass_at=schedule.next_pass(
                     now, self.poll_seconds, self.is_open, self.next_open))

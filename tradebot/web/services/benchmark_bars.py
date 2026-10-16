@@ -7,7 +7,10 @@ more behind the bot. Each symbol's newest recorded bar may still be forming
 (the record is an upsert for that reason), so it is never used; a recorded bar
 followed by a later one was delivered as a completed session. Where both
 sources hold a session date the cached close wins (the cache never holds a
-forming bar). Read through the repository; never fetches.
+forming bar). Only a broker account's bars count: a dry run replays whatever
+frame it was given (a ``--replay`` of synthetic bars records them under
+``dry_run`` with real symbol names), so its benchmark stays cache-only.
+Read through the repository; never fetches.
 """
 
 from __future__ import annotations
@@ -21,11 +24,16 @@ from . import benchmark
 #: The bars table keeps one row per session per symbol and account, so 2000
 #: rows is about eight years of daily bars: far more than any snapshot window.
 RECORDED_LIMIT = 2000
+#: Accounts whose recorded bars are real closes from the broker's feed.
+RECORDED_ACCOUNTS = ("paper", "live")
 
 
 def recorded(repo, symbol: str, mode: str) -> pd.DataFrame | None:
     """``symbol``'s recorded daily bars for account ``mode`` except the newest
-    (it may be forming), indexed by UTC timestamp; None when nothing is left."""
+    (it may be forming), indexed by UTC timestamp; None when nothing is left
+    or ``mode`` is not a broker account."""
+    if mode not in RECORDED_ACCOUNTS:
+        return None
     rows = repo.bars(symbol, limit=RECORDED_LIMIT, timeframe=benchmark.TIMEFRAME,
                      mode=mode)[:-1]
     if not rows:
@@ -63,4 +71,4 @@ def load(repo, cache_dir: str, symbols: list[str],
     return frames, added
 
 
-__all__ = ["RECORDED_LIMIT", "load", "merge", "recorded"]
+__all__ = ["RECORDED_ACCOUNTS", "RECORDED_LIMIT", "load", "merge", "recorded"]

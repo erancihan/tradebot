@@ -135,7 +135,9 @@ One new core concept, the proposal, feeds three flows.
   bars are inside the window (the card says "cached and recorded closes"). Without daily bars
   from either the card names the `tradebot data pull` command instead.
 - `/api/equity` carries the daily points, the symbols, the window and the source
-  (`cache`); the chart places each close at its nearest snapshot as a dashed line.
+  (`cache`, or `cache+recorded`); the chart places each close at its nearest snapshot as a
+  dashed line. A dry run's recorded bars never count: a replay records the frame it was
+  given, synthetic or not, under `dry_run`.
 
 ## Addendum 2026-10-15: fills
 - An order is logged when the broker accepts it, at the price it was sized at.

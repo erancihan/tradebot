@@ -123,7 +123,7 @@ def load_frames(cache_dir: str, symbols: list[str]) -> dict[str, pd.DataFrame | 
 def _notes(series: dict[str, pd.Series], uncached: list[str], dropped: list[str],
            closes: pd.DataFrame, until: datetime) -> list[str]:
     """Why a name is missing, and which names end the window early."""
-    parts = [f"no cached daily bars for {', '.join(uncached)}"] if uncached else []
+    parts = [f"no daily bars for {', '.join(uncached)}"] if uncached else []
     t0 = closes.index[0] if not closes.empty else None
     ended = [s for s in dropped if t0 is not None and s in series
              and not series[s].empty and series[s].index[-1] < t0]
@@ -161,7 +161,7 @@ def compare_frames(frames: dict[str, pd.DataFrame | None], symbols: list[str],
     if not symbols:
         parts = ["no symbols to hold"]
     elif not used and not parts:
-        parts = [f"no cached daily closes in the window for {', '.join(symbols)}"]
+        parts = [f"no daily closes in the window for {', '.join(symbols)}"]
     series = _index(closes, start_equity) if used else None
     window = set(closes.index) if used else set()
     source = SOURCE_RECORDED if any(window & (recorded or {}).get(s, set())
