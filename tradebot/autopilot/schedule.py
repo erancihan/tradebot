@@ -16,9 +16,13 @@ NextOpen = Callable[[datetime], datetime]
 
 def next_pass(now: datetime, poll_seconds: float, is_open: IsOpen,
               next_open: NextOpen) -> datetime:
-    """The next poll if it still lands inside market hours, else the next open."""
+    """The next poll while the market is open now or then, else the next open.
+
+    A pass inside hours always gets one more wake, even when that poll lands
+    after the close: that closed tick retires the waiting batch. Only a wake
+    that finds the market already closed sleeps through to the open."""
     candidate = now + timedelta(seconds=poll_seconds)
-    if is_open(candidate):
+    if is_open(candidate) or is_open(now):
         return candidate
     return next_open(now)
 

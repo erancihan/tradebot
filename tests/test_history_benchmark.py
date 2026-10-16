@@ -43,7 +43,7 @@ def test_a_symbol_without_a_close_at_the_start_is_dropped_and_named(tmp_path):
     assert out["symbols"] == ["SPY"]
     assert out["series"].iloc[-1] == pytest.approx(1_210.0)
     assert "LATE" in out["note"] and "QQQ" in out["note"]
-    assert "no cached daily bars for QQQ" in out["note"]
+    assert "no daily bars for QQQ" in out["note"]
     assert out["source"] == "cache" and out["since"] == "2026-10-01"
 
 
@@ -51,7 +51,7 @@ def test_no_bars_is_no_benchmark_with_a_reason(tmp_path):
     assert benchmark.buy_and_hold({}, 1_000.0, SINCE, UNTIL) is None
     out = benchmark.compare(str(tmp_path), ["SPY", "QQQ"], 1_000.0, SINCE, UNTIL)
     assert out["series"] is None and out["symbols"] == []
-    assert out["note"] == "no cached daily bars for SPY, QQQ"
+    assert out["note"] == "no daily bars for SPY, QQQ"
     assert benchmark.compare(str(tmp_path), [], 1_000.0, SINCE, UNTIL)["note"]
 
 
@@ -226,7 +226,18 @@ def test_recorded_bars_alone_make_a_benchmark(tmp_path):
 
 def test_one_recorded_bar_is_only_the_forming_one(tmp_path):
     out = _compare(tmp_path, {"SPY": _bars([100.0])})
-    assert out["series"] is None and out["note"] == "no cached daily bars for SPY"
+    assert out["series"] is None and out["note"] == "no daily bars for SPY"
+
+
+def test_a_dry_runs_recorded_bars_never_reach_its_benchmark(tmp_path):
+    """A replay records the synthetic frame it was given under ``dry_run``,
+    with real symbol names: those closes are not SPY's and the dry-run
+    account's yardstick stays cache-only (so here: no bars, no benchmark)."""
+    repo = _Repo({"SPY": _bars([100.0, 101.0, 102.0, 103.0, 999.0])}, mode="dry_run")
+    frames, added = benchmark_bars.load(repo, str(tmp_path), ["SPY"], "dry_run")
+    assert frames == {"SPY": None} and added == {"SPY": set()}
+    out = benchmark.compare_frames(frames, ["SPY"], 1_000.0, SINCE, LATER, added)
+    assert out["series"] is None and out["source"] == "cache"
 
 
 def test_recorded_bars_the_cache_already_holds_leave_the_source_cache(tmp_path):

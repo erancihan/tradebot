@@ -57,7 +57,7 @@ def test_equity_api_without_bars_says_why(tmp_path):
     data = _client(tmp_path).get("/api/equity?mode=paper").json()
     assert len(data["points"]) == 2
     assert data["benchmark"] is None
-    assert data["benchmark_note"] == "no cached daily bars for SPY, QQQ"
+    assert data["benchmark_note"] == "no daily bars for SPY, QQQ"
 
 
 def test_equity_api_without_snapshots_has_no_benchmark(tmp_path):
@@ -95,7 +95,7 @@ def test_the_card_names_the_pull_command_without_bars(tmp_path):
     _seed(tmp_path, bars=False)
     body = _client(tmp_path).get("/partials/history/performance?mode=paper").text
     assert "data-no-benchmark" in body and "data-alpha" not in body
-    assert "no cached daily bars for SPY, QQQ" in body
+    assert "no daily bars for SPY, QQQ" in body
     assert "tradebot data pull --symbols SPY QQQ --timeframe 1day" in body
 
 

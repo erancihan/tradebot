@@ -172,7 +172,7 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
 - **History** shows `default_mode()`, else `settings.mode`, pinned by `?mode=` in its URLs; orders and batches page on a
   `(ts, id)` keyset each (`X-History-Next`). `orders.price` is the sizing price (NULL on a flatten or old row); `schema.migrate` adds a later column on open, the web never.
   The performance card compares with equal-weight buy and hold of today's active list from cached daily closes extended by
-  the account's recorded daily bars, all but each symbol's newest (may be forming; cache wins a shared date; `benchmark_bars.py`,
+  the account's recorded daily bars (paper and live only; a dry run replays what it was given), all but each symbol's newest (may be forming; cache wins a shared date; `benchmark_bars.py`,
   source `cache+recorded`), bought at the last close completed before the first snapshot (`services/benchmark.py`; `benchmark_card.py`:
   alpha from the snapshot at the benchmark's last close), no fetch; absent (noted) without bars or mixed accounts.
   **Trades** are round trips by average cost (`portfolio_pnl.book`) from filled orders only (`filled_orders`: `filled_qty > 0`, any status); hand trades never count, open ones show no P&L. `orders.intent` (entry | exit, NULL on old rows = opens as before): an exit with no trip to close is an `UnmatchedExit` ("Sold without a recorded buy"), never a short, never in the summary.
@@ -237,8 +237,8 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   `(symbol, action)` set refreshes it in place (sizing, prices, holds, `created_at`, so History and
   Today show its latest refresh time; same batch id, so the push's link still works). A rejection,
   even Skip of every line, holds until the proposal changes or the session day ends (`waiting_batch`).
-  A changed proposal, an approval older than one `poll_seconds`, a failed pass, the first tick after
-  the close (`tick` expires with no pass; so does a broker-closed pass), a halt, and switching off expire it. One push per batch and process (a restart pushes again:
+  A changed proposal, an approval older than one `poll_seconds`, a failed pass, the wake after the close
+  (`schedule.next_pass` grants a pass inside hours one more; `tick` expires with no pass; a broker-closed pass too), a halt, and switching off expire it. One push per batch and process (a restart pushes again:
   the link key may be new), plus a reminder every `links.ttl_seconds` (max(2 x poll, 30 min), also the
   link TTL) or at once when a refresh grows a line's notional past `GROWTH_TOLERANCE` (10%) of what the push said (`announced_*` state).
 - **Signed batch links** (`autopilot/links.py`; buttons when `safe_public_url(notify.public_url)`)
@@ -255,8 +255,8 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   is `submitted` once the broker accepts it; later bookkeeping only logs. A mode switch wakes the loop.
 - **The web autopilot is paper or dry-run, never live** (`autopilot_build`); a
   dry-run's account dies with a restart. `tradebot run --autopilot` builds as `run`, keeps
-  state in scope `cli_<account>` (never the web's), expires no pending lines at start; a
-  replay's clock reads its bars. Orders carry the pass clock, as batches do (approval: the tap's).
+  state in scope `cli_<account>` (never the web's), expires no pending lines at start (a closed-market
+  wake still does, for the shared account); a replay's clock reads its bars. Orders carry the pass clock, as batches do (approval: the tap's).
 - **With a morning brief, "off" keeps the loop alive** to send briefs from `engine.propose` (nothing
   stored). `brief_for` prevents resends. A brief-only loop is `tradebot run --autopilot --mode off`.
 

@@ -124,11 +124,27 @@ def test_loop_sleeps_through_a_closed_market_with_an_injected_clock(tmp_path):
     assert not pilot.running
 
 
-def test_next_pass_after_the_close_is_the_next_open(tmp_path):
+def test_a_pass_before_the_close_gets_one_wake_after_it(tmp_path):
     late = datetime(2026, 10, 14, 19, 58, tzinfo=timezone.utc)      # 15:58 EDT
     pilot, _, _, _ = build(tmp_path, now=late)
     pilot.set_mode("auto")
     state = pilot.tick()
+    assert state.last_pass_at == late
+    assert state.next_pass_at == late + timedelta(seconds=300)      # 16:03: closed
+
+
+def test_the_loop_expires_the_waiting_batch_on_its_wake_after_the_close(tmp_path):
+    """The real loop, not a hand-driven tick: the pass at 15:56 parks the
+    batch, the scheduled wake at 16:01 finds the market closed, expires it
+    and only then sleeps through to the next open."""
+    late = datetime(2026, 10, 14, 19, 56, tzinfo=timezone.utc)
+    pilot, broker, clock, _ = build(tmp_path, now=late)
+    pilot.set_mode("approve")
+    pilot.run_forever(max_ticks=2)
+    assert clock.slept == [300.0]
+    assert _statuses(pilot) and set(_statuses(pilot).values()) == {"expired"}
+    assert broker._order_seq == 0
+    state = pilot.state()
     assert state.last_pass_at == late
     assert state.next_pass_at == datetime(2026, 10, 15, 13, 30, tzinfo=timezone.utc)
 
