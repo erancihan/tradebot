@@ -124,9 +124,16 @@ One new core concept, the proposal, feeds three flows.
   get no benchmark ("pick one account to compare").
 - The benchmark holds TODAY's active list from the start: a hindsight bias (a name added
   later counts from day one). The card's muted lines say so: "Equal-weight <symbols> since
-  <date>" and "today's list +x% · account +y% · cached closes".
-- Bars come from the cache only, never fetched, so the comparison needs no credentials;
-  without cached daily bars the card names the `tradebot data pull` command instead.
+  <date>" and "today's list +x% · account +y% · cached closes" (or "cached and recorded closes").
+- Bars are never fetched, so the comparison needs no credentials. The closes come from the
+  bar cache, extended by the daily bars the account's own passes recorded in the trading db:
+  the cache fills only on a Today refresh or `tradebot data pull`, while the autopilot records
+  bars every pass, so a cache-only yardstick fell a session behind the bot. Each symbol's
+  newest recorded bar may still be forming and is never used; a recorded bar followed by a
+  later one is a completed session. Where both hold a session the cached close wins (the
+  cache never holds a forming bar). The source is `cache`, or `cache+recorded` when recorded
+  bars are inside the window (the card says "cached and recorded closes"). Without daily bars
+  from either the card names the `tradebot data pull` command instead.
 - `/api/equity` carries the daily points, the symbols, the window and the source
   (`cache`); the chart places each close at its nearest snapshot as a dashed line.
 

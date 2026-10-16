@@ -9,7 +9,7 @@ import pytest
 
 from tradebot.data.cache import BarCache
 from tradebot.data.synthetic import synthetic_ohlcv
-from tradebot.web.services import benchmark, benchmark_card
+from tradebot.web.services import benchmark, benchmark_bars, benchmark_card
 
 
 def _bars(closes: list[float], start: str = "2026-10-01") -> pd.DataFrame:
@@ -167,3 +167,70 @@ def test_synthetic_bars_are_a_valid_input():
     frames = {"SYN": synthetic_ohlcv(periods=30, start="2026-09-25")}
     series = benchmark.buy_and_hold(frames, 5_000.0, SINCE, UNTIL)
     assert series.iloc[0] == pytest.approx(5_000.0) and len(series) == 9
+
+
+# --- recorded bars extend the cache ------------------------------------------
+
+class _Repo:
+    """The repository's ``bars`` over in-memory frames: oldest first, newest ``limit``."""
+
+    def __init__(self, frames: dict[str, pd.DataFrame], mode: str = "paper"):
+        self.frames, self.mode = frames, mode
+
+    def bars(self, symbol, limit=500, timeframe=None, mode=None):
+        frame = self.frames.get(symbol)
+        if frame is None or mode != self.mode or timeframe != "1day":
+            return []
+        return [{"ts": ts.isoformat(), **{k: float(row[k]) for k in
+                 ("open", "high", "low", "close", "volume")}}
+                for ts, row in frame.iterrows()][-limit:]
+
+
+LATER = datetime(2026, 10, 8, 23, 0, tzinfo=timezone.utc)      # Oct 8's close is done
+
+
+def _compare(tmp_path, recorded: dict[str, pd.DataFrame], symbols=("SPY",)):
+    frames, added = benchmark_bars.load(_Repo(recorded), str(tmp_path), list(symbols), "paper")
+    return benchmark.compare_frames(frames, list(symbols), 1_000.0, SINCE, LATER, added)
+
+
+def test_recorded_bars_extend_a_cache_that_stops_early_but_never_the_newest(tmp_path):
+    """The cache stops at Oct 2; the autopilot recorded Oct 1 .. Oct 7. Oct 7
+    is the newest recorded bar (it may be forming), so the window ends at
+    Oct 6 although Oct 8's close would allow Oct 7."""
+    BarCache(tmp_path).store("SPY", "1day", _bars([100.0, 101.0]))          # Oct 1, 2
+    out = _compare(tmp_path, {"SPY": _bars([100.0, 101.0, 102.0, 103.0, 999.0])})
+    assert out["until"] == "2026-10-06"
+    assert out["series"].iloc[-1] == pytest.approx(1_030.0)
+    assert out["source"] == "cache+recorded"
+    assert out["note"] == "SPY bars stop at 2026-10-06"         # the merged series
+
+
+def test_the_cached_close_wins_on_a_shared_session(tmp_path):
+    BarCache(tmp_path).store("SPY", "1day", _bars([100.0, 110.0]))          # Oct 1, 2
+    out = _compare(tmp_path, {"SPY": _bars([100.0, 555.0, 121.0, 130.0])})  # .. Oct 6
+    assert out["series"].loc[date(2026, 10, 2)] == pytest.approx(1_100.0)
+    assert out["until"] == "2026-10-05"
+    assert out["series"].iloc[-1] == pytest.approx(1_210.0)
+
+
+def test_recorded_bars_alone_make_a_benchmark(tmp_path):
+    """The autopilot ran and nobody ever pulled the cache."""
+    up = [100.0, 101.0, 102.0, 103.0, 104.0, 110.0, 999.0]      # Oct 1 .. Oct 9
+    out = _compare(tmp_path, {"SPY": _bars(up), "QQQ": _bars([v / 2 for v in up])},
+                   ("SPY", "QQQ"))
+    assert out["symbols"] == ["SPY", "QQQ"] and out["until"] == "2026-10-08"
+    assert out["series"].iloc[-1] == pytest.approx(1_100.0)
+    assert out["source"] == "cache+recorded" and out["note"] is None
+
+
+def test_one_recorded_bar_is_only_the_forming_one(tmp_path):
+    out = _compare(tmp_path, {"SPY": _bars([100.0])})
+    assert out["series"] is None and out["note"] == "no cached daily bars for SPY"
+
+
+def test_recorded_bars_the_cache_already_holds_leave_the_source_cache(tmp_path):
+    BarCache(tmp_path).store("SPY", "1day", _bars([100.0, 101.0, 102.0, 103.0, 104.0]))
+    out = _compare(tmp_path, {"SPY": _bars([1.0, 1.0, 1.0])})          # Oct 1, 2, 5
+    assert out["source"] == "cache" and out["until"] == "2026-10-07"
+    assert out["series"].iloc[-1] == pytest.approx(1_040.0)

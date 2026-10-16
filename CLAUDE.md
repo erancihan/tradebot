@@ -169,11 +169,11 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   = skipped, never guessed), or the paper broker with credentials. **Fills are learned by
   `engine/fills.reconcile`** (open orders of the last 7 days) at the start of each autopilot pass,
   in the Today refresh job (paper orders, with keys) and right after a submit; never on a page load.
-- **History** shows `default_mode()`, else `settings.mode`, pinned by `?mode=` in its URLs; orders
-  and batches page on a `(ts, id)` keyset each (`X-History-Next`). `orders.price` is the sizing
-  price (NULL on a flatten or old row); `schema.migrate` adds a later column on open, the web never.
-  The performance card compares with equal-weight buy and hold of today's active list from cached daily
-  closes (`services/benchmark.py`, bought at the last close completed before the first snapshot; `benchmark_card.py`:
+- **History** shows `default_mode()`, else `settings.mode`, pinned by `?mode=` in its URLs; orders and batches page on a
+  `(ts, id)` keyset each (`X-History-Next`). `orders.price` is the sizing price (NULL on a flatten or old row); `schema.migrate` adds a later column on open, the web never.
+  The performance card compares with equal-weight buy and hold of today's active list from cached daily closes extended by
+  the account's recorded daily bars, all but each symbol's newest (may be forming; cache wins a shared date; `benchmark_bars.py`,
+  source `cache+recorded`), bought at the last close completed before the first snapshot (`services/benchmark.py`; `benchmark_card.py`:
   alpha from the snapshot at the benchmark's last close), no fetch; absent (noted) without bars or mixed accounts.
   **Trades** are round trips by average cost (`portfolio_pnl.book`) from filled orders only (`filled_orders`: `filled_qty > 0`, any status); hand trades never count, open ones show no P&L. `orders.intent` (entry | exit, NULL on old rows = opens as before): an exit with no trip to close is an `UnmatchedExit` ("Sold without a recorded buy"), never a short, never in the summary.
 - **The Today refresh** gives the selector the whole cached history and the strategy the last `required_history + 30` bars, so engine and web can differ when their histories start on different days.

@@ -295,7 +295,8 @@ Alpaca. Approve links in phone alerts outlive a restart only with
 - **History** (`/history`): what the bot has done and decided, newest first,
   for the account the dashboard shows. A card compares equity now with the
   first of the last 2000 snapshots and with equal-weight buy and hold of today's active list,
-  held from the start (from cached daily closes, through the last close every name has; drawn as a
+  held from the start (from cached daily closes plus the completed daily bars the autopilot
+  recorded, so it keeps up without a refresh; through the last close every name has; drawn as a
   dashed line on the small equity chart). A **Trades** card under it answers "how did my
   trades do?": each closed round trip ("SPY long 13 sh · 767.24 → 781.02 · +$179.14 (+1.8%)"),
   newest first, with a summary line (closed, wins, realised P&L, profit factor), and each open
