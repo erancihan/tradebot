@@ -11,12 +11,13 @@ execution cannot disagree. The same Strategy + RiskManager objects power the
 backtester, so behaviour is consistent between simulation and live. A
 daily-loss circuit breaker flattens the book and stops trading for the rest
 of the session day once breached (``engine.session``).
+
+Callbacks live in ``hooks``; submitting and the timer loop in ``execution``.
 """
 
 from __future__ import annotations
 
 import logging
-import time
 from datetime import datetime
 
 from .. import advisor
@@ -28,14 +29,16 @@ from ..notify import LogNotifier
 from ..risk import RiskManager
 from ..storage import Storage
 from ..strategies.base import Strategy
-from . import fills, orders, pending, session, signals, unlisted
+from . import orders, pending, session, signals, unlisted
+from .execution import EngineExecutionMixin
+from .hooks import EngineHooksMixin
 from .orders import RebalanceAction
 from .pending import PassOutcome
 
 log = logging.getLogger("tradebot.engine")
 
 
-class Engine:
+class Engine(EngineHooksMixin, EngineExecutionMixin):
     def __init__(
         self,
         settings: Settings,
@@ -76,27 +79,6 @@ class Engine:
     def mode(self) -> str:
         return self._mode_label
 
-    def _selector_frames(self, fetched: dict[str, object]) -> dict[str, object]:
-        return signals.selector_frames(self, fetched)
-
-    def _notify(self, event: dict) -> None:
-        """Emit an observability event. A notifier can never break a trade pass."""
-        try:
-            self.notifier.send({"mode": self.mode, **event})
-        except Exception:
-            log.exception("Notifier failed for event %s", event.get("type"))
-
-    def _check_brackets(self) -> None:
-        orders.check_brackets(self)
-
-    def _lookback_days(self) -> int:
-        # Ensure enough history for every history-hungry component (strategy,
-        # selector, allocator, overlays) plus headroom for weekends/holidays.
-        needed = self.strategy.required_history
-        for component in (self.selector, self.allocator, *self.overlays):
-            if component is not None:
-                needed = max(needed, component.required_history)
-        return max(needed * 2, 60)
 
     def rebalance(self, submit: bool = True,
                   now: datetime | None = None) -> list[RebalanceAction]:
@@ -168,33 +150,3 @@ class Engine:
             selector_frames=self._selector_frames(frames) if self.selector else None,
             now=now, unlisted=unlisted.read_unlisted(self),
         )
-
-    def _submit_all(self, proposal: Proposal, now: datetime) -> list[RebalanceAction]:
-        actions: list[RebalanceAction] = []
-        # Exits first: a swap's sell frees the buying power its buy needs.
-        for line in orders.exits_first(proposal.lines):
-            if line.skipped:      # never sized: no bars, bad price, failed signal
-                continue
-            try:
-                actions.append(orders.submit_line(self, line, now=now))
-            except Exception:  # one bad symbol shouldn't kill the whole pass
-                log.exception("Rebalance failed for %s", line.symbol)
-        if any(a.submitted_id for a in actions):   # usually filled at once: one look
-            fills.reconcile_quietly(self, now=now)
-        return actions
-
-    def run_forever(self, max_iterations: int | None = None) -> None:
-        log.info(
-            "Starting engine: mode=%s symbols=%s strategy=%s every %ss",
-            self.mode, self.settings.symbols, self.strategy.name, self.settings.poll_seconds,
-        )
-        i = 0
-        while max_iterations is None or i < max_iterations:
-            try:
-                self.rebalance()
-            except Exception:
-                log.exception("Rebalance pass errored; continuing.")
-            i += 1
-            if max_iterations is not None and i >= max_iterations:
-                break
-            time.sleep(self.settings.poll_seconds)
