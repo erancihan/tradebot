@@ -8,7 +8,7 @@ so the whole loop runs offline under a fake clock. Every engine call happens
 under one lock: the loop thread and the web's taps share the engine and SQLite.
 
 This module builds the runner and owns its state; one wake lives in ``wake``
-and the loop in ``loop``, mixins like ``approvals`` and ``brief``.
+and the loop in ``loop``, mixins like ``approvals``, ``parking`` and ``brief``.
 """
 
 from __future__ import annotations
@@ -24,12 +24,14 @@ from .approvals import ApprovalsMixin
 from .background import BackgroundMixin
 from .brief import BriefMixin, MorningBrief
 from .loop import LoopMixin
+from .parking import ParkingMixin
 from .session import SessionMixin
 from .state import AutopilotState, load_state, store_mode
 from .wake import HALT_ERROR, WakeMixin  # noqa: F401 - HALT_ERROR re-exported
 
 
-class Autopilot(WakeMixin, LoopMixin, ApprovalsMixin, BackgroundMixin, BriefMixin, SessionMixin):
+class Autopilot(WakeMixin, LoopMixin, ApprovalsMixin, ParkingMixin, BackgroundMixin,
+                BriefMixin, SessionMixin):
     def __init__(self, engine, storage, *, poll_seconds: float,
                  clock: Callable[[], datetime] = utcnow,
                  sleep: Callable[[float], object] | None = None,

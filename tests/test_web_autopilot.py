@@ -163,6 +163,63 @@ def test_an_expired_approval_says_so(tmp_path):
     assert pilot.engine.broker.positions() == {}
 
 
+def _seen(pending, scale=1.0) -> dict[str, float]:
+    return {str(ln["id"]): ln["notional"] * scale for ln in pending}
+
+
+def test_the_page_carries_what_it_showed_with_each_approve(tmp_path):
+    client, _ = _pending_pass(tmp_path)
+    pending = client.get("/api/autopilot").json()["pending"]
+    page = client.get("/partials/autopilot").text
+    one = pending[0]
+    assert f'data-approve="{one["id"]}" data-seen="{one["id"]}:{one["notional"]}"' in page
+    every = ",".join(f'{ln["id"]}:{ln["notional"]}' for ln in pending)
+    assert f'data-seen="{every}"' in page
+
+
+def test_an_approval_of_lines_re_sized_since_the_page_showed_them_is_refused(tmp_path):
+    """The page showed smaller sizes than the lines carry now (a refresh grew
+    them): nothing is bought, the notice says so, and the lines still wait."""
+    client, pilot = _pending_pass(tmp_path)
+    pending = client.get("/api/autopilot").json()["pending"]
+    ids = [ln["id"] for ln in pending]
+    data = client.post("/api/autopilot", headers=POST_HEADERS,
+                       json={"approve": ids, "seen": _seen(pending, 0.5)}).json()
+    assert "re-sized" in data["notice"] and "approve again" in data["notice"]
+    assert pilot.engine.broker.positions() == {} and len(data["pending"]) == 2
+    data = client.post("/api/autopilot", headers=POST_HEADERS,
+                       json={"approve": ids, "seen": _seen(data["pending"])}).json()
+    assert data["notice"] is None and set(pilot.engine.broker.positions()) == {"SPY", "QQQ"}
+
+
+def test_an_approval_after_the_close_says_the_market_is_closed(tmp_path):
+    client, pilot = _pending_pass(tmp_path)
+    pending = client.get("/api/autopilot").json()["pending"]
+    pilot.is_open = lambda now: False
+    data = client.post("/api/autopilot", headers=POST_HEADERS,
+                       json={"approve": [ln["id"] for ln in pending],
+                             "seen": _seen(pending)}).json()
+    assert "market is closed" in data["notice"]
+    assert data["pending"] == [] and pilot.engine.broker.positions() == {}
+
+
+def test_a_failing_broker_is_named_in_the_page_notice(tmp_path, monkeypatch):
+    client, pilot = _pending_pass(tmp_path)
+    pending = client.get("/api/autopilot").json()["pending"]
+
+    def refuse(order):
+        raise RuntimeError("insufficient buying power")
+
+    monkeypatch.setattr(pilot.engine.broker, "submit", refuse)
+    data = client.post("/api/autopilot", headers=POST_HEADERS,
+                       json={"approve": [ln["id"] for ln in pending],
+                             "seen": _seen(pending)}).json()
+    assert "Order failed: " in data["notice"] and "insufficient buying power" in data["notice"]
+    assert {"SPY", "QQQ"} <= set(data["notice"].replace("(", " ").replace(";", " ").split())
+    assert "insufficient buying power" in data["state"]["last_error"]
+    assert len(data["pending"]) == 2
+
+
 def test_switching_on_without_cached_bars_says_how_to_get_them(tmp_path):
     client = local_client(_app(tmp_path))
     data = client.post("/api/autopilot", headers=POST_HEADERS, json={"mode": "auto"}).json()
@@ -202,6 +259,75 @@ def test_the_server_resumes_a_running_autopilot_and_stops_it_on_shutdown(tmp_pat
         pilot = autopilot_service.current(app)
     _join(pilot)
     assert pilot.running is False
+
+
+def _one_open_account(monkeypatch) -> None:
+    """Every runner built trades one simulated account, market open."""
+    from tradebot.web.services import autopilot_build
+
+    shared: list = []
+    real_dry, real_build = autopilot_build._dry_run, autopilot_build.build
+
+    def one_account(settings, cache_dir):
+        if not shared:
+            shared.append(real_dry(settings, cache_dir))
+        return shared[0]
+
+    def open_build(*a, **kw):
+        pilot = real_build(*a, **kw)
+        pilot.is_open = lambda now: True
+        return pilot
+
+    monkeypatch.setattr(autopilot_build, "_dry_run", one_account)
+    monkeypatch.setattr(autopilot_build, "build", open_build)
+
+
+def test_a_reset_waits_for_the_pass_in_flight_before_a_new_loop_trades(
+        tmp_path, monkeypatch):
+    """A Settings save lands while a pass is still running (longer than the
+    stop wait): the user switches back on at once. The new runner must not
+    trade the account until the old pass is done, or both size the same
+    empty book and buy it twice."""
+    import threading
+
+    from tradebot import advisor
+
+    _seed_cache(tmp_path)
+    _one_open_account(monkeypatch)
+    monkeypatch.setattr(autopilot_service, "STOP_WAIT_SECONDS", 0.05)
+    entered, release, calls = threading.Event(), threading.Event(), []
+    real_propose = advisor.propose
+
+    def slow_first(*a, **kw):                      # positions are already read
+        calls.append(1)
+        if len(calls) == 1:
+            entered.set()
+            release.wait(10)
+        return real_propose(*a, **kw)
+
+    monkeypatch.setattr(advisor, "propose", slow_first)
+    app = _app(tmp_path)
+    old = autopilot_service.get(app)
+    old.set_mode("auto")
+    old.start()                                    # (the page's view would wait on the pass)
+    assert entered.wait(5)
+    assert autopilot_service.reset(app) is True
+    switch = threading.Thread(target=autopilot_service.set_mode, args=(app, "auto"))
+    switch.start()
+    switch.join(0.5)
+    assert switch.is_alive()                       # waiting on the old pass
+    release.set()
+    switch.join(10)
+    assert not old._thread.is_alive()
+    new = autopilot_service.current(app)
+    for _ in range(200):                           # the new loop's first pass
+        if new.state().last_pass_at is not None:
+            break
+        entered.wait(0.025)
+    new.stop()
+    with Storage(tmp_path / "t.db") as st:
+        symbols = [r["symbol"] for r in st._conn.execute("SELECT symbol FROM orders")]
+    assert sorted(symbols) == ["QQQ", "SPY"]        # one pass's buys, not two
 
 
 def test_an_off_autopilot_is_not_built_at_startup(tmp_path):

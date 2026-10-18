@@ -17,8 +17,8 @@ from urllib.parse import urlsplit
 
 log = logging.getLogger("tradebot.notify")
 
-#: ``signer(batch_id, verb) -> "exp=...&sig=..."``
-LinkSigner = Callable[[int, str], str]
+#: ``signer(batch_id, verb[, exp]) -> "exp=...&sig=..."``
+LinkSigner = Callable[..., str]
 
 #: Sent by ntfy with each http action, so the server's same-origin guard holds.
 _HTTP_OPTS = "method=POST, headers.X-Requested-With=tradebot, clear=true"
@@ -53,15 +53,17 @@ def ntfy_text(event: dict) -> str:
     if "message" in event:
         return str(event["message"])
     rest = " ".join(f"{k}={v}" for k, v in event.items()
-                    if k not in ("type", "lines") and v is not None)
+                    if k not in ("type", "lines", "link_exp") and v is not None)
     lines = [f"{ln.get('action', '')} {ln.get('qty', '')} {ln.get('symbol', '')}".strip()
              for ln in event.get("lines") or []]
     return "\n".join([rest, *lines]).strip() or str(event.get("type", "event"))
 
 
-def batch_link(public_url: str, batch_id: int, verb: str, signer: LinkSigner) -> str:
-    return (f"{public_url.rstrip('/')}/api/autopilot/batches/{int(batch_id)}/{verb}"
-            f"?{signer(int(batch_id), verb)}")
+def batch_link(public_url: str, batch_id: int, verb: str, signer: LinkSigner,
+               exp: int | None = None) -> str:
+    """``exp``: the push's link expiry when the event names one (``link_exp``)."""
+    query = signer(int(batch_id), verb) if exp is None else signer(int(batch_id), verb, exp)
+    return f"{public_url.rstrip('/')}/api/autopilot/batches/{int(batch_id)}/{verb}?{query}"
 
 
 def actions_header(event: dict, public_url: str | None,
@@ -87,7 +89,7 @@ def actions_header(event: dict, public_url: str | None,
     actions = []
     if signer is not None and batch_id is not None and event.get("mode") == "paper":
         for verb, label in (("approve", "Approve all"), ("reject", "Skip")):
-            link = batch_link(public_url, batch_id, verb, signer)
+            link = batch_link(public_url, batch_id, verb, signer, event.get("link_exp"))
             actions.append(f'http, {label}, "{link}", {_HTTP_OPTS}')
     actions.append(f'view, Open, "{public_url}/autopilot"')
     return "; ".join(actions)

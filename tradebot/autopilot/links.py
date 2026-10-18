@@ -73,20 +73,22 @@ def ttl_seconds(poll_seconds: float) -> int:
 
 
 def link_signer(secret: bytes, account: str, poll_seconds: float,
-                clock: Callable[[], float] = time.time) -> Callable[[int, str], str]:
-    """``signer(batch_id, verb) -> "exp=...&sig=..."``, the query a link carries.
+                clock: Callable[[], float] = time.time) -> Callable[..., str]:
+    """``signer(batch_id, verb, exp=None) -> "exp=...&sig=..."``, the query a link carries.
 
     ``account`` is the signing engine's mode label (``Autopilot.account``);
     the endpoint verifies with the web pilot's, so only that account's links act.
     Called when the batch is announced, right after the pass that made it, so
-    "now + ttl" is the batch's creation plus the ttl.
+    "now + ttl" is the batch's creation plus the ttl. The autopilot passes the
+    ``exp`` it computed for the push (the event's ``link_exp``): it keeps what
+    each push showed under that expiry, so a tap is held to its own push.
     """
     ttl = ttl_seconds(poll_seconds)
 
-    def sign(batch_id: int, verb: str) -> str:
+    def sign(batch_id: int, verb: str, exp: int | None = None) -> str:
         if verb not in VERBS:
             raise ValueError(f"verb must be one of {VERBS}, got {verb!r}")
-        exp = int(clock()) + ttl
+        exp = int(clock()) + ttl if exp is None else int(exp)
         return f"exp={exp}&sig={signature(secret, account, batch_id, verb, exp)}"
 
     return sign

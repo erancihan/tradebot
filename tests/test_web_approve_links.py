@@ -145,10 +145,11 @@ def test_a_live_account_is_never_approved_by_link(tmp_path, pushes, monkeypatch)
     batch = lines[0]["batch_id"]
     # Lines as a live engine would have stored them, so only the guard stops it.
     monkeypatch.setattr(pilot.storage, "pending_lines_in_batch", lambda b, m: lines)
-    monkeypatch.setattr(pilot, "approve", lambda ids: pytest.fail("approved a live batch"))
+    monkeypatch.setattr(pilot, "approve_detail",
+                        lambda *a, **kw: pytest.fail("approved a live batch"))
     pilot.account = "live"                         # as a live CLI engine would be
     try:
-        assert autopilot_service.act_on_batch(app, batch, "approve") == 0
+        assert autopilot_service.act_on_batch(app, batch, "approve", 0).submitted == 0
     finally:
         pilot.account = "paper"
     assert len(_pending(pilot)) == 2 and pilot.engine.broker.positions() == {}
@@ -340,3 +341,56 @@ def test_a_503_gives_the_link_back_and_a_retry_once_ready_acts(
     resp = client.post(links["Approve all"], headers=POST_HEADERS)
     assert resp.status_code == 200 and resp.json()["approved"] == 2
     assert set(pilot.engine.broker.positions()) == {"SPY", "QQQ"}
+
+
+def _grown(pilot, monkeypatch) -> None:
+    """Every later pass proposes the same trades, half again as large."""
+    real = pilot.engine.propose
+
+    def propose(*args, **kw):
+        proposal = real(*args, **kw)
+        return replace(proposal, lines=[
+            replace(ln, order_qty=ln.order_qty * 1.5, desired_qty=ln.desired_qty * 1.5,
+                    notional=abs(ln.order_qty * 1.5) * ln.price) for ln in proposal.lines])
+
+    monkeypatch.setattr(pilot.engine, "propose", propose)
+
+
+def test_an_older_push_cannot_buy_the_size_a_refresh_grew_to(tmp_path, pushes, monkeypatch):
+    """Push 1's button is still valid when a refresh grows the lines 1.5x and
+    push 2 says so: push 1's tap buys nothing and says to open the newest
+    push; push 2's tap buys the size it showed."""
+    _, client, pilot, first = _setup(tmp_path, pushes)
+    _grown(pilot, monkeypatch)
+    pilot.tick()
+    second = _links([p for p in pushes if p.get_header("Actions")][-1])
+    assert second["Approve all"] != first["Approve all"]
+    resp = client.post(first["Approve all"], headers=POST_HEADERS)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["approved"] == 0 and body["held"] == 2
+    assert "re-sized" in body["message"] and "open the newest push" in body["message"]
+    assert pilot.engine.broker.positions() == {} and len(_pending(pilot)) == 2
+    resp = client.post(second["Approve all"], headers=POST_HEADERS)
+    assert resp.status_code == 200 and resp.json()["approved"] == 2
+
+
+def test_a_broker_that_refuses_is_a_502_and_the_link_can_retry(tmp_path, pushes, monkeypatch):
+    """Not a silent 200 "approved 0" that also burns the link: the lines are
+    still pending, so the same button must work once the broker does."""
+    _, client, pilot, links = _setup(tmp_path, pushes)
+    broker, real = pilot.engine.broker, pilot.engine.broker.submit
+
+    def refuse(order):
+        raise RuntimeError("insufficient buying power")
+
+    monkeypatch.setattr(broker, "submit", refuse)
+    resp = client.post(links["Approve all"], headers=POST_HEADERS)
+    assert resp.status_code == 502
+    assert "2 order(s) failed" in resp.json()["detail"]
+    assert "buying power" not in resp.text                  # the topic learns no detail
+    assert len(_pending(pilot)) == 2
+    assert "insufficient buying power" in pilot.state().last_error
+    monkeypatch.setattr(broker, "submit", real)
+    resp = client.post(links["Approve all"], headers=POST_HEADERS)
+    assert resp.status_code == 200 and resp.json()["approved"] == 2

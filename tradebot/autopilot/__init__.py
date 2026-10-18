@@ -7,9 +7,9 @@ waits for the user); ``auto`` (a pass submits every line). The web server and
 
 from __future__ import annotations
 
-from .approvals import ForeignBatch
+from .approvals import ApprovalResult, ForeignBatch
 from .runner import HALT_ERROR, Autopilot
 from .state import MODE_LABELS, MODES, AutopilotState, Mode, check_mode, load_state, store_mode
 
-__all__ = ["Autopilot", "ForeignBatch", "HALT_ERROR", "MODES", "MODE_LABELS", "AutopilotState", "Mode", "check_mode",
+__all__ = ["ApprovalResult", "Autopilot", "ForeignBatch", "HALT_ERROR", "MODES", "MODE_LABELS", "AutopilotState", "Mode", "check_mode",
            "load_state", "store_mode"]

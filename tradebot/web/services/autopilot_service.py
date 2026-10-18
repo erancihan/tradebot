@@ -20,10 +20,13 @@ from ...autopilot import MODE_LABELS, Autopilot, ForeignBatch, load_state, store
 from ...config import AlpacaCredentials
 from ...storage import Storage
 from . import autopilot_build
+from .autopilot_notice import approval_notice
 
 log = logging.getLogger("tradebot.web.autopilot")
 
 _BUILD_LOCK = threading.Lock()
+#: How long ``reset`` waits for a pass in flight; the next ``get`` waits the rest.
+STOP_WAIT_SECONDS = 5.0
 
 
 class AutopilotUnavailable(RuntimeError):
@@ -46,11 +49,14 @@ def link_account(app) -> str:
 
 
 def get(app) -> Autopilot:
-    """The process's Autopilot, built on first use."""
+    """The process's Autopilot, built on first use, and only once the one a
+    ``reset`` stopped has finished its pass: two loops must never trade one
+    account."""
     with _BUILD_LOCK:
         pilot = current(app)
         if pilot is None:
             state = app.state
+            _join_stopping(state)
             try:
                 pilot = autopilot_build.build(
                     state.settings, trading_db=state.trading_db, cache_dir=state.cache_dir,
@@ -64,6 +70,14 @@ def get(app) -> Autopilot:
                 raise AutopilotUnavailable(str(exc)) from exc
             state.autopilot = pilot
         return pilot
+
+
+def _join_stopping(state) -> None:
+    """Wait, however long it takes, for the pilot ``reset`` stopped."""
+    old = getattr(state, "autopilot_stopping", None)
+    if old is not None:
+        old.stop(timeout=None)
+        state.autopilot_stopping = None
 
 
 def view(app, notice: str | None = None) -> dict:
@@ -109,9 +123,9 @@ def resume(app) -> None:
 
 
 def shutdown(app) -> None:
-    pilot = current(app)
-    if pilot is not None:
-        pilot.stop()
+    for pilot in (current(app), getattr(app.state, "autopilot_stopping", None)):
+        if pilot is not None:
+            pilot.stop()
 
 
 def reset(app) -> bool:
@@ -119,26 +133,28 @@ def reset(app) -> bool:
     command builds one from the new settings. Returns whether a loop was running.
 
     The stored mode is left alone, so the page still shows what the user chose
-    and a restart resumes it; it simply is not running on stale settings.
+    and a restart resumes it; it simply is not running on stale settings. A
+    pass still running after ``STOP_WAIT_SECONDS`` is kept as
+    ``autopilot_stopping``, and the next ``get`` joins it before building.
     """
     with _BUILD_LOCK:
         pilot = current(app)
         app.state.autopilot = None
+        if pilot is not None:
+            app.state.autopilot_stopping = pilot
     if pilot is None:
         return False
     was_running = pilot.running
-    pilot.stop()
+    pilot.stop(STOP_WAIT_SECONDS)
     return was_running
 
 
-def approve(app, line_ids: list[int]) -> dict:
-    asked = len(set(line_ids))
-    done = get(app).approve(line_ids)
-    notice = None
-    if done < asked:
-        notice = (f"{asked - done} of {asked} trades were not submitted: they had "
-                  "expired (older than one poll) or were no longer pending.")
-    return view(app, notice)
+def approve(app, line_ids: list[int], seen: dict | None = None) -> dict:
+    """The page's Approve. ``seen`` is what the page showed; ``None`` (a client
+    from before ``seen`` existed) skips the re-size check, for compatibility:
+    the one-poll staleness bound still applies."""
+    result = get(app).approve_detail(line_ids, seen)
+    return view(app, approval_notice(result, len(set(line_ids))))
 
 
 def reject(app, line_ids: list[int]) -> dict:
@@ -146,8 +162,8 @@ def reject(app, line_ids: list[int]) -> dict:
     return view(app)
 
 
-def act_on_batch(app, batch_id: int, verb: str) -> int:
+def act_on_batch(app, batch_id: int, verb: str, exp: int):
     """A signed link's command, through ``Autopilot.act_on_batch`` (one lock,
-    the page's submit path). The mode never changes; a batch already acted on
-    yields 0, another account's raises ``ForeignBatch``."""
-    return get(app).act_on_batch(batch_id, verb)
+    the page's submit path); returns its ``ApprovalResult``. The mode never
+    changes; another account's batch raises ``ForeignBatch``."""
+    return get(app).act_on_batch(batch_id, verb, exp)
