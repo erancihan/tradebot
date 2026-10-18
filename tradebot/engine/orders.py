@@ -64,6 +64,11 @@ def current_positions(engine, frames: dict[str, object]) -> dict[str, float]:
     return out
 
 
+def error_text(exc: BaseException) -> str:
+    """A failed submit in one short line, for ``last_error`` and a push."""
+    return f"{type(exc).__name__}: {exc}"[:120]
+
+
 def _after_send(action: RebalanceAction, step) -> None:
     """Bookkeeping for an order the broker already has: logged, never raised."""
     try:

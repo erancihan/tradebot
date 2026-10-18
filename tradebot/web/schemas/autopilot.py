@@ -10,10 +10,15 @@ from .proposal import ProposalLineView
 
 
 class AutopilotCommand(BaseModel):
-    """Exactly one of: a mode switch, lines to approve, lines to reject."""
+    """Exactly one of: a mode switch, lines to approve, lines to reject.
+
+    ``seen`` rides with ``approve``: the notional the page showed per line id,
+    so a line re-sized since then is refused instead of bought at a new size.
+    """
     mode: Literal["off", "approve", "auto"] | None = None
     approve: list[int] | None = None
     reject: list[int] | None = None
+    seen: dict[int, float] | None = None
 
 
 class AutopilotStateView(BaseModel):

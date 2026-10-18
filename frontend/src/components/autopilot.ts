@@ -19,9 +19,26 @@ export function commandFor(target: HTMLElement | null): AutopilotCommand | null 
   if (mode !== undefined && MODES.includes(mode)) {
     return { mode: mode as AutopilotModeKey };
   }
-  if (approve !== undefined) return { approve: ids(approve) };
+  if (approve !== undefined) {
+    const seen = shown(button.dataset.seen);
+    return seen ? { approve: ids(approve), seen } : { approve: ids(approve) };
+  }
   if (reject !== undefined) return { reject: ids(reject) };
   return null;
+}
+
+// "id:notional,..." (data-seen) as { id: notional }, or null when absent or
+// unreadable: the server then cannot hold the tap to what the page showed.
+export function shown(csv: string | undefined): Record<string, number> | null {
+  if (!csv) return null;
+  const out: Record<string, number> = {};
+  for (const pair of csv.split(",")) {
+    const [id, notional] = pair.split(":");
+    const value = Number.parseFloat(notional ?? "");
+    if (!id || !Number.isFinite(value)) return null;
+    out[id.trim()] = value;
+  }
+  return out;
 }
 
 function ids(csv: string): number[] {

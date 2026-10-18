@@ -74,6 +74,9 @@ class Engine(EngineHooksMixin, EngineExecutionMixin):
         self._session_start_equity: float | None = None
         self._session_day = None             # exchange-local date of the anchor
         self._halted_day = None              # the day the breaker flattened the book
+        # Approved lines the broker accepted whose `submitted` mark has not
+        # been written yet (e.g. the database was locked): never sent again.
+        self._sent_line_ids: set[int] = set()
 
     @property
     def mode(self) -> str:
@@ -117,12 +120,14 @@ class Engine(EngineHooksMixin, EngineExecutionMixin):
         if not submit:
             batch = pending.record_pending(self, proposal) if record else None
             return PassOutcome(proposal=proposal, batch_id=batch)
-        return PassOutcome(actions=self._submit_all(proposal, now), proposal=proposal)
+        actions, failed = self._submit_all(proposal, now)
+        return PassOutcome(actions=actions, proposal=proposal, failed=failed)
 
     def submit_lines(self, line_ids: list[int],
                      now: datetime | None = None) -> list[RebalanceAction]:
-        """Submit stored pending lines (an approval) stamped ``now``; see ``engine.pending``."""
-        return pending.submit_stored(self, line_ids, now)
+        """Submit stored pending lines (an approval) stamped ``now``; see
+        ``engine.pending``, whose ``submit_stored`` also says what failed."""
+        return pending.submit_stored(self, line_ids, now).actions
 
     def reset_session(self, start_equity: float | None = None) -> None:
         """Start a daily-loss session: from a persisted same-day anchor, or

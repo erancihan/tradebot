@@ -135,6 +135,10 @@ Like any watchlist edit, it stops a running autopilot. The last run survives a r
   reminder every 2 x `poll_seconds` (at least 30 minutes), or sooner when a
   re-sized line grows more than 10% past what the push said. With
   `TRADEBOT_WEB_TOKEN` set, a restart does not push the same batch again.
+  A line re-sized more than 10% past what you were shown is not bought: approve
+  it again from the newest push or the refreshed page, which show its new size.
+  An approval after the close is refused and expires the batch; nothing queues
+  for the next open.
 - **Automatic.** Every pass submits its trades.
 
 The status card shows the mode, the loop, the account, the last and next pass,
@@ -225,7 +229,8 @@ own pending paper trades: anyone who can read the topic sees the links. Use a
 self-hosted ntfy server or ntfy access control (an access token on the topic),
 and a long random topic name. Links from
 `tradebot run --autopilot` on paper are served by `tradebot-web` on the same database
-and need the same `TRADEBOT_WEB_TOKEN` in both processes.
+and need the same `TRADEBOT_WEB_TOKEN` in both processes; without the token the
+headless run's pushes carry only Open.
 
 ### 8. Reach it over the network
 
@@ -439,6 +444,8 @@ tradebot run --replay --autopilot --mode auto --iterations 50   # offline
 ```
 
 Parked trades wait on the Autopilot page of a server with the same database.
+Run one autopilot per account: the headless one or the web page's, never both
+on the same paper account.
 
 **Which list the CLI trades.** `tradebot run` (every form) trades the same list
 as the web: the watchlist in `db_path` when it has symbols, in place of

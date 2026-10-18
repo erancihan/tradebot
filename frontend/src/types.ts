@@ -274,9 +274,11 @@ export interface WhatIfPreset {
 export type AutopilotModeKey = "off" | "approve" | "auto";
 
 // Exactly one key per command: a mode switch, or line ids to approve/reject.
+// An approval carries what the page showed (line id -> notional): the server
+// refuses a line re-sized past that since, so a tap buys what was on screen.
 export type AutopilotCommand =
   | { mode: AutopilotModeKey }
-  | { approve: number[] }
+  | { approve: number[]; seen?: Record<string, number> }
   | { reject: number[] };
 
 export interface AutopilotState {

@@ -47,6 +47,7 @@ class _ReplayClock:
 
 def run_autopilot(settings, args: argparse.Namespace) -> int:
     from ..autopilot import Autopilot
+    from ..autopilot.parking import CLI_SCOPE_PREFIX
     from ..market import get_calendar
 
     if args.mode == "off" and not settings.brief_minutes_before_open:
@@ -67,7 +68,7 @@ def run_autopilot(settings, args: argparse.Namespace) -> int:
     # `tradebot-web` start resumes, so a headless run must never write it.
     pilot = Autopilot(engine, engine.storage, poll_seconds=settings.poll_seconds,
                       calendar=get_calendar(settings.market),
-                      scope=f"cli_{engine.mode}", links_persist=_links_persist(),
+                      scope=CLI_SCOPE_PREFIX + engine.mode, links_persist=_links_persist(),
                       **extra)
     if replay:
         clock.pilot = pilot
@@ -103,10 +104,12 @@ def _linked_notifier(settings, account: str):
     The links are served by ``tradebot-web`` on the same database; with
     ``TRADEBOT_WEB_TOKEN`` set in both processes they share one secret, and a
     paper link signed here verifies against the web's paper pilot (same label).
+    Without the token this process's key is random and no web process could
+    verify a link it signed, so the push carries just "Open".
     """
     from ..autopilot.links import env_secret, link_signer
 
-    if account != "paper":
+    if account != "paper" or not _links_persist():
         return settings.build_notifier()
     return settings.build_notifier(link_signer(env_secret(), account, settings.poll_seconds))
 

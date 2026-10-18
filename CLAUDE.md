@@ -48,14 +48,14 @@ tradebot/
   engine/        core (Engine.step -> PassOutcome) + hooks, execution (submit, run_forever), signals, orders, pending,
                  session (daily-loss anchor), fills (reconcile: Broker.order_status -> the order log's fills), unlisted
   autopilot/     state, schedule, runner (Autopilot, injected clock/sleep/calendar) + wake (tick), loop (run_forever),
-                 approvals, background, brief (MorningBrief), session, links (signed batch links)
+                 approvals, parking (park + push), background, brief (MorningBrief), session, links (signed batch links)
   storage/       tradebot.db mixins: orders, bars, weights, proposals, autopilot, watchlist, discover
   cli/           build_parser/main + one module per command
   arena/         api, loader, interfaces, adapters, simulation, scenario, runner +
                  isolation, sandbox, scoring, gate/, result, tournament, league,
                  season/, panel, market, contestant, store + journal
   web/           app (create_app, load_settings), server, startup, guard, access, repository/,
-                 schemas/, services/ account, advisor, autopilot (+ reset), autopilot_build, cache,
+                 schemas/, services/ account, advisor, autopilot (+ reset, _notice), autopilot_build, cache,
                    consortium, whatif_presets, notify_service, symbols_service, history_service (+ history_trades),
                    benchmark (+ _card), holdings_service, unlisted_service, discover_service, settings_service (view, save),
                    settings_validate, settings_secrets (mask alert targets), setup_service,
@@ -228,34 +228,34 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   `prepare` is idempotent on a frame fingerprint. `EqualVoice` is the default. State `eta` with any `HedgeVoice` result.
 
 **Live execution and autopilot**
-- **A bracket protects between passes, it does not veto a signal:** the next
-  pass re-enters. `DryRunBroker` fills stop before target, gap-through at the
-  open, and only on a bar *after* the entry bar (a parked replay would book a
-  phantom exit each pass). Streaming only speeds bar arrival; the `Engine` polls.
+- **A bracket protects between passes, it does not veto a signal:** the next pass re-enters. `DryRunBroker` fills stop before target,
+  gap-through at the open, and only on a bar *after* the entry bar (a parked replay would book a phantom exit each pass). The `Engine` polls.
 - **A notifier never breaks a trade:** sends are wrapped, remote notifiers swallow errors. `deliver() -> bool` is only for the test-alert button ("not delivered").
-- **A pending batch is re-sized or expired, never executed late:** a pass proposing the same
-  `(symbol, action)` set refreshes it in place (sizing, prices, holds, `created_at`, so History and
-  Today show its latest refresh time; same batch id, so the push's link still works). A rejection,
-  even Skip of every line, holds until the proposal changes or the session day ends (`waiting_batch`).
+- **A pending batch is re-sized or expired, never executed late:** a pass proposing the same `(symbol, action)` set as the
+  batch it parked (`parked_batch`) refreshes it in place (sizing, prices, holds, `created_at`, so History and Today show its
+  latest refresh; same batch id, so the push's link still works). A rejection, even Skip of every line, holds until the proposal
+  changes (an all-holds pass is a change; a repeated one refreshes its batch, no new row) or the session day ends.
   A changed proposal, an approval older than one `poll_seconds`, a failed pass, the wake after the close (`schedule.next_pass` grants a pass inside hours one more; `tick` expires with no pass; a broker-closed pass too), a halt, and switching off expire it. One push per batch; a restart pushes again
-  only when the link key is per-process (no `TRADEBOT_WEB_TOKEN`; `Autopilot(links_persist=)`), with the token
-  the stored state carries over. Then a reminder every `links.ttl_seconds` (max(2 x poll, 30 min), also the
-  link TTL) or at once when a refresh grows a line's notional past `GROWTH_TOLERANCE` (10%) of what the push said (`announced_*` state).
+  only when the link key is per-process (no `TRADEBOT_WEB_TOKEN`; `Autopilot(links_persist=)`), with the token the stored state carries
+  over. Then a reminder at `links.ttl_seconds` (max(2 x poll, 30 min), the link TTL) or the push's own `announced_exp` if sooner, or at
+  once when a refresh grows a line's notional past `GROWTH_TOLERANCE` (10%) of what the push said (`autopilot/parking.py`).
+- **Approval buys what was shown** (`autopilot/approvals.py`, `engine/pending.py`): a line grown past `GROWTH_TOLERANCE` of the
+  tapped push (`announced_pushes`, keyed by the link's `exp`) or of the page's `seen` stays pending for the newest push or page (no
+  `seen` = an old client, unchecked). A line whose position changed since the pass is expired, never sent (no short, no double buy).
+  A sent line is never re-sent (`Engine._sent_line_ids`; the mark is retried). No approval while the market is closed (it expires the
+  batch). Failed submits set `last_error` and push `order_failed`; a link whose lines failed is a 502 and is released. One loop per
+  account: `reset` hands a pass in flight to the next `get`, which joins it first. Run `tradebot run --autopilot` or the web pilot per account, never both.
 - **Signed batch links** (`autopilot/links.py`; buttons when `safe_public_url(notify.public_url)`)
   are paper-only (other pushes get just "Open") and account-bound (`account:batch:verb:exp`); they act
   on that account's pending lines under the lock (`Autopilot.act_on_batch`; foreign batch = 409). Key
-  from `TRADEBOT_WEB_TOKEN`, else per-process; `ttl_seconds`; single use per process (after a
+  from `TRADEBOT_WEB_TOKEN`, else per-process (the CLI then arms no links); `ttl_seconds`; single use per process (after a
   restart a used link acts again until `exp`). They skip the cookie gate, not the guard. **The ntfy topic grants approval.**
-- **The daily-loss breaker is per session day and flattens** (`engine/session.py`):
-  each pass rolls the anchor when `now`'s exchange date changes (a replay's `now` is
-  its newest bar); a breach closes every equity position and stays out that day. The
-  autopilot also turns off; its anchor persists per scope (`autopilot/session.py`).
-- **One lock, one connection:** the loop thread and web taps share the engine and SQLite
-  (`check_same_thread=False`, WAL, `busy_timeout=5000`) under the Autopilot `RLock`. A line
-  is `submitted` once the broker accepts it; later bookkeeping only logs. A mode switch wakes the loop.
-- **The web autopilot is paper or dry-run, never live** (`autopilot_build`); a
-  dry-run's account dies with a restart. `tradebot run --autopilot` builds as `run`, keeps
-  state in scope `cli_<account>` (never the web's), expires no pending lines at start (a closed-market
+- **The daily-loss breaker is per session day and flattens** (`engine/session.py`): each pass rolls the anchor when `now`'s exchange
+  date changes (a replay's `now` is its newest bar); a breach closes every equity position and stays out that day. The autopilot also turns off; its anchor persists per scope (`autopilot/session.py`).
+- **One lock, one connection:** the loop thread and web taps share the engine and SQLite (`check_same_thread=False`, WAL,
+  `busy_timeout=5000`) under the Autopilot `RLock`. A line is `submitted` once the broker accepts it; later bookkeeping only logs. A mode switch wakes the loop.
+- **The web autopilot is paper or dry-run, never live** (`autopilot_build`); a dry-run's account dies with a restart. `tradebot run --autopilot`
+  builds as `run`, keeps state in scope `cli_<account>` (never the web's), expires no pending lines at start (a closed-market
   wake still does, for the shared account); a replay's clock reads its bars. Orders carry the pass clock, as batches do (approval: the tap's).
 - **With a morning brief, "off" keeps the loop alive** to send briefs from `engine.propose` (nothing
   stored). `brief_for` prevents resends. A brief-only loop is `tradebot run --autopilot --mode off`.

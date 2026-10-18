@@ -227,3 +227,40 @@ One new core concept, the proposal, feeds three flows.
   listed under "Sold without a recorded buy" and never in the summary.
 - `GET /api/history/trades?mode=` returns `{summary, trades, open, unmatched,
   provenance}` with provenance `{mode, source: "order log fills", orders}`.
+
+## Addendum 2026-10-18: approval safety
+- An approval buys only what the approver saw. Each push keeps its sizes under
+  its links' `exp` (`announced_pushes`); a tap holds every line to the push it
+  came from, and the page sends `seen` (line id to notional). A line grown past
+  `GROWTH_TOLERANCE` (10%) of that stays pending: the growth re-push and the
+  refreshed page show the new size and ask again. Why: a still-valid button of
+  an older push bought a size a refresh had grown 1.5x. A request without
+  `seen` (an older client) is not checked, for compatibility.
+- Before an approved line is sent its position is read again; a line whose
+  holding changed since the pass (a hand trade, a stop that fired) is expired,
+  never sent. Why: a stored "sell N" against a position already gone opened an
+  N-share short on a margin paper account, and a stored buy could double.
+- A line the broker accepted is never sent again, even when marking it
+  `submitted` fails (the engine keeps the sent ids in memory and retries the
+  mark). Why: a locked database left the line pending and a second tap
+  ordered it twice.
+- No approval while the market is closed: it expires the batch. Why: a DAY
+  market order sent after the close queues for the next open at prices nobody
+  saw.
+- A failed submit is never silent: it sets `last_error` naming the symbols,
+  pushes `order_failed`, and the page names it; a signed link whose lines
+  failed answers 502 and is given back so the same button retries.
+- A Skip lasts only while the proposal is unchanged: the runner records the
+  batch it parked last, and an all-holds pass in between makes the same trades
+  a new question. A repeated all-holds pass refreshes its batch instead of
+  adding one per poll.
+- One loop per account. A Settings or watchlist save hands a pass still in
+  flight to the next build, which waits for it before starting a new loop; a
+  stopped runner starts no pass and parks nothing. Run either `tradebot run
+  --autopilot` or the web autopilot on an account, never both: they would
+  each trade it.
+- The headless CLI arms Approve and Skip only with `TRADEBOT_WEB_TOKEN`:
+  without it its key is per-process and no web server could verify the links.
+- A reminder comes at the earlier of the interval and the push's own link
+  expiry (`announced_exp`), so a raised poll cannot leave dead buttons on the
+  phone.

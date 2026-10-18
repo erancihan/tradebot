@@ -175,7 +175,7 @@ def test_save_reloads_the_server_settings_and_resets_the_autopilot(tmp_path):
         running = True
         stopped = False
 
-        def stop(self):
+        def stop(self, timeout=None):
             self.stopped = True
 
     pilot = FakePilot()
