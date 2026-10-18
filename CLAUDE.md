@@ -38,16 +38,16 @@ tradebot/
   backtest/      result, runner (Backtester), steps (per-bar helpers shared by the
                  backtester and arena/simulation.py), flows (cash flows, growth index)
   whatif/        plan, run (run_whatif, whatif_risk, plan_window), compare, compare_many
-  config.py      Settings (YAML), credentials.py (env only), config_io.py (EDITABLE_KEYS,
-                 settings_to_dict, editable, write_settings: atomic, refuses secrets)
+  config.py      Settings (YAML) + config_build (build_*), config_load (from_dict), credentials.py (env only),
+                 config_io.py (EDITABLE_KEYS, settings_to_dict, editable, write_settings: atomic, refuses secrets)
   notify.py      Notifier: Log, Null, Webhook, Ntfy, Multi, build_notifier; notify_actions (ntfy buttons)
   broker/        base (ABC), alpaca_broker (lazy SDK), dryrun + brackets (BracketsMixin)
   data/          synthetic (+ load_csv) + factor_panel, cache + coverage, replay, alpaca_data, stream
   market/        base (MarketCalendar, TableCalendar), us, bist, registry (CALENDARS)
   advisor/       propose (bars + account -> Proposal), explain, types, unlisted (off-list holdings)
-  engine/        core (Engine.step -> PassOutcome), signals, orders, pending, session (daily-loss anchor),
-                 fills (reconcile: Broker.order_status -> the order log's fill columns), unlisted
-  autopilot/     state, schedule, runner (Autopilot, injected clock/sleep/calendar),
+  engine/        core (Engine.step -> PassOutcome) + hooks, execution (submit, run_forever), signals, orders, pending,
+                 session (daily-loss anchor), fills (reconcile: Broker.order_status -> the order log's fills), unlisted
+  autopilot/     state, schedule, runner (Autopilot, injected clock/sleep/calendar) + wake (tick), loop (run_forever),
                  approvals, background, brief (MorningBrief), session, links (signed batch links)
   storage/       tradebot.db mixins: orders, bars, weights, proposals, autopilot, watchlist, discover
   cli/           build_parser/main + one module per command
