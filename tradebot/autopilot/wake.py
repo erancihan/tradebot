@@ -56,7 +56,9 @@ class WakeMixin:
             # Unrecorded: `_park` carries an unchanged batch over instead.
             outcome = self.engine.step(submit=(mode == "auto"), now=now, record=False)
         except Exception as exc:  # noqa: BLE001 - the loop must outlive a bad pass
-            self._expire_pending()          # no fresh sizing: the batch is stale
+            # The waiting batch stays: a broker blip must not kill the push's
+            # link and push again. The stale gate refuses a tap older than one
+            # poll until the next good pass refreshes it (or replaces it).
             self._save_session(day)
             log.exception("Autopilot pass failed")
             self._set(last_pass_at=now, last_error=f"{type(exc).__name__}: {exc}")

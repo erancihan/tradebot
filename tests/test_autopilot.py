@@ -303,6 +303,32 @@ def test_an_unchanged_proposal_keeps_the_pending_batch(tmp_path, monkeypatch):
     assert broker._order_seq == 0
 
 
+def test_a_failed_pass_keeps_the_batch_and_the_next_good_pass_refreshes_it(
+        tmp_path, monkeypatch):
+    """A broker blip (DNS, a timeout) must not expire the batch and push a new
+    one: the link on the phone stays valid, the stale gate guards it, and the
+    next good pass refreshes it in place."""
+    pilot, broker, clock, notifier, first = _approve_pass(tmp_path)
+    real_step = pilot.engine.step
+    clock.sleep(300)
+    monkeypatch.setattr(pilot.engine, "step",
+                        lambda **kw: (_ for _ in ()).throw(RuntimeError("dns")))
+    pilot.tick()
+    assert pilot.state().last_error == "RuntimeError: dns"
+    assert [ln["id"] for ln in pilot.storage.pending_lines("dry_run")] == [
+        ln["id"] for ln in first]
+    assert "expired" not in _statuses(pilot).values() and len(_pushes(notifier)) == 1
+    monkeypatch.setattr(pilot.engine, "step", real_step)
+    _spy_proposals(pilot, monkeypatch, _one_more_share)
+    clock.sleep(300)
+    pilot.tick()
+    second = pilot.storage.pending_lines("dry_run")
+    assert {ln["batch_id"] for ln in second} == {first[0]["batch_id"]}
+    assert all(ln["created_at"] == clock.now.isoformat() for ln in second)
+    assert pilot.state().last_error is None and len(_pushes(notifier)) == 1
+    assert broker._order_seq == 0
+
+
 def test_a_rejected_line_is_not_asked_again_while_the_proposal_holds(tmp_path):
     pilot, _, clock, notifier, first = _approve_pass(tmp_path)
     kept, dropped = first
@@ -938,8 +964,10 @@ def test_a_carried_batch_refreshes_its_hold_lines(tmp_path, monkeypatch):
     assert hold["created_at"] == pilot.clock.now.isoformat()
 
 
-def test_a_failed_approve_pass_expires_the_waiting_batch(tmp_path, monkeypatch):
-    pilot, broker, clock, _, _ = _approve_pass(tmp_path)
+def test_a_tap_after_a_failed_pass_is_refused_by_the_stale_gate(tmp_path, monkeypatch):
+    """The batch outlives a failed pass, but its sizing is a poll old by the
+    time of a later tap: the stale gate expires it instead of trading."""
+    pilot, broker, clock, _, pending = _approve_pass(tmp_path)
 
     def explode(**kw):
         raise RuntimeError("broker unreachable")
@@ -947,6 +975,9 @@ def test_a_failed_approve_pass_expires_the_waiting_batch(tmp_path, monkeypatch):
     monkeypatch.setattr(pilot.engine, "step", explode)
     clock.sleep(300)
     pilot.tick()
+    assert "expired" not in _statuses(pilot).values()
+    clock.sleep(1)
+    assert pilot.approve([ln["id"] for ln in pending]) == 0
     assert set(_statuses(pilot).values()) == {"expired"}
     assert broker._order_seq == 0
 
