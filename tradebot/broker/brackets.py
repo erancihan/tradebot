@@ -25,6 +25,8 @@ class _Bracket:
     # Timestamp of the bar the entry filled on. That bar's high/low include
     # prices from before the fill, so only a strictly later bar may fire a leg.
     entry_bar: object = None
+    # The entry order's id: a fired leg's own id derives from it.
+    entry_id: str | None = None
 
 
 def exit_price(bracket: _Bracket, high: float, low: float, open_: float,
@@ -45,10 +47,15 @@ def exit_price(bracket: _Bracket, high: float, low: float, open_: float,
     return None, None
 
 
+def _stamp(when) -> str:
+    return when.isoformat() if hasattr(when, "isoformat") else str(when)
+
+
 class BracketsMixin:
     """Bracket tracking for :class:`DryRunBroker` (needs its portfolio/data/marks)."""
 
-    def _track_bracket(self, order, qty_before: float, fill_price: float) -> None:
+    def _track_bracket(self, order, qty_before: float, fill_price: float,
+                       order_id: str | None = None) -> None:
         """Attach/refresh/drop the resting exit levels after a simulated fill.
 
         Only fills that *increase* exposure carry a bracket, matching the engine
@@ -65,7 +72,7 @@ class BracketsMixin:
             bar = self._latest_bar(order.symbol)
             self._brackets[order.symbol] = _Bracket(
                 stop=order.stop_loss, target=order.take_profit, entry=fill_price,
-                entry_bar=None if bar is None else bar.name,
+                entry_bar=None if bar is None else bar.name, entry_id=order_id,
             )
 
     def _latest_bar(self, symbol: str):
@@ -117,5 +124,6 @@ class BracketsMixin:
                 reason.upper(), symbol, abs(qty), price, bracket.entry,
             )
             exits.append(Fill(symbol=symbol, qty=qty, price=price,
-                              commission=self.commission, timestamp=utcnow()))
+                              commission=self.commission, timestamp=utcnow(), intent="exit",
+                              order_id=f"bracket:{bracket.entry_id}:{_stamp(bar.name)}"))
         return exits

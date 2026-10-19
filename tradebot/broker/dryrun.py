@@ -107,10 +107,9 @@ class DryRunBroker(BracketsMixin, Broker):
         slip = self.slippage_bps / 10_000.0
         fill_price = price * (1 + slip) if signed > 0 else price * (1 - slip)
         self.portfolio.execute(order.symbol, signed, fill_price, commission=self.commission)
-        self._track_bracket(order, before, fill_price)
-
         self._order_seq += 1
         order_id = f"{self._id_prefix}-{self._order_seq}"
+        self._track_bracket(order, before, fill_price, order_id)
         self._orders[order_id] = OrderStatus("filled", float(order.qty), fill_price,
                                              order.created_at)
         log.info(

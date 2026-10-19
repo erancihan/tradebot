@@ -30,13 +30,30 @@ TERMINAL_STATUSES = frozenset({"filled", "canceled", "expired", "rejected"})
 
 
 @dataclass(frozen=True)
+class LegFill:
+    """A filled bracket leg (stop or target) of an entry order: an exit the
+    bot never submitted itself, logged so the offline account sees it."""
+    broker_order_id: str
+    side: str                 # "buy" | "sell"
+    filled_qty: float
+    fill_price: float
+    filled_at: datetime | None
+
+
+@dataclass(frozen=True)
 class OrderStatus:
     """What the broker says became of one order: how much filled, at what
-    average price, and when (the last two None until something filled)."""
+    average price, and when (the last two None until something filled).
+
+    ``legs`` are its bracket legs that filled; ``legs_open`` says a leg still
+    rests, so a filled parent is asked again until its bracket settles. A
+    broker without brackets leaves both at their defaults."""
     status: str
     filled_qty: float
     fill_price: float | None
     filled_at: datetime | None
+    legs: tuple[LegFill, ...] = ()
+    legs_open: bool = False
 
     @property
     def is_terminal(self) -> bool:

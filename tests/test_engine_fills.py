@@ -194,17 +194,34 @@ def test_an_automatic_pass_records_its_fills_too(tmp_path):
 
 # --- the autopilot ------------------------------------------------------------
 
-def test_an_autopilot_pass_reconciles_before_it_steps(tmp_path, monkeypatch):
+def test_an_autopilot_pass_reconciles_once_before_it_reads_the_account(tmp_path,
+                                                                       monkeypatch):
     pilot, broker, _, _ = build(tmp_path)
     calls: list[str] = []
-    real_reconcile, real_step = fills.reconcile, pilot.engine.step
+    real_reconcile, real_account = fills.reconcile, broker.account
     monkeypatch.setattr(fills, "reconcile",
                         lambda engine, **kw: calls.append("reconcile") or real_reconcile(engine, **kw))
-    monkeypatch.setattr(pilot.engine, "step",
-                        lambda **kw: calls.append("step") or real_step(**kw))
+    monkeypatch.setattr(broker, "account", lambda: calls.append("account") or real_account())
     pilot.set_mode("auto")
     pilot.tick()
-    assert calls[:2] == ["reconcile", "step"]
+    assert calls[:2] == ["reconcile", "account"]
+    # One look at the start of the pass, one after its submits: never two at the start.
+    assert calls.count("reconcile") == 2
+
+
+def test_an_old_order_still_new_is_reconciled_on_the_next_step(tmp_path, monkeypatch):
+    """A plain `tradebot run` submits nothing more: the next step still asks,
+    and an order past the lookback that the broker last called working too."""
+    pilot, broker, _, _ = build(tmp_path)
+    engine, st = pilot.engine, pilot.storage
+    row_id = _log(st, "old", ts=OPEN_NOW - timedelta(days=30), mode="dry_run")
+    st.set_order_fill(row_id, OrderStatus("new", 0.0, None, None))
+    real = broker.order_status
+    monkeypatch.setattr(broker, "order_status",
+                        lambda oid: OrderStatus("filled", 13.0, 767.0, OPEN_NOW)
+                        if oid == "old" else real(oid))
+    engine.step(submit=False, now=OPEN_NOW)
+    assert _row(st, row_id)["status"] == "filled"
 
 
 def test_a_failing_reconcile_never_fails_the_pass(tmp_path, monkeypatch):

@@ -8,7 +8,8 @@ The SDK is imported lazily so the package imports fine without it.
 from __future__ import annotations
 
 from ..models import EQUITY, Order, OrderType, Position, Side, TimeInForce
-from .base import ORDER_STATUSES, AccountSnapshot, Broker, OrderStatus
+from .base import (ORDER_STATUSES, TERMINAL_STATUSES, AccountSnapshot, Broker, LegFill,
+                   OrderStatus)
 
 PAPER_ENDPOINT = "https://paper-api.alpaca.markets"
 LIVE_ENDPOINT = "https://api.alpaca.markets"
@@ -22,20 +23,33 @@ _OPEN_STATES = frozenset({"accepted", "pending_new", "accepted_for_bidding", "he
 _GONE_STATES = {"replaced": "canceled"}
 
 
+def _status(order) -> str:
+    raw = str(getattr(order.status, "value", order.status) or "").lower()
+    return (raw if raw in ORDER_STATUSES else "new" if raw in _OPEN_STATES
+            else _GONE_STATES.get(raw, "unknown"))
+
+
 def map_order_status(order) -> OrderStatus:
     """An SDK ``Order`` as our :class:`OrderStatus` (duck-typed: no SDK import).
 
     Alpaca's status is an enum whose ``value`` is the wire string; one of ours
     passes through, a working or paused state is ``new``, ``replaced`` is
-    ``canceled`` (the original order is gone), anything else ``unknown``."""
-    raw = str(getattr(order.status, "value", order.status) or "").lower()
-    status = (raw if raw in ORDER_STATUSES else "new" if raw in _OPEN_STATES
-              else _GONE_STATES.get(raw, "unknown"))
+    ``canceled`` (the original order is gone), anything else ``unknown``.
+    A bracket's legs (``nested``) come back as the filled ones, plus whether
+    one still works: Alpaca fills a stop or target without the bot asking."""
     filled = float(order.filled_qty or 0.0)
     price = order.filled_avg_price
-    return OrderStatus(status=status, filled_qty=filled,
-                       fill_price=float(price) if price is not None and filled else None,
-                       filled_at=order.filled_at)
+    legs = list(getattr(order, "legs", None) or [])
+    done = [leg for leg in legs if float(leg.filled_qty or 0.0) > 0
+            and leg.filled_avg_price is not None and _status(leg) == "filled"]
+    return OrderStatus(
+        status=_status(order), filled_qty=filled,
+        fill_price=float(price) if price is not None and filled else None,
+        filled_at=order.filled_at,
+        legs=tuple(LegFill(str(leg.id), str(getattr(leg.side, "value", leg.side)).lower(),
+                           float(leg.filled_qty), float(leg.filled_avg_price),
+                           leg.filled_at) for leg in done),
+        legs_open=any(_status(leg) not in TERMINAL_STATUSES for leg in legs))
 
 
 class AlpacaBroker(Broker):
@@ -127,8 +141,12 @@ class AlpacaBroker(Broker):
         return str(submitted.id)
 
     def order_status(self, broker_order_id: str) -> OrderStatus | None:
-        """One order's state; an SDK error propagates (the reconciler logs it)."""
-        return map_order_status(self._client.get_order_by_id(broker_order_id))
+        """One order's state with its bracket legs; an SDK error propagates
+        (the reconciler logs it)."""
+        from alpaca.trading.requests import GetOrderByIdRequest
+
+        return map_order_status(self._client.get_order_by_id(
+            broker_order_id, filter=GetOrderByIdRequest(nested=True)))
 
     def cancel_all(self) -> None:
         self._client.cancel_orders()

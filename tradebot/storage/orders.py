@@ -7,7 +7,7 @@ reader that sums the log goes through :func:`effective_qty`.
 
 from __future__ import annotations
 
-from ..broker.base import TERMINAL_STATUSES, OrderStatus
+from ..broker.base import TERMINAL_STATUSES, LegFill, OrderStatus
 from ..models import Order, utcnow
 
 #: Terminal states in which the order did not (fully) fill.
@@ -47,6 +47,27 @@ def signed_effective_qty(row: dict) -> float:
     return qty if row["side"] == "buy" else -qty
 
 
+def apply_order(held: float, row: dict) -> float:
+    """The position after one logged order. An ``exit`` reduces the holding
+    at most to flat and never opens one (``portfolio_pnl.book``'s
+    ``UnmatchedExit`` rule): selling a hand-bought name the log never saw
+    reads flat, not short. Any other row (an entry, an old NULL row) adds."""
+    delta = signed_effective_qty(row)
+    if row.get("intent") != "exit":
+        return held + delta
+    if held * delta >= 0:                  # flat, or the same direction: nothing of ours
+        return held
+    return held + delta if abs(delta) < abs(held) else 0.0
+
+
+def net_positions(rows) -> dict[str, float]:
+    """Signed shares per symbol over order rows in log order, flat ones left out."""
+    totals: dict[str, float] = {}
+    for row in rows:
+        totals[row["symbol"]] = apply_order(totals.get(row["symbol"], 0.0), row)
+    return {s: q for s, q in sorted(totals.items()) if abs(q) > 1e-9}
+
+
 class OrdersMixin:
     """Order/equity writes over ``self._conn``."""
 
@@ -74,14 +95,16 @@ class OrdersMixin:
         self._conn.commit()
 
     def open_orders(self, mode: str, since_ts: str) -> list[dict]:
-        """Orders of ``mode`` from ``since_ts`` on that a broker knows and that
-        may still change: never asked, or last seen in a non-terminal state."""
+        """Orders of ``mode`` a broker knows that may still change: never asked
+        (from ``since_ts`` on), last seen in a non-terminal state (any age, so
+        an old working order is still learned), or filled with a bracket leg
+        still resting."""
         marks = ", ".join("?" for _ in TERMINAL_STATUSES)
         cur = self._conn.execute(
             "SELECT id, ts, symbol, side, qty, broker_order_id, status, filled_qty,"
-            " fill_price, filled_at FROM orders WHERE mode = ? AND ts >= ?"
-            " AND broker_order_id IS NOT NULL"
-            f" AND (status IS NULL OR status NOT IN ({marks})) ORDER BY ts, id",
+            " fill_price, filled_at, legs_open FROM orders WHERE mode = ?"
+            " AND broker_order_id IS NOT NULL AND ((status IS NULL AND ts >= ?)"
+            f" OR status NOT IN ({marks}) OR legs_open = 1) ORDER BY ts, id",
             (mode, since_ts, *sorted(TERMINAL_STATUSES)))
         cols = [c[0] for c in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
@@ -95,11 +118,28 @@ class OrdersMixin:
     def set_order_fill(self, order_id: int, status: OrderStatus) -> None:
         """Store the broker's word on one logged order."""
         self._conn.execute(
-            "UPDATE orders SET status = ?, filled_qty = ?, fill_price = ?, filled_at = ?"
-            " WHERE id = ?",
+            "UPDATE orders SET status = ?, filled_qty = ?, fill_price = ?, filled_at = ?,"
+            " legs_open = ? WHERE id = ?",
             (status.status, float(status.filled_qty), status.fill_price,
-             status.filled_at.isoformat() if status.filled_at else None, int(order_id)))
+             status.filled_at.isoformat() if status.filled_at else None,
+             int(status.legs_open), int(order_id)))
         self._conn.commit()
+
+    def record_leg_fill(self, symbol: str, leg: LegFill, mode: str) -> bool:
+        """Log a filled bracket leg as an exit, once per broker id (a re-run
+        of a reconcile or a bracket check inserts nothing); True if new."""
+        if self._conn.execute("SELECT 1 FROM orders WHERE mode = ? AND broker_order_id = ?",
+                              (mode, leg.broker_order_id)).fetchone():
+            return False
+        at = (leg.filled_at or utcnow()).isoformat()
+        self._conn.execute(
+            "INSERT INTO orders (ts, symbol, side, qty, type, broker_order_id, mode, price,"
+            " status, filled_qty, fill_price, filled_at, intent)"
+            " VALUES (?, ?, ?, ?, 'bracket', ?, ?, ?, 'filled', ?, ?, ?, 'exit')",
+            (at, symbol, leg.side, float(leg.filled_qty), leg.broker_order_id, mode,
+             float(leg.fill_price), float(leg.filled_qty), float(leg.fill_price), at))
+        self._conn.commit()
+        return True
 
     def record_equity(self, equity: float, cash: float, mode: str) -> None:
         self._conn.execute(

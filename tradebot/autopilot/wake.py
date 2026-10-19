@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from ..engine import fills, pending
+from ..engine import pending
 from . import schedule
 from .state import AutopilotState, store_mode
 
@@ -48,7 +48,7 @@ class WakeMixin:
             self._begin_session(day)
         if mode != "approve":
             self._expire_pending()          # nobody approves under `auto`
-        fills.reconcile_quietly(self.engine, now=now)   # last pass's fills first
+        # The step learns the last pass's fills first (`Engine.step`).
         pending.settle_sent(self.engine)    # a sent line's mark that failed earlier
         if self._stop.is_set():             # a reset is waiting: start no new pass
             return

@@ -109,6 +109,9 @@ class Fill:
     #: Why the order was sent ("entry" opens or grows exposure, "exit"
     #: reduces or closes it); None when unknown (an old order-log row).
     intent: str | None = None
+    #: The broker's id for the order behind this fill, when it issued one
+    #: (a simulated bracket exit: ``bracket:<entry id>:<bar>``).
+    order_id: str | None = None
 
 
 #: The one asset class the bot trades.
