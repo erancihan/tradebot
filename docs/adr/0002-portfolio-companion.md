@@ -74,9 +74,11 @@ One new core concept, the proposal, feeds three flows.
 - A rejection, even Skip of every line, holds until the proposal changes or the
   trading day ends, never longer: the same trades are not asked about again
   that day.
-- A changed proposal, an approval older than one `poll_seconds`, a failed pass,
-  the first tick after the close (or a pass the broker reports closed), a
-  daily-loss halt, switching off and the first automatic pass expire the batch.
+- A changed proposal, an approval older than one `poll_seconds`, the first tick
+  after the close (or a pass the broker reports closed), a daily-loss halt,
+  switching off and the first automatic pass expire the batch. A failed pass
+  (a broker blip) keeps it, so the push's link survives and nothing is pushed
+  again; the stale gate refuses a tap until the next good pass refreshes it.
   A late approval never executes, and nothing waits overnight for the open.
 - A batch is pushed once, then again as a reminder every
   `links.ttl_seconds(poll)` = max(2 x `poll_seconds`, 30 minutes). An approval means what the phone showed: when a refresh grows a
