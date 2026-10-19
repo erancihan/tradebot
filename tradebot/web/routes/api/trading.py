@@ -70,6 +70,7 @@ def account(repo: TradingRepository = Depends(get_trading_repo)):
         source=snap["source"], equity=snap.get("equity"), cash=snap.get("cash"),
         buying_power=snap.get("buying_power"), market_open=snap.get("market_open"),
         positions=[PositionView(**p) for p in snap.get("positions", [])],
+        note=snap.get("note"),
     )
 
 

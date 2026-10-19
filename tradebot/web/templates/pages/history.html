@@ -6,7 +6,9 @@
          data-charted="{{ 'true' if history.performance.present else 'false' }}">
   <div class="flex items-baseline justify-between">
     <h1 class="text-lg font-semibold text-slate-100">History</h1>
-    <span class="text-xs text-slate-500">account {{ history.mode }}</span>
+    <span class="text-xs text-slate-500">account {{ history.mode }}
+      {%- if history.started %} · since this run started
+        <span data-run-started>{{ history.started[:16] | replace("T", " ") }}</span>{% endif %}</span>
   </div>
 
   <div class="space-y-2 rounded-lg border border-slate-800 bg-slate-900/40 p-3">

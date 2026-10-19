@@ -33,13 +33,14 @@ def effective_qty(row: dict) -> float:
 
 
 #: Orders of one mode with a known fill, oldest fill first: what History's
-#: round trips are built from. Any status counts once shares moved (a cancel
+#: round trips are built from (rows above an id: a dry run's newest start, else
+#: 0). Any status counts once shares moved (a cancel
 #: after a partial fill too, as in :func:`effective_qty`); the web reader
 #: (``web/repository/history.py``) runs the same query read-only. ``SELECT *``
 #: so a log from before ``intent`` (the web never migrates) still reads.
 FILLED_ORDERS_SQL = (
-    "SELECT * FROM orders WHERE mode = ? AND filled_qty > 0 AND fill_price IS NOT NULL"
-    " ORDER BY COALESCE(filled_at, ts), ts, id")
+    "SELECT * FROM orders WHERE mode = ? AND id > ? AND filled_qty > 0"
+    " AND fill_price IS NOT NULL ORDER BY COALESCE(filled_at, ts), ts, id")
 
 
 def signed_effective_qty(row: dict) -> float:
@@ -111,7 +112,7 @@ class OrdersMixin:
 
     def filled_orders(self, mode: str) -> list[dict]:
         """Every order of ``mode`` with a known fill, in fill order."""
-        cur = self._conn.execute(FILLED_ORDERS_SQL, (mode,))
+        cur = self._conn.execute(FILLED_ORDERS_SQL, (mode, 0))
         cols = [c[0] for c in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 

@@ -16,8 +16,9 @@ class TradingRepository:
         self.db_path = db_path
 
     def equity_series(self, mode: str | None = None, limit: int = 2000) -> list[dict]:
-        where = "WHERE mode = ?" if mode else ""
-        params = (mode, limit) if mode else (limit,)
+        """Snapshots oldest first; one mode's from its newest run on (a dry run)."""
+        where = "WHERE mode = ? AND id > ?" if mode else ""
+        params = (mode, self._after(mode, "after_snapshot"), limit) if mode else (limit,)
         rows = _read(
             self.db_path,
             f"SELECT ts, equity, cash, mode FROM equity_snapshots {where} "
@@ -144,19 +145,30 @@ class TradingRepository:
     def latest_equity_for(self, mode: str) -> dict | None:
         return _proposals.latest_equity(self.db_path, mode)
 
+    def account_start(self, mode: str) -> dict | None:
+        """The newest dry-run start (``storage/accounts.py``); None for paper and live."""
+        return _history.account_start(self.db_path, mode)
+
+    def _after(self, mode: str, key: str) -> int:
+        start = self.account_start(mode)
+        return int(start[key]) if start else 0
+
     def orders_page(self, mode: str, before: tuple[str, int] | None = None,
                     limit: int = 20) -> list[dict]:
         """One page of the order log for History (``repository/history.py``),
-        keyed on the last shown ``(ts, id)``."""
-        return _history.orders_page(self.db_path, mode, before, limit)
+        keyed on the last shown ``(ts, id)``; a dry run's newest run only."""
+        return _history.orders_page(self.db_path, mode, before, limit,
+                                    self._after(mode, "after_order"))
 
     def proposal_batches_page(self, mode: str, before: tuple[str, int] | None = None,
                               limit: int = 20) -> list[dict]:
-        return _history.proposal_batches_page(self.db_path, mode, before, limit)
+        return _history.proposal_batches_page(self.db_path, mode, before, limit,
+                                              self._after(mode, "after_batch"))
 
     def filled_orders(self, mode: str) -> list[dict]:
-        """Orders of ``mode`` with a known fill, oldest fill first (History's trades)."""
-        return _history.filled_orders(self.db_path, mode)
+        """Orders of ``mode`` with a known fill, oldest fill first (History's
+        trades); a dry run's newest run only."""
+        return _history.filled_orders(self.db_path, mode, self._after(mode, "after_order"))
 
     def watchlist(self) -> list[str]:
         """The Today page's watchlist (``storage/watchlist.py``), oldest first."""

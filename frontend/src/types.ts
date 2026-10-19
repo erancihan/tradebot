@@ -67,6 +67,8 @@ export interface AccountView {
   buying_power: number | null;
   market_open: boolean | null;
   positions: PositionView[];
+  // Set when the broker failed and this is the last recorded paper snapshot.
+  note?: string | null;
 }
 
 export interface SeasonCurve {

@@ -15,6 +15,7 @@
   </div>
   <div class="mt-2 text-xs text-slate-500">
     source: <span class="text-slate-400">{{ account.source }}</span>
+    {% if account.note %} · <span class="text-amber-400" data-account-note>{{ account.note }}</span>{% endif %}
     {% if metrics.present %} · {{ metrics.points }} snapshots · mode <span class="text-slate-400">{{ metrics.mode }}</span>{% endif %}
   </div>
 </div>

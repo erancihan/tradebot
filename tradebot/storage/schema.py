@@ -92,6 +92,14 @@ CREATE TABLE IF NOT EXISTS watchlist (
     symbol    TEXT PRIMARY KEY,     -- upper-case, validated by the web layer
     added_at  TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS account_starts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    mode            TEXT NOT NULL,      -- dry_run: a fresh simulated account
+    ts              TEXT NOT NULL,      -- wall clock of the start
+    after_order     INTEGER NOT NULL,   -- the newest id of each table before it:
+    after_snapshot  INTEGER NOT NULL,   -- the run's rows are the ones above,
+    after_batch     INTEGER NOT NULL    -- since a replay's clock is its bars'
+);
 CREATE TABLE IF NOT EXISTS discover_runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at  TEXT NOT NULL,

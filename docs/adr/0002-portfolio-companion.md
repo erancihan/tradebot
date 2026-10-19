@@ -264,3 +264,20 @@ One new core concept, the proposal, feeds three flows.
 - A reminder comes at the earlier of the interval and the push's own link
   expiry (`announced_exp`), so a raised poll cannot leave dead buttons on the
   phone.
+
+## Addendum 2026-10-19: review 12
+
+- A Settings save carries the sha256 `version` of `config.yaml` the page read,
+  and the server refuses (409, reload) when the file changed since; the view
+  reads the file, not the server's copy. A page that posts no version is
+  accepted as before.
+- Every exit the broker makes on its own reaches the order log: a dry-run
+  stop or target and each filled Alpaca bracket leg (asked for with the parent,
+  `nested`) become one `exit` row, keyed by their id. Offline positions let an
+  exit reduce a holding at most to flat, the same rule as an `UnmatchedExit`.
+  Fills are learned at the start of every `Engine.step`, and an order last seen
+  working is asked at any age.
+- A dry-run account is one run: each dry-run broker build records an
+  `account_starts` row (the tables' newest ids, since a replay's clock is its
+  bars'), and History's dry_run reads begin there. The dashboard's fallback
+  after a broker error is the paper snapshot, named as a fallback on the page.
