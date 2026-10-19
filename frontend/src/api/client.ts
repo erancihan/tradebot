@@ -14,7 +14,7 @@ import type {
   OrderRow,
   ProposalEnvelope,
   SeasonDetail,
-  SettingsDoc,
+  SettingsSave,
   SettingsView,
   StackSpecs,
   StrategySpec,
@@ -196,7 +196,7 @@ export function getSettings(): Promise<SettingsView> {
   return getJson<SettingsView>("/api/settings");
 }
 
-export function saveSettings(body: SettingsDoc): Promise<SettingsView> {
+export function saveSettings(body: SettingsSave): Promise<SettingsView> {
   return postJson<SettingsView>("/api/settings", body);
 }
 

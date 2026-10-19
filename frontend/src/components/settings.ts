@@ -2,7 +2,8 @@
 // The server validates by building every component the document names, so a
 // refusal arrives as one readable sentence and is shown as-is. Nothing here
 // ever holds a broker key; alert destinations arrive masked and a masked or
-// blank value means "keep what the server has".
+// blank value means "keep what the server has". A save posts the file version
+// the page loaded; a 409 means the file changed meanwhile and says to reload.
 //
 // The strategy, selector and allocator pickers come from the registries
 // (/api/strategies, /api/stack); picking one resets its params to that
@@ -28,6 +29,8 @@ export function settings() {
     error: "",
     notice: "",
     original: null as SettingsDoc | null,
+    // The file's version this page last saw; posted back with a save.
+    version: undefined as string | undefined,
     form: null as SettingsForm | null,
     choices: { markets: [] as string[], timeframes: [] as string[] },
     strategies: [] as StrategySpec[],
@@ -48,6 +51,7 @@ export function settings() {
 
     apply(view: SettingsView) {
       this.original = view.settings;
+      this.version = view.version;
       const form = toForm(view.settings);
       // Show every form-able param, the ones the file leaves at default too.
       for (const kind of ["strategy", "selector", "allocation"] as const) {
@@ -90,7 +94,7 @@ export function settings() {
       this.error = "";
       this.notice = "";
       try {
-        const view = await saveSettings(toDoc(this.form, this.original));
+        const view = await saveSettings({ ...toDoc(this.form, this.original), version: this.version });
         this.apply(view);
         this.notice = view.notice ?? "Saved.";
       } catch (err) {

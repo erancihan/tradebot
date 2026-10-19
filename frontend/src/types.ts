@@ -340,12 +340,18 @@ export interface SettingsDoc {
   };
 }
 
+// POST /api/settings: the document plus the version the page loaded.
+export type SettingsSave = SettingsDoc & { version?: string };
+
 export interface SettingsView {
   settings: SettingsDoc;
   mode: string;
   credentials_present: boolean;
   config_path: string;
   config_exists: boolean;
+  // sha256 of config.yaml as served ("" = no file); a save posts it back and
+  // the server refuses (409) when the file changed since.
+  version?: string;
   webhook_configured: boolean;
   ntfy_configured: boolean;
   choices: { markets: string[]; timeframes: string[] };
