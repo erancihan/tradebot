@@ -70,6 +70,7 @@ class AccountView(BaseModel):
     buying_power: float | None = None
     market_open: bool | None = None
     positions: list[PositionView] = []
+    note: str | None = None           # set when the broker failed and this is a fallback
 
 
 class AllocationRow(BaseModel):

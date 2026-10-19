@@ -49,7 +49,7 @@ tradebot/
                  session (daily-loss anchor), fills (reconcile: Broker.order_status -> the order log's fills), unlisted
   autopilot/     state, schedule, runner (Autopilot, injected clock/sleep/calendar) + wake (tick), loop (run_forever),
                  approvals, parking (park + push), background, brief (MorningBrief), session, links (signed batch links)
-  storage/       tradebot.db mixins: orders, bars, weights, proposals, autopilot, watchlist, discover
+  storage/       tradebot.db mixins: orders, bars, weights, proposals, autopilot, watchlist, discover, accounts
   cli/           build_parser/main + one module per command
   arena/         api, loader, interfaces, adapters, simulation, scenario, runner +
                  isolation, sandbox, scoring, gate/, result, tournament, league,
@@ -162,15 +162,16 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
 - **Cost model differs from production:** raw (not dividend-adjusted) bars, no daily-loss halt
   in simulation, 1 bp slippage, and synthetic `open(t) == close(t-1)` hides signal-to-fill decay.
   Label it beside any quoted backtest. **Window selection is a bias:** run the sealed holdout once, last.
-- **Offline positions come from the order log** (signed sum per symbol for `settings.mode` via
-  `storage.orders.effective_qty`: `filled_qty` when the broker has said, nothing for a cancelled,
-  expired or rejected order beyond its partial fill, else the full `qty`), equity and cash from the
-  newest snapshot, else `initial_cash`. Holdings use the same sum at the last cached close (unpriced
-  = skipped, never guessed), or the paper broker with credentials. **Fills are learned by
-  `engine/fills.reconcile`** (open orders of the last 7 days) at the start of each autopilot pass,
-  in the Today refresh job (paper orders, with keys) and right after a submit; never on a page load.
+- **Offline positions come from the order log** (`storage.orders.net_positions` for `settings.mode`: `effective_qty` is `filled_qty`
+  when the broker has said, nothing for a cancelled, expired or rejected order beyond its partial fill, else the full `qty`; an `exit`
+  row stops at flat, never short), equity and cash from the newest snapshot, else `initial_cash`. Holdings use the same sum at the
+  last cached close (unpriced = skipped, never guessed), or the paper broker with credentials. **Fills are learned by `engine/fills.reconcile`**
+  (never-asked orders of the last 7 days, working ones at any age, a filled parent while a bracket leg rests) at the start
+  of every `Engine.step`, in the Today refresh job (paper orders, with keys) and right after a submit; never on a page load.
+  **Bracket exits are logged:** a dry-run stop/target and a filled Alpaca leg (`OrderStatus.legs`) each become one `exit` row.
 - **History** shows `default_mode()`, else `settings.mode`, pinned by `?mode=` in its URLs; orders and batches page on a
   `(ts, id)` keyset each (`X-History-Next`). `orders.price` is the sizing price (NULL on a flatten or old row); `schema.migrate` adds a later column on open, the web never.
+  Each dry-run broker build records an `account_starts` row; dry_run reads (and `/api/equity`) begin at the newest, by id ("since this run started").
   The performance card compares with equal-weight buy and hold of today's active list from cached daily closes extended by
   the account's recorded daily bars (paper and live only; a dry run replays what it was given), all but each symbol's newest (may be forming; cache wins a shared date; `benchmark_bars.py`,
   source `cache+recorded`), bought at the last close completed before the first snapshot (`services/benchmark.py`; `benchmark_card.py`:
@@ -257,16 +258,15 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
 - **The web autopilot is paper or dry-run, never live** (`autopilot_build`); a dry-run's account dies with a restart. `tradebot run --autopilot`
   builds as `run`, keeps state in scope `cli_<account>` (never the web's), expires no pending lines at start (a closed-market
   wake still does, for the shared account); a replay's clock reads its bars. Orders carry the pass clock, as batches do (approval: the tap's).
-- **With a morning brief, "off" keeps the loop alive** to send briefs from `engine.propose` (nothing
-  stored). `brief_for` prevents resends. A brief-only loop is `tradebot run --autopilot --mode off`.
+- **With a morning brief, "off" keeps the loop alive** to send briefs from `engine.propose` (nothing stored). `brief_for` prevents resends. A brief-only loop is `tradebot run --autopilot --mode off`.
 
 **Web and CI**
 - **The web writes `config.yaml` without comments. Secrets stay in `.env`**, read only from the
-  working directory (`Path.cwd()`, never upward; launchd's `WorkingDirectory`), `DOTENV_KEYS` only. A save merges
+  working directory (`Path.cwd()`, never upward; launchd's `WorkingDirectory`), `DOTENV_KEYS` only. The view reads the file and
+  carries its sha256 `version`; a save posting another version is a 409 (reload), none is accepted. A save merges
   the editable keys into the file on disk (mode, db_path, costs, universe kept), validates by building
   every component, writes atomically, then `autopilot_service.reset` stops the loop (stored mode kept).
-- **Alert destinations are masked both ways** (`settings_secrets`): a masked or omitted value keeps the
-  stored one only while it still points at the same host or ntfy server; `""` deletes it. Settings responses are `Cache-Control: no-store`.
+- **Alert destinations are masked both ways** (`settings_secrets`): a masked or omitted value keeps the stored one only while it still points at the same host or ntfy server; `""` deletes it. Settings responses are `Cache-Control: no-store`.
 - **Alpine state is a Proxy:** `structuredClone` throws (copy with JSON); ECharts lives in a closure.
   An x-show chart box is 0 wide at init (`charts/fit.ts` `fitToBox`); `$store` bindings need `x-data`.
 - **Pydantic coercion:** `JobRequest.params` stays `dict | None` (float coercion breaks ints).

@@ -28,8 +28,8 @@ class EngineHooksMixin:
         except Exception:
             log.exception("Notifier failed for event %s", event.get("type"))
 
-    def _check_brackets(self) -> None:
-        orders.check_brackets(self)
+    def _check_brackets(self, now=None) -> None:
+        orders.check_brackets(self, now)
 
     def _lookback_days(self) -> int:
         # Ensure enough history for every history-hungry component (strategy,

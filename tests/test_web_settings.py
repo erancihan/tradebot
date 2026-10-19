@@ -467,3 +467,61 @@ def test_the_no_trade_band_defaults_to_one_percent_and_round_trips(tmp_path):
     assert yaml.safe_load(open(path))["risk"]["rebalance_band_pct"] == 0.0
     assert _doc(client)["risk"]["rebalance_band_pct"] == 0.0
     assert client.app.state.settings.risk.rebalance_band_pct == 0.0
+
+
+# --- the file's version: a save never overwrites an edit it did not see -------
+
+def test_a_hand_edit_after_the_page_loaded_makes_the_save_a_409(tmp_path):
+    path = _config(tmp_path, "risk:\n  max_daily_loss_pct: 0.03\n")
+    client = _client(tmp_path, path)
+    view = client.get("/api/settings").json()
+    assert view["version"]
+    raw = yaml.safe_load(open(path))
+    raw["risk"]["max_daily_loss_pct"] = 0.01             # edited by hand meanwhile
+    with open(path, "w") as fh:
+        yaml.safe_dump(raw, fh)
+    before = open(path).read()
+    doc = dict(view["settings"], symbols=["VTI"], version=view["version"])
+    resp = _post(client, doc)
+    assert resp.status_code == 409, resp.text
+    assert "reload" in resp.json()["detail"].lower()
+    assert open(path).read() == before                   # the file is untouched
+
+
+def test_the_view_shows_the_file_not_the_servers_stale_copy(tmp_path):
+    path = _config(tmp_path)
+    client = _client(tmp_path, path)
+    client.get("/api/settings")
+    with open(path, "a") as fh:
+        fh.write("risk:\n  max_daily_loss_pct: 0.01\n")
+    assert client.get("/api/settings").json()["settings"]["risk"]["max_daily_loss_pct"] == 0.01
+
+
+def test_a_save_with_the_current_version_wins_and_returns_the_new_one(tmp_path):
+    path = _config(tmp_path)
+    client = _client(tmp_path, path)
+    view = client.get("/api/settings").json()
+    resp = _post(client, dict(view["settings"], symbols=["VTI"], version=view["version"]))
+    assert resp.status_code == 200, resp.text
+    new = resp.json()["version"]
+    assert new and new != view["version"]
+    assert new == client.get("/api/settings").json()["version"]
+    again = _post(client, dict(resp.json()["settings"], symbols=["BND"], version=new))
+    assert again.status_code == 200, again.text
+
+
+def test_a_save_without_a_version_is_accepted_as_before(tmp_path):
+    path = _config(tmp_path)
+    client = _client(tmp_path, path)
+    doc = _doc(client)
+    with open(path, "a") as fh:
+        fh.write("risk:\n  max_daily_loss_pct: 0.01\n")
+    assert _post(client, dict(doc, symbols=["VTI"])).status_code == 200
+
+
+def test_the_version_of_a_missing_file_is_empty(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    client = _client(tmp_path)
+    view = client.get("/api/settings").json()
+    assert view["version"] == ""
+    assert _post(client, dict(view["settings"], version="")).status_code == 200

@@ -2,9 +2,11 @@
 
 The engine logs an order the moment the broker accepts it, at the price it
 was sized at. Whether and at what price it filled arrives later, so open
-orders (never asked, or last seen working) are asked again at three points:
-the start of every autopilot pass, the Today refresh, and right after a
-submission. Never from a page load. A reconcile never breaks its caller.
+orders (never asked, last seen working, or filled with a bracket leg still
+resting) are asked again at three points: the start of every engine pass
+(``Engine.step``, so the autopilot and a plain ``tradebot run`` alike), the
+Today refresh, and right after a submission. Never from a page load. A filled
+bracket leg becomes an exit row of its own. A reconcile never breaks its caller.
 """
 
 from __future__ import annotations
@@ -16,15 +18,17 @@ from ..models import utcnow
 
 log = logging.getLogger("tradebot.fills")
 
-#: How far back an order still counts as open: older ones are left alone.
+#: How far back a never-asked order is still asked about. An order the broker
+#: last called working is asked at any age, until it settles.
 LOOKBACK_DAYS = 7
 
 
 def _row_changed(row: dict, status) -> bool:
     filled_at = status.filled_at.isoformat() if status.filled_at else None
     return (row.get("status"), row.get("filled_qty"), row.get("fill_price"),
-            row.get("filled_at")) != (status.status, float(status.filled_qty),
-                                      status.fill_price, filled_at)
+            row.get("filled_at"), bool(row.get("legs_open"))) != (
+        status.status, float(status.filled_qty), status.fill_price, filled_at,
+        bool(status.legs_open))
 
 
 #: Order ids whose failed lookup was already logged: one warning per id per
@@ -53,7 +57,13 @@ def reconcile_orders(broker, storage, mode: str, *, now: datetime | None = None,
     for row in storage.open_orders(mode, since):
         try:
             status = broker.order_status(row["broker_order_id"])
-            if status is None or not _row_changed(row, status):
+            if status is None:
+                continue
+            # A stop or target the broker filled on its own: an exit row,
+            # once per leg id, so the offline account sees the position close.
+            changed += sum(storage.record_leg_fill(row["symbol"], leg, mode)
+                           for leg in status.legs)
+            if not _row_changed(row, status):
                 continue
             if _overfilled(row, status):
                 log.warning("Order %s (%s) reports %s filled of %s ordered; not stored",

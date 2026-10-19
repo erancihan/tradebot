@@ -128,6 +128,10 @@ def parse_cursor(ts: str | None, row_id: int | None) -> Cursor | None:
 
 
 def view(repo, settings, cache_dir: str | None = None) -> dict:
+    """The page. A dry run's rows are its newest run's (a restart is a fresh
+    account), and ``started`` says since when; None for paper and live."""
     mode = active_mode(repo, settings)
-    return {"mode": mode, "performance": performance(repo, mode, settings, cache_dir),
+    start = repo.account_start(mode)
+    return {"mode": mode, "started": start["ts"] if start else None,
+            "performance": performance(repo, mode, settings, cache_dir),
             "trades": history_trades.view(repo, mode), **events_page(repo, mode)}

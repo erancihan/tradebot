@@ -31,16 +31,15 @@ def positions_from_orders(db_path: str, mode: str) -> dict[str, float]:
     The offline stand-in for a broker's positions. Each order counts what it
     filled when the broker has said (``storage.orders.effective_qty``: a
     cancelled or rejected order counts only its fill, usually none), else its
-    full quantity, which is what the dry-run broker does. ``SELECT *``: this
-    reader never migrates, so an old log comes back without the fill columns.
-    Flat symbols are left out.
+    full quantity, which is what the dry-run broker does. An exit stops at flat
+    (``storage.orders.apply_order``), so one with no recorded buy never reads
+    short. ``SELECT *``: this reader never migrates, so an old log comes back
+    without the fill columns. Flat symbols are left out.
     """
-    from ...storage.orders import signed_effective_qty
+    from ...storage.orders import net_positions
 
-    totals: dict[str, float] = {}
-    for row in _read(db_path, "SELECT * FROM orders WHERE mode = ? ORDER BY id", (mode,)):
-        totals[row["symbol"]] = totals.get(row["symbol"], 0.0) + signed_effective_qty(row)
-    return {s: q for s, q in sorted(totals.items()) if abs(q) > 1e-9}
+    return net_positions(_read(db_path, "SELECT * FROM orders WHERE mode = ? ORDER BY id",
+                               (mode,)))
 
 
 def latest_equity(db_path: str, mode: str) -> dict | None:

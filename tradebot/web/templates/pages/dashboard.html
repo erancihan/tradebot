@@ -53,6 +53,8 @@
       <div class="text-xs uppercase tracking-wide text-slate-500">Source</div>
       <div class="text-lg font-semibold text-slate-300" x-text="$store.live.account ? $store.live.account.source : '—'"></div>
     </div>
+    <p class="col-span-full text-xs text-amber-400" x-show="$store.live.account && $store.live.account.note" x-cloak
+       x-text="$store.live.account ? $store.live.account.note : ''" data-account-note></p>
   </div>
 
   <div x-data="partialLoader('/partials/stats')" x-html="html">

@@ -48,6 +48,7 @@ def _build_dry_engine(settings, args: argparse.Namespace):
         data, timeframe=settings.timeframe, initial_cash=settings.initial_cash,
         slippage_bps=settings.slippage_bps, commission=settings.commission,
     )
+    storage.record_account_start("dry_run")   # a fresh virtual account: History starts here
     engine = Engine(
         settings, broker, data, strategy, RiskManager(settings.risk), storage,
         mode_label="dry_run", enforce_live_ack=False,

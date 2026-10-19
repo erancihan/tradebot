@@ -37,6 +37,8 @@ def build(settings, *, trading_db: str, cache_dir: str,
     broker, data, label = (_paper(creds) if creds is not None
                            else _dry_run(settings, cache_dir))
     storage = Storage(trading_db, check_same_thread=False)
+    if label == "dry_run":               # a fresh virtual account: History starts here
+        storage.record_account_start(label)
     engine = Engine(settings, broker, data,
                     build_strategy(settings.strategy_name, settings.strategy_params),
                     RiskManager(settings.risk), storage, mode_label=label,

@@ -49,7 +49,10 @@ default), alert destinations and the exchange calendar.
 Tap **Save**. The server builds every component you named, so a typo comes
 back as one readable sentence. Then it writes `config.yaml` atomically and
 reloads. A running autopilot stops on save so it never trades on old settings.
-Start it again from Autopilot.
+Start it again from Autopilot. The page shows what `config.yaml` says now. If
+the file changed after you opened the page (a hand edit, or a save from another
+phone), Save refuses and asks you to reload, so it never overwrites an edit it
+did not show you.
 
 Settings never shows or accepts a broker key. It only says whether `.env` has
 them. It never changes `mode` (paper or live). Alert destinations show masked.
@@ -294,7 +297,7 @@ before a restart you want to look at first. Trades waiting for approval wait
 on: the first pass after the restart re-sizes them if it proposes the same
 trades, and replaces them if not.
 A dry-run's virtual account starts over, while the paper account lives at
-Alpaca. Approve links in phone alerts outlive a restart only with
+Alpaca; History then shows the dry run since this run started. Approve links in phone alerts outlive a restart only with
 `TRADEBOT_WEB_TOKEN` set.
 
 ### More pages (under More on a phone)
@@ -319,10 +322,13 @@ Alpaca. Approve links in phone alerts outlive a restart only with
   pending, approved, rejected, submitted or expired). Each order also says what
   the broker did with it ("filled 13 sh @ $767.24 +$5.07 vs plan", partial,
   cancelled, rejected, or submitted until the broker has been asked); the bot
-  asks at each autopilot pass, on a Today refresh and right after it orders.
+  asks at the start of every pass (autopilot or `tradebot run`), on a Today
+  refresh and right after it orders. A stop or target that fired is listed as
+  its own sell, so the position and the trade close in the log too.
   Tap a batch for each line's reason. **Show more** loads older entries. Today links here too.
 - **Dashboard** (`/`): equity curve, account stats, orders, positions and the
-  target allocations of the latest rebalance.
+  target allocations of the latest rebalance. When Alpaca keys are set but the
+  broker does not answer, it shows the last recorded paper snapshot and says so.
 - **Run** (`/run`): a backtest or dry-run on synthetic or cached real bars.
   Every result wears a **provenance badge** naming its data.
 - **Chart** (`/chart`): candlesticks with order pins. The account header and

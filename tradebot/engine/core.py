@@ -29,7 +29,7 @@ from ..notify import LogNotifier
 from ..risk import RiskManager
 from ..storage import Storage
 from ..strategies.base import Strategy
-from . import orders, pending, session, signals, unlisted
+from . import fills, orders, pending, session, signals, unlisted
 from .execution import EngineExecutionMixin
 from .hooks import EngineHooksMixin
 from .orders import RebalanceAction
@@ -91,19 +91,23 @@ class Engine(EngineHooksMixin, EngineExecutionMixin):
 
     def step(self, submit: bool = True, now: datetime | None = None, *,
              record: bool = True) -> PassOutcome:
-        """One full pass: book bracket exits, read the account, build the
-        proposal (``advisor.propose``), then submit its lines, or with
-        ``submit=False`` store them as pending for approval (``record=False``:
-        return them unstored; the autopilot may carry its batch over)."""
+        """One full pass: learn the log's fills, book bracket exits, read the
+        account, build the proposal (``advisor.propose``), then submit its
+        lines, or with ``submit=False`` store them as pending for approval
+        (``record=False``: return them unstored; the autopilot may carry its
+        batch over)."""
+        now = now or utcnow()             # the pass clock: a replay's is its bar time
+        # Every pass, open or closed, autopilot or plain `run`: the one place
+        # fills are learned, so no order stays "new" for want of a submit.
+        fills.reconcile_quietly(self, now=now)
         if not self.broker.is_market_open():
             log.info("Market closed; skipping rebalance.")
             return PassOutcome(market_closed=True)
 
         # Before anything reads the account: a stop that fired on this bar has
         # to be booked first, or sizing would be done against stale equity.
-        self._check_brackets()
+        self._check_brackets(now)
 
-        now = now or utcnow()             # the pass clock: a replay's is its bar time
         day = session.roll_session(self, now)
         acct = self.broker.account()
         if self._session_start_equity is None:

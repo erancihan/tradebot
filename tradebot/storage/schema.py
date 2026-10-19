@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS orders (
     filled_qty      REAL,           -- shares filled so far, per the broker
     fill_price      REAL,           -- average fill price; NULL until something filled
     filled_at       TEXT,
-    intent          TEXT            -- entry | exit (opens/adds or reduces); NULL = before it
+    intent          TEXT,           -- entry | exit (opens/adds or reduces); NULL = before it
+    legs_open       INTEGER         -- 1 while a bracket leg of this entry still rests
 );
 CREATE TABLE IF NOT EXISTS equity_snapshots (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -91,6 +92,14 @@ CREATE TABLE IF NOT EXISTS watchlist (
     symbol    TEXT PRIMARY KEY,     -- upper-case, validated by the web layer
     added_at  TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS account_starts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    mode            TEXT NOT NULL,      -- dry_run: a fresh simulated account
+    ts              TEXT NOT NULL,      -- wall clock of the start
+    after_order     INTEGER NOT NULL,   -- the newest id of each table before it:
+    after_snapshot  INTEGER NOT NULL,   -- the run's rows are the ones above,
+    after_batch     INTEGER NOT NULL    -- since a replay's clock is its bars'
+);
 CREATE TABLE IF NOT EXISTS discover_runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at  TEXT NOT NULL,
@@ -109,6 +118,7 @@ _ADDED_COLUMNS = (
     ("orders", "fill_price", "REAL"),
     ("orders", "filled_at", "TEXT"),
     ("orders", "intent", "TEXT"),
+    ("orders", "legs_open", "INTEGER"),
 )
 
 

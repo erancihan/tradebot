@@ -9,6 +9,7 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
+from .accounts import AccountsMixin
 from .autopilot import AutopilotMixin
 from .bars import BarsMixin, _ts_iso
 from .discover import DiscoverMixin
@@ -22,7 +23,7 @@ __all__ = ["Storage"]
 
 
 class Storage(OrdersMixin, BarsMixin, WeightsMixin, ProposalsMixin, AutopilotMixin,
-              WatchlistMixin, DiscoverMixin):
+              WatchlistMixin, DiscoverMixin, AccountsMixin):
     def __init__(self, path: str | Path = "tradebot.db", *,
                  check_same_thread: bool = True) -> None:
         # ``check_same_thread=False`` is for the autopilot, whose loop thread

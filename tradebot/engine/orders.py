@@ -10,6 +10,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 
+from ..broker.base import LegFill
 from ..models import Order, Side, opens_exposure, utcnow
 
 log = logging.getLogger("tradebot.engine")
@@ -25,12 +26,14 @@ class RebalanceAction:
     submitted_id: str | None = None
 
 
-def check_brackets(engine) -> None:
-    """Let a simulating broker fire its resting stops/targets for this bar.
+def check_brackets(engine, now: datetime | None = None) -> None:
+    """Let a simulating broker fire its resting stops/targets for this bar,
+    and log each exit (stamped ``now``, the pass clock) so the order log and
+    the offline account see the position close.
 
     Duck-typed on purpose: a real broker holds the bracket legs itself and
-    exposes no such hook, so this is a no-op live and the `Broker` ABC stays
-    as small as it was.
+    exposes no such hook, so this is a no-op live (the reconcile logs a real
+    broker's filled legs) and the `Broker` ABC stays as small as it was.
     """
     check = getattr(engine.broker, "check_brackets", None)
     if check is None:
@@ -41,11 +44,23 @@ def check_brackets(engine) -> None:
         log.exception("Bracket check failed; continuing the pass")
         return
     for fill in fills:
+        if engine.storage:
+            _log_bracket_exit(engine, fill, now or fill.timestamp)
         engine._notify({
             "type": "bracket_exit", "symbol": fill.symbol,
             "qty": fill.qty, "price": fill.price,
             "ts": fill.timestamp.isoformat(),
         })
+
+
+def _log_bracket_exit(engine, fill, when: datetime) -> None:
+    """One simulated leg as a filled exit row; a log failure never breaks the pass."""
+    leg = LegFill(fill.order_id or f"bracket:{fill.symbol}:{when.isoformat()}",
+                  "buy" if fill.qty > 0 else "sell", abs(fill.qty), fill.price, when)
+    try:
+        engine.storage.record_leg_fill(fill.symbol, leg, engine.mode)
+    except Exception:  # noqa: BLE001 - the exit happened; bookkeeping must not undo it
+        log.exception("%s: bracket exit was not logged", fill.symbol)
 
 
 def current_positions(engine, frames: dict[str, object]) -> dict[str, float]:
