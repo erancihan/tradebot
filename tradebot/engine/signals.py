@@ -1,8 +1,10 @@
-"""Data-side steps of a rebalance pass: bars and selector history."""
+"""Data-side steps of a rebalance pass: bars and the stored history."""
 
 from __future__ import annotations
 
 import logging
+
+from ..advisor.history import HISTORY_BARS, bounded
 
 log = logging.getLogger("tradebot.engine")
 
@@ -29,28 +31,31 @@ def fetch_frames(engine) -> dict[str, object]:
     return frames
 
 
-def selector_frames(engine, fetched: dict[str, object]) -> dict[str, object]:
-    """Full accumulated per-symbol history for the selector.
+def history_frames(engine, fetched: dict[str, object]) -> dict[str, object]:
+    """Full accumulated per-symbol history for the strategy, allocator and selector.
 
-    The strategy is stateless over a bounded window, so the fetched frames
-    are fine for it. A `RankedSelector` is not: its hysteresis walk carries
-    `held` from an empty set, so a verdict depends on where the frame
-    *starts*. Feeding it the rolling fetch window made live selection depend
-    on process start time and diverge from the backtest that validated it.
+    A strategy is not stateless over a bounded window: ``supertrend``'s bands,
+    ``rsi_reversion``'s held state and every EMA carry state from the first
+    bar, and a `RankedSelector` walk carries `held` from an empty set. On the
+    rolling fetch window a verdict depended on when the process started and
+    diverged from the full-frame backtest that validated it.
 
     Every fetched bar is already persisted by `fetch_frames`, so the store
-    holds a superset of the window. Without a store (or before any history has
-    accumulated) we fall back to the fetched frames — same behaviour as
-    before, and the only honest option when there is nothing else to read.
+    holds a superset of the window, read back bounded by
+    ``advisor.history.HISTORY_BARS``. Without a store (or before any history
+    has accumulated) we fall back to the fetched frames: the only honest
+    option when there is nothing else to read.
     """
     if engine.storage is None:
-        return fetched
+        return {sym: bounded(window) for sym, window in fetched.items()}
     out: dict[str, object] = {}
     for sym, window in fetched.items():
         try:
-            stored = engine.storage.load_bars(sym, engine.settings.timeframe, engine.mode)
+            stored = engine.storage.load_bars(sym, engine.settings.timeframe, engine.mode,
+                                              limit=HISTORY_BARS)
         except Exception:
             log.exception("Could not read stored bars for %s; using the fetch window", sym)
             stored = None
-        out[sym] = stored if stored is not None and len(stored) >= len(window) else window
+        use = stored if stored is not None and len(stored) >= len(window) else window
+        out[sym] = bounded(use)
     return out

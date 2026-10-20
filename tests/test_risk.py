@@ -126,3 +126,13 @@ def test_sizing_rejects_bad_prices(bad_price):
     assert q == 0.0 and math.isfinite(q)
     c = r.clamp_to_exposure(50, price=bad_price, equity=10_000, current_gross=0)
     assert c == 0.0 and math.isfinite(c)
+
+
+def test_material_delta_a_sign_flip_always_executes():
+    """Long to short (or back) inside the band is not drift: like a full exit,
+    it always trades, or the book stays long while the strategy says short."""
+    r = rm(rebalance_band_pct=0.02, allow_fractional=True)
+    assert r.material_delta(desired=-0.5, current=0.4, price=100, equity=10_000) == pytest.approx(-0.9)
+    assert r.material_delta(desired=0.5, current=-0.4, price=100, equity=10_000) == pytest.approx(0.9)
+    # Same side, same size of move: still banded.
+    assert r.material_delta(desired=1.3, current=0.4, price=100, equity=10_000) == 0.0

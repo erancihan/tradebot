@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 from ...config import AlpacaCredentials
 from ...data.cache import BarCache, build_default_fetcher
+from ...advisor.history import bounded
 from ...engine.unlisted import manages_unlisted_for
 from ...models import is_equity
 from ..repository import TradingRepository
@@ -88,7 +89,7 @@ def _paper_broker(creds: AlpacaCredentials):
 
 
 def lookback_bars(components) -> int:
-    """Bars the strategy window needs: the longest warmup plus headroom."""
+    """Bars a refresh fetches and requires: the longest warmup plus headroom."""
     need = max((c.required_history for c in components if c is not None), default=1)
     return int(need) + LOOKBACK_HEADROOM
 
@@ -124,11 +125,11 @@ def build_inputs(settings, *, trading_db: str, cache_dir: str, lookback: int,
 
 
 def _frames(settings, cache_dir, lookback, fetcher, now):
-    """(strategy window, full cached history) per symbol.
+    """(strategy frames, selector frames) per symbol: one cached history.
 
-    The selector gets the whole cached history: a ranked walk's verdict
-    depends on where its frame starts, so a lookback-trimmed head would
-    change who is selected.
+    Both get the whole cached history (``advisor.history``, the engine's rule):
+    a stateful strategy's verdict and a ranked walk's both depend on where
+    the frame starts. ``lookback`` only sizes the fetch and the minimum.
     """
     cache, tf = BarCache(cache_dir), settings.timeframe
     # Calendar span for `lookback` trading days, with room for holidays.
@@ -145,7 +146,7 @@ def _frames(settings, cache_dir, lookback, fetcher, now):
         if len(full) < lookback - LOOKBACK_HEADROOM:
             missing.append(sym)
             continue
-        history[sym], frames[sym] = full, full.iloc[-lookback:]
+        history[sym] = frames[sym] = bounded(full)
     if missing:
         hint = _pull_hint(" ".join(missing), tf, start.date().isoformat(),
                           now.date().isoformat())
