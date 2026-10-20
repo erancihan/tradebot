@@ -108,7 +108,7 @@ changes the field size some tests assert on — see the CLAUDE.md gotcha.
   (`data/synthetic.py synthetic_regime_ohlcv`, continuous price path).
 - **Isolation:** two runners behind the `Runner` protocol (`runner.py`),
   chosen by `default_runner` via `--isolation`: `process` (default, hard
-  kill-on-timeout + CPU/memory `rlimit`s — **raises** if fork is unavailable,
+  kill-on-timeout + CPU/memory `rlimit`s — each contestant imported, built and run in a fresh hardened interpreter (`spawn.py`/`child.py`, plain-JSON reply `wire.py`); **raises** off POSIX,
   never silently downgrades), `thread` (portable **soft** runner), `auto`
   (process if possible, else warned soft fallback). `SubprocessRunner` lives in
   `isolation.py`, `InProcessRunner` in `runner.py`. Each contestant is
