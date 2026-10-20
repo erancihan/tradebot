@@ -60,6 +60,7 @@ class Backtester:
         data: dict[str, pd.DataFrame] | pd.DataFrame,
         symbol: str = "ASSET",
         cash_flows: dict[pd.Timestamp, float] | None = None,
+        start: pd.Timestamp | None = None,
     ) -> BacktestResult:
         """Run the book over ``data``.
 
@@ -67,6 +68,11 @@ class Backtester:
         that bar is sized, so a contribution is invested at that bar's open
         like any other cash. ``None`` (the default, and the arena's only mode)
         leaves the loop exactly as it was.
+
+        ``start``: the bars strictly before it are warmup. The strategy,
+        selector and allocator see them as history, but the book opens at the
+        first bar at or after ``start`` and the result (equity, flows) begins
+        there, so a plan is not left in cash while its indicators warm up.
         """
         if isinstance(data, pd.DataFrame):
             data = {symbol: data}
@@ -80,17 +86,19 @@ class Backtester:
         opens = {s: aligned[s]["open"] for s in data}
         closes = {s: aligned[s]["close"] for s in data}
         member = shifted_membership(self.selector, aligned)
-        flows = bar_cash_flows(cash_flows, common)
+        first = _first_bar(common, start)
+        flows = bar_cash_flows(cash_flows, common[first:])
 
         pf = Portfolio(cash=self.initial_cash)
         equity_points: list[float] = []
         slip = self.slippage_bps / 10_000.0
-        prev_closes: dict[str, float] = {}
+        # After a warmup the bar before the first is a printed close like any other.
+        prev_closes = close_prices_at(closes, first - 1) if first else {}
 
-        for i in range(len(common)):
+        for i in range(first, len(common)):
             close_prices = close_prices_at(closes, i)
             if flows is not None:
-                pf.cash += float(flows.iloc[i])
+                pf.cash += float(flows.iloc[i - first])
             # Gather this bar's fillable symbols, then size the book jointly so
             # the result never depends on symbol iteration order.
             bar_targets, bar_prices = fillable_targets(
@@ -106,7 +114,7 @@ class Backtester:
             equity_points.append(pf.equity(close_prices))
             prev_closes = close_prices
 
-        return build_result(equity_points, common, pf, self.initial_cash, flows)
+        return build_result(equity_points, common[first:], pf, self.initial_cash, flows)
 
     def _shifted_targets(self, aligned: dict[str, pd.DataFrame]) -> dict[str, pd.Series]:
         """Per-symbol targets on the one-bar shift: decide on t, act on t+1."""
@@ -114,3 +122,13 @@ class Backtester:
             sym: self.strategy.target_positions(frame).shift(1).fillna(0).astype(int)
             for sym, frame in aligned.items()
         }
+
+
+def _first_bar(common: pd.DatetimeIndex, start: pd.Timestamp | None) -> int:
+    """The index of the first bar at or after ``start`` (0 without one)."""
+    if start is None:
+        return 0
+    first = int(common.searchsorted(pd.Timestamp(start), side="left"))
+    if first >= len(common):
+        raise ValueError(f"no bars on or after {start} to backtest")
+    return first

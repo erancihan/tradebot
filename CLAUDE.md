@@ -14,15 +14,13 @@ say what to buy or sell today, with a reason. **Autopilot** runs the paper
 account, with an approve-first mode. **What-if** replays a past plan against
 buy and hold (decisions: `docs/adr/0002-portfolio-companion.md`). **Settings**
 edits `config.yaml` from the phone. **History** shows what the bot ordered and
-suggested. Research: `docs/research-record.md`. New work starts a new plan
-folder under `docs/plans/<slug>/` (see Docs policy).
+suggested. Research: `docs/research-record.md`. New work starts a new plan folder under `docs/plans/<slug>/` (see Docs policy).
 
 ## Agent skills
 
 Project skills live in `.claude/skills/`. Keep them in sync with this file.
 - **tradebot-dev**: orientation, the dev loop, the pre-commit checklist. Start here.
-- **add-strategy**: add a pluggable trading strategy.
-- **add-arena-algo**: write an arena contestant or extend the arena.
+- **add-strategy**: add a pluggable trading strategy. **add-arena-algo**: write an arena contestant or extend the arena.
 
 ## Layout
 
@@ -45,7 +43,7 @@ tradebot/
   data/          synthetic (+ load_csv) + factor_panel, cache + coverage, replay, alpaca_data, stream
   market/        base (MarketCalendar, TableCalendar), us, bist, registry (CALENDARS)
   advisor/       propose (bars + account -> Proposal), explain, types, unlisted (off-list holdings)
-  engine/        core (Engine.step -> PassOutcome) + hooks, execution (submit, run_forever), signals, orders, pending,
+  engine/        core (Engine.step -> PassOutcome) + hooks, active (list per pass), execution (submit, run_forever), signals, orders, pending,
                  session (daily-loss anchor), fills (reconcile: Broker.order_status -> the order log's fills), unlisted
   autopilot/     state, schedule, runner (Autopilot, injected clock/sleep/calendar) + wake (tick), loop (run_forever),
                  approvals, parking (park + push), background, brief (MorningBrief), session, links (signed batch links)
@@ -127,8 +125,8 @@ make install | install-web | install-all | test | demo | dryrun | arena | web  #
 cd frontend && npm run typecheck | test | build | watch:js           # after install-web
 ```
 CLI: `tradebot {backtest,run,status,demo,arena,data,universe}`, `tradebot-web [--check]` (prints the startup line,
-exits). Config: `--config`, else `$TRADEBOT_CONFIG`, else `./config.yaml`, else SPY/QQQ (`resolve_settings`; a Settings save creates it). Web db:
-`--trading-db`, else `$TRADEBOT_DB`, else `db_path`, as `tradebot run`. `run --dry-run`/`--replay` forward-test.
+exits). Config: `--config`, else `$TRADEBOT_CONFIG`, else `./config.yaml`, else SPY/QQQ (`resolve_settings`; a Settings save creates it). Trading db
+(web, `run`, `status`): `--trading-db`, else `$TRADEBOT_DB`, else `db_path` (`config.trading_db_path`). `run --dry-run`/`--replay` forward-test.
 Arena: `arena {list,run,validate,history,show,league,season,gate,journal}`,
 `arena season {create,seed,list,standings,run}`. CI (`.github/workflows/ci.yml`)
 runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR, no credentials.
@@ -145,9 +143,8 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
 ## Gotchas
 
 **Execution and data**
-- **Change `advisor.propose`, not `Engine.rebalance`.** The engine calls
-  `propose` and submits its lines, so a Today suggestion is exactly what a pass
-  would trade (`test_propose_matches_engine_rebalance_deltas`).
+- **Change `advisor.propose`, not `Engine.rebalance`.** The engine calls `propose` and submits its lines, so a Today
+  suggestion is exactly what a pass would trade (`test_propose_matches_engine_rebalance_deltas`).
 - **Bad prices are flat.** NaN, inf or non-positive prices never reach sizing. All three loops skip the symbol (`math.floor(NaN)` raises).
 - **Allocator history:** `aligned.iloc[:i]` at fill bar `i`. **ReplayData** advances once per step.
 - **Selectors are prefix-stable** (verdict at `t` from bars `<= t` and earlier verdicts). A ranked
@@ -179,20 +176,23 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   **Trades** are round trips by average cost (`portfolio_pnl.book`) from filled orders only (`filled_orders`: `filled_qty > 0`, any status); hand trades never count, open ones show no P&L. `orders.intent` (entry | exit, NULL on old rows = opens as before): an exit with no trip to close is an `UnmatchedExit` ("Sold without a recorded buy"), never a short, never in the summary.
 - **The Today refresh** gives the selector the whole cached history and the strategy the last `required_history + 30` bars, so engine and web can differ when their histories start on different days.
 - **One list everywhere:** the watchlist when not empty, else `settings.symbols` (`storage/watchlist.resolve_active`;
-  web `with_active_symbols`, a copy; `tradebot run` too, printing `symbols=watchlist(N)`). A watchlist edit stops a running
-  autopilot (`autopilot_service.reset`), as a Settings save does. Symbols match `models.SYMBOL_RE` after upper-casing.
+  web `with_active_symbols`, a copy). The engine re-reads it at every pass (`engine/active.py`, the engine's build list as the
+  fallback; logs `symbols=watchlist(N)` on a change), so a `tradebot run` loop sees a phone edit; the web pilot is also reset
+  (`autopilot_service.reset`), as by a Settings save. Config symbols must match `models.SYMBOL_RE` (`config_load` refuses).
 - **The autopilot manages exactly the list:** a held equity off the list gets a sell-to-flat line (`unlisted` in
   `advisor.propose`; `engine/unlisted.py`, web `unlisted_service`; no price = skipped; exits submit first; only
   `models.is_equity`: crypto and options are left alone by the engine, Today and the breaker's flatten). Never live;
   `manage_unlisted: false` turns it off. The 1% band is the product's (`Settings`, `risk.product_risk`, so a `tradebot
   backtest` of a Settings file uses it); the arena, what-if and the research record keep `RiskConfig()`'s 0.
-- **Discover** ranks by the `MomentumSelector` score over the cached or Alpaca pool, excludes
-  held and watched names, persists in `discover_runs`; Add seeds an empty watchlist first.
+- **Discover** ranks by the `MomentumSelector` score over the cached or Alpaca pool, excludes held and watched names
+  before the 20-name cap, persists in `discover_runs`; `as_of` is the newest bar used (`as_of_stale` past `MAX_STALE_SESSIONS`).
+  Every Add (chip or Discover) seeds an empty watchlist with the config symbols first (`symbols_service.add_keeping_list`).
 - **Contributions are not returns.** With `cash_flows` metrics use the growth
   index `equity_t / (equity_{t-1} + flow_t)`: a flow is invested at its bar's
   open and earns that bar. The arena never passes flows. What-if cash: month's first bar.
-- **What-if books are fully investable** (`whatif_risk()`). The benchmark is
-  equal-weight buy and hold with the same cash, so a buy-and-hold plan ties it.
+- **What-if books are fully investable** (`whatif_risk()`). The benchmark is equal-weight buy and hold with the same cash,
+  so a buy-and-hold plan ties it. The stack warms up on `required_history` bars strictly before `start` (`Backtester.run(start=)`
+  keeps them out of the result); a comparison warms every rule for the longest. A synthetic range under `MIN_REAL_BARS` is refused.
 - **Compare strategies** runs each strategy on defaults with the plan's allocator and selector,
   plus a tuned plan as `<name> (your settings)`; the server flags the plan's row (`plan`). Meta
   strategies (a roster) are skipped, a raising one is an `errors` entry, 120 s cap.
@@ -206,8 +206,7 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   last, after `no_new_privs`. An unenforceable tier (CI, macOS) logs one warning
   per mechanism. `--require-sandbox` makes it fatal. `sandbox.scrub_secrets`
   removes `ALPACA_*` and `TRADEBOT_LIVE_CONFIRM` from the child's environment.
-- **`arena run` journals** into `--db` (default `./arena.db`). Tests pass
-  `--db <tmp_path>` or `--no-journal`. `run_tournament` has no side effects.
+- **`arena run` journals** into `--db` (default `./arena.db`). Tests pass `--db <tmp_path>` or `--no-journal`. `run_tournament` has no side effects.
 - **The `algos/` head-count (12) is in tests** (`test_web.py`,
   `test_arena_season.py`, `test_arena_tournament.py`, `test_arena_journal.py`).
   `canaries/` and `consortium/` are subdirectories the loader glob skips.
@@ -248,7 +247,7 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   account: `reset` hands a pass in flight to the next `get`, which joins it first. Run `tradebot run --autopilot` or the web pilot per account, never both.
 - **Signed batch links** (`autopilot/links.py`; buttons when `safe_public_url(notify.public_url)`)
   are paper-only (other pushes get just "Open") and account-bound (`account:batch:verb:exp`); they act
-  on that account's pending lines under the lock (`Autopilot.act_on_batch`; foreign batch = 409). Key
+  on that account's pending lines under the lock (`Autopilot.act_on_batch`; foreign batch = 409; a no-op link, stale, closed, re-sized or replaced, is a 409 and stays used, so ntfy keeps the push). Key
   from `TRADEBOT_WEB_TOKEN`, else per-process (the CLI then arms no links); `ttl_seconds`; single use per process (after a
   restart a used link acts again until `exp`). They skip the cookie gate, not the guard. **The ntfy topic grants approval.**
 - **The daily-loss breaker is per session day and flattens** (`engine/session.py`): each pass rolls the anchor when `now`'s exchange
@@ -270,6 +269,7 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
 - **Alpine state is a Proxy:** `structuredClone` throws (copy with JSON); ECharts lives in a closure.
   An x-show chart box is 0 wide at init (`charts/fit.ts` `fitToBox`); `$store` bindings need `x-data`.
 - **Pydantic coercion:** `JobRequest.params` stays `dict | None` (float coercion breaks ints).
+- **A cache name is never a path:** `/api/jobs` cleans `symbol` and `timeframe` (422); `BarCache` raises on any other name.
 - **Starlette:** `templates.TemplateResponse(request, name, context)`. Equity curves serialise as
   `{index: [...], equity: [...]}`. Dashboard refresh is one SSE stream into an Alpine `live` store.
 - **State-changing requests need `X-Requested-With: tradebot`** (`web/guard.py`).

@@ -24,6 +24,9 @@ IMPLICIT_CONFIG = "config.yaml"
 #: The environment variable naming the config file when no path is given.
 CONFIG_ENV = "TRADEBOT_CONFIG"
 
+#: Names the trading database when no ``--trading-db`` flag is given.
+DB_ENV = "TRADEBOT_DB"
+
 
 def config_path(path: str | None) -> str | None:
     """The file to load: ``path``, else ``$TRADEBOT_CONFIG``, else ``./config.yaml``
@@ -49,3 +52,10 @@ def resolve_settings(path: str | None) -> tuple[Settings, str | None]:
     if path is None:
         return Settings(symbols=list(DEFAULT_SYMBOLS)), None
     return Settings.from_yaml(path), str(path)
+
+
+def trading_db_path(settings: Settings, flag: str | None = None) -> str:
+    """The trading database: ``flag`` (``--trading-db``), else ``$TRADEBOT_DB``,
+    else the config's ``db_path``. One rule for ``tradebot`` and ``tradebot-web``,
+    so on one machine they share one watchlist, order log and batch numbers."""
+    return flag or os.environ.get(DB_ENV) or settings.db_path

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 
-from .common import _load_settings, _resolve_universe
+from .common import _load_settings, _resolve_universe, add_trading_db
 from .dryrun import _run_dry
 
 
@@ -12,6 +12,7 @@ def register(sub: argparse._SubParsersAction) -> None:
     r = sub.add_parser("run", help="run the paper/live/dry-run trading loop")
     r.add_argument("--config", default=None,
                    help="settings file (defaults to ./config.yaml when present)")
+    add_trading_db(r)
     r.add_argument("--once", action="store_true", help="single rebalance pass then exit")
     r.add_argument("--iterations", type=int, default=None, help="stop after N loops")
     r.add_argument(
@@ -99,7 +100,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     engine = _build_paper_engine(settings)
 
     mode = "LIVE (real money)" if settings.is_live else "paper"
-    print(f"Running in {mode} mode on {settings.symbols} with {engine.strategy.name}.")
+    print(f"Running in {mode} mode on {engine.settings.symbols} with {engine.strategy.name}.")
     if args.once:
         for action in engine.rebalance():
             print(f"  {action.symbol}: target={action.target} order_qty={action.order_qty}")

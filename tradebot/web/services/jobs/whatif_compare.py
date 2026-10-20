@@ -25,7 +25,7 @@ def _run_whatif_compare(params: dict) -> dict:
 
     frames, provenance = resolve_many(params)
     names = [s["name"] for s in strategy_catalog()]
-    out = compare_strategies(_plan(params, frames), frames, names, budget_s=BUDGET_S)
+    out = compare_strategies(_plan(params, frames, provenance), frames, names, budget_s=BUDGET_S)
     rows = out.rows()
     curves = {r["name"]: _curve(out.results[r["name"]]) for r in rows[:TOP_CURVES]}
     curves["benchmark"] = _curve(out.benchmark)

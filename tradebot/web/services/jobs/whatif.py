@@ -6,13 +6,14 @@ from .frames import _equity_payload
 from .frames_many import resolve_many
 
 
-def _plan(params: dict, frames: dict):
+def _plan(params: dict, frames: dict, provenance: dict):
+    """The plan from the request; without a ``start`` it starts where the
+    provenance does (the frames may carry warmup bars before that)."""
     from ....whatif import WhatIfPlan
 
-    first = next(iter(frames.values()))
     return WhatIfPlan(
         symbols=list(frames),
-        start=params.get("start") or str(first.index.min().date()),
+        start=params.get("start") or provenance["start"][:10],
         end=params.get("end") or None,
         initial_cash=float(params.get("initial_cash", 10_000)),
         monthly_contribution=float(params.get("monthly_contribution") or 0.0),
@@ -29,7 +30,7 @@ def _run_whatif(params: dict) -> dict:
     from ....whatif import run_whatif
 
     frames, provenance = resolve_many(params)
-    result = run_whatif(_plan(params, frames), frames)
+    result = run_whatif(_plan(params, frames, provenance), frames)
     curve, bench = result.plan.equity_curve, result.benchmark.equity_curve
     return {
         "summary": dict(result.comparison),

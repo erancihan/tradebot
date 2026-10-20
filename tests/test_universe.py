@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from tradebot.data.synthetic import synthetic_ohlcv
 from tradebot.universe import AlpacaLiquidityUniverse, LiquidityScreen, build_universe
 
 
@@ -145,3 +146,26 @@ def test_split_bars_frame_multiindex():
     assert list(split_bars_frame(flat, ["AAA"])) == ["AAA"]
     assert split_bars_frame(flat, ["AAA", "BBB"]) == {}
     assert split_bars_frame(pd.DataFrame(), ["AAA"]) == {}
+
+
+def test_excluded_names_leave_the_shortlist_before_the_cap():
+    """Discover excludes held and watched names before the 20-name cap, so
+    watching 8 of the top 28 still leaves 20 candidates, not 12."""
+    names = [f"N{chr(65 + i // 26)}{chr(65 + i % 26)}" for i in range(28)]
+    frames = {s: synthetic_ohlcv(periods=40, seed=i, start_price=50.0)
+              for i, s in enumerate(names)}
+    for i, s in enumerate(names):         # most active first: falling share volume
+        frames[s]["volume"] = 1e7 * (100 - i)
+    seen: dict = {}
+
+    def bars(symbols):
+        seen["bars_for"] = list(symbols)
+        return {s: frames[s] for s in symbols}
+
+    uni = AlpacaLiquidityUniverse(actives_fetcher=lambda top: names,
+                                  tradable_fetcher=lambda: None, bars_fetcher=bars)
+    watched = names[:8]
+    got = [r["symbol"] for r in uni.resolve_details(exclude=[s.lower() for s in watched])]
+    assert len(got) == 20 and not set(got) & set(watched)
+    assert not set(seen["bars_for"]) & set(watched)     # never fetched either
+    assert len(uni.resolve_details()) == 20             # no exclusions: the cap as before

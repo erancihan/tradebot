@@ -14,6 +14,9 @@
     {%- if prov.stale %} · {{ prov.stale }} skipped as stale (no bar in the last 5 sessions){% endif %}
     · computed {{ run.created_at[:16] | replace('T', ' ') }} UTC
   </p>
+  {% if prov.as_of_stale %}
+    <p class="text-xs text-amber-300" data-discover-stale>These bars end {{ prov.sessions_behind }} sessions before the last close: the ranking is old news. Pull fresh daily bars, then search again.</p>
+  {% endif %}
   {% if prov.failed %}
     <p class="text-xs text-amber-300" data-discover-failed>{{ prov.failed }} name{{ '' if prov.failed == 1 else 's' }} could not be fetched ({{ prov.failed_error }}), so the ranking leaves {{ 'it' if prov.failed == 1 else 'them' }} out.</p>
   {% endif %}

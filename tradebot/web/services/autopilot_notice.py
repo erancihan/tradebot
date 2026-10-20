@@ -38,18 +38,45 @@ def approval_notice(result, asked: int) -> str | None:
 
 
 def link_reply(batch_id: int, verb: str, result) -> dict:
-    """A link's JSON: the count, plus why lines were left alone when any were."""
+    """A link's JSON when it did something (else ``link_noop``'s 409): the
+    count, plus why lines were left alone when any were."""
     if verb != "approve":
         return {"batch_id": batch_id, "rejected": result.rejected}
     body: dict = {"batch_id": batch_id, "approved": result.submitted}
-    if result.closed:
-        body["message"] = "market closed: nothing submitted"
     if result.held:
         body["held"] = len(result.held)
         body["message"] = f"{len(result.held)} {RESIZED}"
     if result.moved:
         body["expired"] = len(result.moved)
     return body
+
+
+def link_noop(verb: str, result) -> str | None:
+    """A 409's detail when a link did nothing (an approve that submitted no
+    line, a Skip that rejected none), else None.
+
+    Not a 200: ntfy clears a notification whose button got one, and the owner
+    would believe the trade went in. The batch is gone or stale, so the link
+    stays used: a retry cannot help.
+    """
+    if verb != "approve":
+        return None if result.rejected else (
+            "Nothing was skipped: this batch is no longer pending "
+            "(it expired, was replaced or was already handled).")
+    if result.submitted:
+        return None
+    if result.closed:
+        return CLOSED
+    if result.held:
+        return f"Nothing was submitted: {len(result.held)} {RESIZED}."
+    if result.stale:
+        return ("Nothing was submitted: the trades had expired (older than one "
+                "poll). The next pass lists new ones.")
+    if result.moved:
+        return ("Nothing was submitted: the positions changed since the pass, "
+                "so the trades expired unsent.")
+    return ("Nothing was submitted: this batch is no longer pending (it expired, "
+            "was replaced or was already handled). Open the newest push.")
 
 
 def link_failure(result) -> str:

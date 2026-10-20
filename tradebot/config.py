@@ -110,4 +110,5 @@ class Settings(SettingsBuilders):
         return settings_from_dict(cls, raw)
 
 
-from .config_resolve import DEFAULT_SYMBOLS, resolve_settings  # noqa: E402,F401 - re-exported
+from .config_resolve import (  # noqa: E402,F401 - re-exported
+    DB_ENV, DEFAULT_SYMBOLS, resolve_settings, trading_db_path)

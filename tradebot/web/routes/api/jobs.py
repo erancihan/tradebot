@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 
 from ...schemas import CacheEntry, JobRequest, JobView, StrategySpec
-from ...services import cache_service
+from ...services import cache_service, symbols_service
 from ...services.jobs import VALID_KINDS, VALID_SOURCES, stack_specs, strategy_catalog
 
 router = APIRouter()
@@ -38,11 +38,19 @@ def create_job(req: JobRequest, request: Request):
                             detail=f"source must be one of {VALID_SOURCES}")
     if req.source == "real" and not req.symbol:
         raise HTTPException(status_code=400, detail="real-data jobs need a symbol")
+    # Both name a cache file (`<cache>/<timeframe>/<SYMBOL>.csv`): never a path.
+    try:
+        symbol = symbols_service.clean([req.symbol])[0] if req.symbol else req.symbol
+        timeframe = symbols_service.clean_timeframe(req.timeframe)
+    except symbols_service.InvalidSymbols as exc:
+        raise HTTPException(status_code=422, detail=f"symbol: {exc}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     job_id = request.app.state.jobs.submit(
         req.kind,
         {"strategy": req.strategy, "periods": req.periods, "seed": req.seed,
          "initial_cash": req.initial_cash, "params": req.params or {},
-         "source": req.source, "symbol": req.symbol, "timeframe": req.timeframe,
+         "source": req.source, "symbol": symbol, "timeframe": timeframe,
          "start": req.start, "end": req.end,
          "cache_dir": request.app.state.cache_dir},
     )

@@ -20,7 +20,7 @@ def _run_dry(settings, args: argparse.Namespace) -> int:
     engine, data, broker, storage, replay = built
     src = "replay" if replay else "live data"
     print(
-        f"[DRY-RUN] Forward-test ({src}) on {settings.symbols} with "
+        f"[DRY-RUN] Forward-test ({src}) on {engine.settings.symbols} with "
         f"{engine.strategy.name}; virtual ${settings.initial_cash:,.0f}, no orders sent."
     )
     _drive_dry(engine, data, broker, storage, args, replay)
@@ -66,7 +66,8 @@ def _dry_data(settings, strategy, storage, selector, args, replay: bool):
         if settings.universe_name:
             print("[DRY-RUN] `universe:` is ignored in replay mode "
                   "(no live data to screen); using the configured symbols.")
-        return _build_replay_data(settings, strategy, args, selector=selector)
+        return _build_replay_data(settings, strategy, args, selector=selector,
+                                  storage=storage)
 
     from ..config import AlpacaCredentials
     from ..data import get_alpaca_data
@@ -102,19 +103,24 @@ def _drive_dry(engine, data, broker, storage, args, replay: bool) -> None:
         storage.close()
 
 
-def _build_replay_data(settings, strategy, args, selector=None):
+def _build_replay_data(settings, strategy, args, selector=None, storage=None):
+    """Frames for the active list, then any config symbol it lacks: the
+    engine re-reads the list every pass and falls back to the config's."""
     from ..data.replay import ReplayData
     from ..data.synthetic import load_csv, synthetic_ohlcv
+    from ..storage.watchlist import active_symbols
 
     warmup = strategy.required_history + 2
     if selector is not None:
         warmup = max(warmup, selector.required_history + 2)
+    symbols = active_symbols(settings, storage) if storage is not None else []
+    symbols = list(dict.fromkeys([*symbols, *settings.symbols]))
     if args.replay_csv:
-        frames = {settings.symbols[0]: load_csv(args.replay_csv)}
+        frames = {symbols[0]: load_csv(args.replay_csv)}
     else:
         frames = {
             sym: synthetic_ohlcv(periods=args.replay_periods, seed=42 + i)
-            for i, sym in enumerate(settings.symbols)
+            for i, sym in enumerate(symbols)
         }
     return ReplayData(frames, warmup=warmup)
 

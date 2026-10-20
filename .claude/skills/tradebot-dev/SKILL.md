@@ -28,8 +28,8 @@ make web            # build frontend + serve the dashboard (needs [web])
 ```
 CLI: `tradebot {backtest,run,status,demo,arena,data,universe}`, `tradebot-web`
 (`--check` validates the config and exits); `--config` defaults to
-`$TRADEBOT_CONFIG`, else `./config.yaml` when present, for both. The web's
-database is `--trading-db`, else `$TRADEBOT_DB`, else the config's `db_path`. Service files for an always-on
+`$TRADEBOT_CONFIG`, else `./config.yaml` when present, for both. The
+trading database (web, `run`, `status`) is `--trading-db`, else `$TRADEBOT_DB`, else the config's `db_path` (`config.trading_db_path`). Service files for an always-on
 server live in `deploy/` (`deploy/README.md`).
 
 Frontend (`frontend/`): `npm run typecheck` (strict, CI gate), `npm test`

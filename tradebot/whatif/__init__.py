@@ -11,10 +11,11 @@ from __future__ import annotations
 from .compare import benchmark_plan, comparison
 from .compare_many import StrategyComparison, compare_strategies, needs_configuration
 from .plan import WhatIfPlan, WhatIfResult, monthly_cash_flows
-from .run import plan_backtester, plan_window, run_whatif, whatif_risk
+from .run import (plan_backtester, plan_start, plan_window, run_plan, run_whatif,
+                  warmup_bars, whatif_risk)
 
 __all__ = [
     "StrategyComparison", "WhatIfPlan", "WhatIfResult", "benchmark_plan", "compare_strategies",
     "comparison", "monthly_cash_flows", "needs_configuration", "plan_backtester",
-    "plan_window", "run_whatif", "whatif_risk",
+    "plan_start", "plan_window", "run_plan", "run_whatif", "warmup_bars", "whatif_risk",
 ]

@@ -99,7 +99,9 @@ sells a name off the list.
 - **Holdings:** quantity, last cached price, value and weight per position.
 - **Watchlist:** type a symbol and tap **Add**, tap the cross on a chip to
   remove it. While it has symbols, Refresh and the autopilot scan those
-  instead of the config's `symbols`. An edit stops a running autopilot.
+  instead of the config's `symbols`. An Add to an empty watchlist first fills
+  it with the config symbols, so they never drop out (and get sold as off-list).
+  An edit stops a running autopilot.
   Removing a name you hold asks first: "Remove QQQ? You hold 13 shares; the
   autopilot sells them at its next pass." With **Sell names that leave the
   list** off, or on live, it says they stay in the account instead.
@@ -115,11 +117,13 @@ server ranks names you neither watch nor hold by 6-month momentum skipping the
 last month (the `momentum` selector's score) and lists the top 10 with the last
 close and a reason, for example `Up 34% over 6 months to last month; $42M a day
 traded.` With server-side Alpaca keys the pool is Alpaca's most-active
-shortlist after the liquidity screen (at most 20 names, whose bars land in the
-cache); without keys it is every symbol with cached daily bars, through the same
-screen. The card says which, with the as-of date and the bar window. **Add**
-puts a name on your watchlist next to your current symbols: an empty watchlist
-is first filled with the symbols in use, so the config list never drops out.
+shortlist after the liquidity screen (at most 20 names after leaving out what
+you watch or hold, whose bars land in the cache); without keys it is every
+symbol with cached daily bars, through the same screen. The card says which,
+with the as-of date (the newest bar the ranking used, flagged when it trails the
+last close by more than 5 sessions) and the bar window. **Add** puts a name on
+your watchlist next to your current symbols: an empty watchlist is first filled
+with the config symbols, as the chip Add does.
 Like any watchlist edit, it stops a running autopilot. The last run survives a restart. Discover never places an order.
 
 ### 5. Autopilot: let it trade
@@ -166,7 +170,10 @@ The server replays the plan with the same `Backtester` as everything else and
 adds the monthly cash on the first trading day of each month. The benchmark is
 equal-weight buy and hold over the same symbols with the same cash. The result
 leads with the money gain (final value minus everything put in), then the
-comparison. Yearly growth and worst drop leave contributions out.
+comparison. Yearly growth and worst drop leave contributions out. The plan's
+strategy, selector and allocator warm up on the bars before the start date
+(cached or invented), so the plan and the benchmark both trade from the first
+bar. A range under 30 bars is refused.
 
 Presets come from the cache, familiar index funds first. With an empty cache
 the presets are synthetic and labelled so. The date pickers are bounded by
@@ -220,8 +227,9 @@ at least 30 minutes), and they work without the login cookie. Only the
 **paper** account's push carries them: a dry-run, replay or live push carries
 just Open. A link acts once per server process (a second tap is refused);
 after a restart a used link can act again until it expires, on lines still
-pending. A tap after a pass replaced the batch with different trades does
-nothing. The signing key comes from `TRADEBOT_WEB_TOKEN`; without a token it
+pending. A tap that does nothing (a pass replaced the batch with different
+trades, the trades expired, the market is closed, or the sizes grew since the
+push) answers 409, so ntfy keeps the notification instead of clearing it. The signing key comes from `TRADEBOT_WEB_TOKEN`; without a token it
 is random per server process, so a restart kills old links and the next push
 brings fresh ones. With the token set the old push's links keep working, so a
 restart does not push the same batch again. A hand-edited `public_url` that is not a plain http(s)
@@ -400,10 +408,9 @@ Install with `make install` (core), `make install-live` (adds Alpaca),
 `tradebot <command> --help` lists every flag. `--config PATH` defaults to
 `TRADEBOT_CONFIG` when set, else `./config.yaml` when present, else SPY/QQQ
 defaults, for `tradebot` and `tradebot-web` alike; each command prints the
-file it used. `tradebot` commands keep their log in the config's `db_path`.
-`tradebot-web` uses the same `db_path` unless `--trading-db` or `TRADEBOT_DB`
-names another file, so by default both share the watchlist and the parked
-trades.
+file it used. `tradebot run`, `tradebot status` and `tradebot-web` open the
+trading database named by `--trading-db`, else `TRADEBOT_DB`, else the config's
+`db_path`, so both share the watchlist and the parked trades.
 
 ### Commands
 
@@ -454,9 +461,11 @@ Run one autopilot per account: the headless one or the web page's, never both
 on the same paper account.
 
 **Which list the CLI trades.** `tradebot run` (every form) trades the same list
-as the web: the watchlist in `db_path` when it has symbols, in place of
-`symbols` and any `universe:` block, else the config. The startup line on
-stderr says which: `tradebot run: config=config.yaml symbols=watchlist(3)`.
+as the web: the watchlist in the trading database when it has symbols, in place
+of `symbols` and any `universe:` block, else the config. The engine re-reads it
+at every pass, so a watchlist edit on the phone reaches a running loop. The
+startup line on stderr says which:
+`tradebot run: config=config.yaml db=tradebot.db symbols=watchlist(3)`.
 
 **Go live (only when you are sure).** Set `mode: live`, put **live** keys in
 `.env` and `export TRADEBOT_LIVE_CONFIRM=I_UNDERSTAND`. Without all three the

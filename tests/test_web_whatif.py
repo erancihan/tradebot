@@ -73,6 +73,29 @@ def test_whatif_job_returns_a_result_with_provenance(tmp_path):
     assert len(job["equity"]["equity"]) == job["provenance"]["bars"]
 
 
+def test_synthetic_provenance_describes_the_bars_the_plan_ran_on(tmp_path):
+    client = _client(tmp_path)
+    r = client.post("/api/whatif", headers=POST_HEADERS, json={
+        "symbols": ["DEMO"], "source": "synthetic", "start": "2021-01-04",
+        "end": "2021-03-01", "strategy": "sma_crossover"})
+    job = _wait(client, r.json()["job_id"])
+    assert job["state"] == "done", job.get("error")
+    prov, index = job["provenance"], job["equity"]["index"]
+    assert prov["bars"] == len(index) == 41
+    assert index[0].startswith(prov["start"][:10]) and index[-1].startswith(prov["end"][:10])
+    assert prov["end"].startswith("2021-03-01")
+
+
+def test_a_synthetic_range_under_the_floor_is_refused_not_padded(tmp_path):
+    client = _client(tmp_path)
+    r = client.post("/api/whatif", headers=POST_HEADERS, json={
+        "symbols": ["DEMO"], "source": "synthetic", "start": "2021-01-04",
+        "end": "2021-01-21"})
+    job = _wait(client, r.json()["job_id"])
+    assert job["state"] == "error"
+    assert "only 14 bars" in job["error"] and "fewer than 30" in job["error"]
+
+
 def test_whatif_job_runs_from_the_cache_and_carries_provenance(tmp_path):
     _seed_cache(tmp_path)
     client = _client(tmp_path)
@@ -85,9 +108,34 @@ def test_whatif_job_runs_from_the_cache_and_carries_provenance(tmp_path):
     assert prov["start"].startswith("2022-02-01")
     s = job["summary"]
     assert s["gain"] == pytest.approx(s["final_value"] - s["contributions"], abs=0.02)
-    # Both curves travel in one payload, on the same bars.
+    # Both curves travel in one payload, on the same bars, from the plan's
+    # start: the January bars before it are the strategy's warmup only.
     assert job["benchmark"]["index"] == job["equity"]["index"]
+    assert job["equity"]["index"][0].startswith("2022-02-01")
+    assert len(job["equity"]["index"]) == prov["bars"]
     assert s["benchmark_final"] == pytest.approx(job["benchmark"]["equity"][-1], abs=0.01)
+
+
+def test_a_cached_whatif_warms_up_on_the_bars_before_its_start(tmp_path):
+    """The job feeds the plan the cached history before ``start``: its result
+    is the core's over the whole cache, not over a frame cut at the start."""
+    from tradebot.data.cache import BarCache
+    from tradebot.whatif import WhatIfPlan, run_whatif
+
+    _seed_cache(tmp_path)
+    client = _client(tmp_path)
+    body = {"symbols": ["AAA", "BBB"], "start": "2022-06-01", "initial_cash": 5000,
+            "strategy": "sma_crossover"}
+    job = _wait(client, client.post("/api/whatif", headers=POST_HEADERS,
+                                    json=body).json()["job_id"])
+    assert job["state"] == "done", job.get("error")
+    cache = BarCache(tmp_path / "cache")
+    frames = {s: cache.load(s, "1day") for s in ("AAA", "BBB")}
+    core = run_whatif(WhatIfPlan(symbols=["AAA", "BBB"], start="2022-06-01", end=None,
+                                 initial_cash=5000, strategy="sma_crossover"), frames)
+    assert job["summary"] == pytest.approx(dict(core.comparison))
+    assert job["equity"]["index"][0].startswith("2022-06-01")
+    assert job["provenance"]["start"].startswith("2022-06-01")
 
 
 def test_whatif_uncached_range_returns_pull_hint(tmp_path):
@@ -210,3 +258,15 @@ def test_presets_skip_a_cached_symbol_that_shares_no_window(tmp_path):
     assert first["source"] == "real"
     assert first["symbols"] == ["SPY", "QQQ"]            # XLK alone in 2025: left out
     assert first["start"] == "2022-01-03"
+
+
+def test_a_synthetic_plan_without_a_start_starts_after_the_warmup(tmp_path):
+    client = _client(tmp_path)
+    r = client.post("/api/whatif", headers=POST_HEADERS, json={
+        "symbols": ["DEMO"], "source": "synthetic", "end": "2021-06-01"})
+    job = _wait(client, r.json()["job_id"])
+    assert job["state"] == "done", job.get("error")
+    assert job["equity"]["index"][0].startswith("2021-01-04")     # SYNTHETIC_START
+    assert job["provenance"]["start"].startswith("2021-01-04")
+    assert len(job["equity"]["index"]) == job["provenance"]["bars"]
+
