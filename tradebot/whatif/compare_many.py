@@ -22,7 +22,7 @@ import pandas as pd
 from ..backtest import BacktestResult
 from .compare import benchmark_plan, comparison
 from .plan import WhatIfPlan
-from .run import plan_backtester, plan_window
+from .run import plan_window, run_plan, warmup_bars
 
 #: The numbers a ranked row carries, taken from :func:`comparison`.
 ROW_KEYS = ("final_value", "gain", "cagr", "max_drawdown", "vs_benchmark_pct")
@@ -83,16 +83,16 @@ def compare_strategies(plan: WhatIfPlan, frames: dict[str, pd.DataFrame],
     from ..strategies import STRATEGIES
 
     names = sorted(STRATEGIES) if names is None else list(names)
-    window, flows = plan_window(plan, frames)
+    window, flows = plan_window(plan, frames, _warmup(plan, names))
     costs = {"commission": commission, "slippage_bps": slippage_bps}
-    benchmark = plan_backtester(benchmark_plan(plan), **costs).run(window, cash_flows=flows)
+    benchmark = run_plan(benchmark_plan(plan), window, flows, **costs)
     deadline = None if budget_s is None else clock() + budget_s
     results, errors, skipped = {}, [], []
     plan_name = plan.strategy
     if plan.strategy_params:               # the plan as given, before any budget runs out
         plan_name = f"{plan.strategy} (your settings)"
         try:
-            results[plan_name] = plan_backtester(plan, **costs).run(window, cash_flows=flows)
+            results[plan_name] = run_plan(plan, window, flows, **costs)
         except Exception as exc:  # noqa: BLE001
             errors.append({"name": plan_name, "error": f"{type(exc).__name__}: {exc}"})
     for name in names:
@@ -105,10 +105,26 @@ def compare_strategies(plan: WhatIfPlan, frames: dict[str, pd.DataFrame],
             continue
         try:
             rule = replace(plan, strategy=name, strategy_params={})
-            results[name] = plan_backtester(rule, **costs).run(window, cash_flows=flows)
+            results[name] = run_plan(rule, window, flows, **costs)
         except Exception as exc:  # noqa: BLE001 - one bad rule never sinks the rest
             errors.append({"name": name, "error": f"{type(exc).__name__}: {exc}"})
     ranked = dict(sorted(results.items(), key=lambda kv: -kv[1].final_equity))
     return StrategyComparison(benchmark=benchmark, results=ranked, errors=errors,
                               skipped=skipped,
                               plan_name=plan_name if plan_name in ranked else None)
+
+
+def _warmup(plan: WhatIfPlan, names: list[str]) -> int:
+    """The longest warmup any compared rule needs: one window for every row,
+    each with enough history to decide on the start (a rule that cannot be
+    built is ranked or skipped later, not here)."""
+    from ..strategies import STRATEGIES
+
+    need = [warmup_bars(plan)]
+    for name in names:
+        if name in STRATEGIES and needs_configuration(STRATEGIES[name]) is None:
+            try:
+                need.append(warmup_bars(replace(plan, strategy=name, strategy_params={})))
+            except Exception:  # noqa: BLE001 - its own run reports the error
+                continue
+    return max(need)

@@ -198,3 +198,49 @@ def test_a_huge_contribution_cannot_push_returns_below_minus_100_percent():
     bt = run_whatif(plan, {"X": df}).plan
     assert bt.total_return >= -1.0
     assert -1.0 <= bt.max_drawdown <= 0.0
+
+
+# --- warmup: a plan decides from bars before its start, and trades from it ----
+
+def _warm_frames(seed=11):
+    return {s: synthetic_ohlcv(periods=600, seed=seed + i, freq="B", drift=0.001)
+            for i, s in enumerate("XY")}
+
+
+def test_a_plan_is_invested_from_its_start_not_after_its_warmup():
+    frames = _warm_frames()
+    start = frames["X"].index[300]
+    plan = WhatIfPlan(symbols=["X", "Y"], start=str(start.date()), end=None,
+                      initial_cash=10_000, strategy="sma_crossover")
+    strategy = build_strategy("sma_crossover")
+    decided = {s: int(strategy.target_positions(df.loc[:start].iloc[:-1]).iloc[-1])
+               for s, df in frames.items()}
+    assert any(decided.values())      # the seed decides "in" on the bar before start
+    result = run_whatif(plan, frames)
+    curve, bench = result.plan.equity_curve, result.benchmark.equity_curve
+    assert curve.index[0] == bench.index[0] == start          # one first date
+    assert len(curve) == 300
+    assert (curve.iloc[:3] != 10_000).any()                   # moves at once, no idle warmup
+
+
+def test_a_buy_and_hold_plan_still_ties_its_benchmark_after_warmup():
+    frames = _warm_frames(seed=21)
+    plan = WhatIfPlan(symbols=["X", "Y"], start=str(frames["X"].index[300].date()),
+                      end=None, initial_cash=1_000, monthly_contribution=50)
+    result = run_whatif(plan, frames)
+    assert result.comparison["vs_benchmark_pct"] == 0.0
+    assert result.benchmark.equity_curve.iloc[0] != 1_000     # bought at the start's open
+
+
+def test_the_backtester_start_drops_warmup_rows_from_the_result_only():
+    frames = _warm_frames()
+    start = frames["X"].index[300]
+    bt = Backtester(build_strategy("buy_and_hold"), RiskManager(RiskConfig()))
+    warm = bt.run(frames, start=start)
+    cold = bt.run({s: df.loc[start:] for s, df in frames.items()})
+    assert warm.equity_curve.index.equals(cold.equity_curve.index)
+    # Warm, the decision formed on the bar before start fills at start's open;
+    # cold, the first bar has no prior decision and sits in cash.
+    assert warm.equity_curve.iloc[0] != bt.initial_cash == cold.equity_curve.iloc[0]
+    with pytest.raises(ValueError, match="no bars"):
+        bt.run(frames, start=frames["X"].index[-1] + pd.Timedelta(days=5))

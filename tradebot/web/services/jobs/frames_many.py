@@ -14,6 +14,9 @@ from .frames import MAX_PERIODS, MIN_REAL_BARS, _pull_hint
 
 SYNTHETIC_START = "2021-01-04"
 SYNTHETIC_BARS = 750                  # about three years of business days
+#: Invented bars before a synthetic plan's start: the warmup the plan's stack
+#: decides its first bar from (the longest default selector needs 253).
+SYNTHETIC_WARMUP = 300
 
 
 def _synthetic_many(symbols: list[str], start, end, seed: int) -> tuple[dict, dict]:
@@ -21,16 +24,21 @@ def _synthetic_many(symbols: list[str], start, end, seed: int) -> tuple[dict, di
 
     begin = pd.Timestamp(start or SYNTHETIC_START)
     periods = (len(pd.bdate_range(begin, end)) if end else SYNTHETIC_BARS)
-    periods = max(MIN_REAL_BARS, min(periods, MAX_PERIODS))
+    if periods < MIN_REAL_BARS:            # never padded past ``end``: refused
+        raise RuntimeError(f"only {periods} bars in that range — fewer than "
+                           f"{MIN_REAL_BARS} is noise. Widen the range.")
+    periods = min(periods, MAX_PERIODS)
+    first = pd.bdate_range(end=begin, periods=SYNTHETIC_WARMUP + 1)[0]
     # One seed per symbol, so the names do not move in lockstep.
-    frames = {sym: synthetic_ohlcv(periods=periods, start=str(begin.date()), freq="B",
-                                   seed=seed + i)
+    frames = {sym: synthetic_ohlcv(periods=SYNTHETIC_WARMUP + periods, start=str(first.date()),
+                                   freq="B", seed=seed + i)
               for i, sym in enumerate(symbols)}
-    first = next(iter(frames.values()))
+    # Provenance from the bars the plan runs on, after the warmup.
+    own = next(iter(frames.values())).index[SYNTHETIC_WARMUP:]
     return frames, {
         "source": "synthetic", "symbol": ",".join(symbols), "seed": seed,
-        "bars": int(len(first)),
-        "start": first.index.min().isoformat(), "end": first.index.max().isoformat(),
+        "bars": int(len(own)),
+        "start": own.min().isoformat(), "end": own.max().isoformat(),
         "note": "invented prices — dates are labels, not history or a forecast",
     }
 
@@ -38,21 +46,25 @@ def _synthetic_many(symbols: list[str], start, end, seed: int) -> tuple[dict, di
 def _cached_one(cache, sym: str, timeframe: str, start, end) -> pd.DataFrame | None:
     """A fully bounded range must be vouched for by the coverage manifest; an
     open-ended one means "as far as the cache goes", so it reads what is there.
+    The cached bars before ``start`` ride along as the plan's warmup (the
+    what-if trims them to what its stack needs); they are not the plan's range.
     """
+    df = cache.load(sym, timeframe)
     if start and end:
         try:
-            return cache.get(sym, timeframe, start=start, end=end, fetcher=None)
+            cache.get(sym, timeframe, start=start, end=end, fetcher=None)
         except RuntimeError:
             return None
-    df = cache.load(sym, timeframe)
     if df is None:
         return None
-    keep = np.ones(len(df), dtype=bool)
-    if start:
-        keep &= df.index >= pd.Timestamp(start, tz=df.index.tz)
     if end:   # half-open on the right, like BarCache._slice
-        keep &= df.index < pd.Timestamp(end, tz=df.index.tz)
-    return df[keep]
+        df = df[df.index < pd.Timestamp(end, tz=df.index.tz)]
+    return df
+
+
+def _own(df: pd.DataFrame, start) -> pd.DataFrame:
+    """The bars from ``start`` on: the plan's range, without its warmup."""
+    return df[df.index >= pd.Timestamp(start, tz=df.index.tz)] if start else df
 
 
 def _cached_many(symbols: list[str], start, end, timeframe: str,
@@ -63,7 +75,7 @@ def _cached_many(symbols: list[str], start, end, timeframe: str,
     frames, missing = {}, []
     for sym in symbols:
         df = _cached_one(cache, sym, timeframe, start, end)
-        if df is None or df.empty:
+        if df is None or _own(df, start).empty:
             missing.append(sym)
         else:
             frames[sym] = df
@@ -74,7 +86,8 @@ def _cached_many(symbols: list[str], start, end, timeframe: str,
         )
     common = None
     for df in frames.values():
-        common = df.index if common is None else common.intersection(df.index)
+        own = _own(df, start).index
+        common = own if common is None else common.intersection(own)
     if len(common) < MIN_REAL_BARS:
         raise RuntimeError(f"only {len(common)} shared cached bars in that range — "
                            f"fewer than {MIN_REAL_BARS} is noise. Widen the range.")
