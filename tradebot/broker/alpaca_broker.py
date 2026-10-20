@@ -7,9 +7,14 @@ The SDK is imported lazily so the package imports fine without it.
 
 from __future__ import annotations
 
+import logging
+import time
+
 from ..models import EQUITY, Order, OrderType, Position, Side, TimeInForce
 from .base import (ORDER_STATUSES, TERMINAL_STATUSES, AccountSnapshot, Broker, LegFill,
                    OrderStatus)
+
+log = logging.getLogger("tradebot.broker")
 
 PAPER_ENDPOINT = "https://paper-api.alpaca.markets"
 LIVE_ENDPOINT = "https://api.alpaca.markets"
@@ -59,9 +64,26 @@ class AlpacaBroker(Broker):
         self.paper = paper
         self._client = TradingClient(api_key, api_secret, paper=paper)
 
+    #: A read that failed on the wire is tried once more after this pause: a
+    #: DNS blip on the clock call must not fail a whole pass. A submit is never
+    #: retried (a second send could double an order).
+    RETRY_SECONDS = 2.0
+    _sleep = staticmethod(time.sleep)
+
+    def _read(self, call):
+        """``call()``, once more after a connection error (requests' errors
+        are ``OSError``s; an Alpaca API error is not and propagates at once)."""
+        try:
+            return call()
+        except OSError as exc:  # noqa: PERF203 - one retry, then the error is the pass's
+            log.warning("Alpaca read failed (%s); retrying in %ss",
+                        type(exc).__name__, self.RETRY_SECONDS)
+            self._sleep(self.RETRY_SECONDS)
+            return call()
+
     # --- account / positions -------------------------------------------------
     def account(self) -> AccountSnapshot:
-        a = self._client.get_account()
+        a = self._read(self._client.get_account)
         return AccountSnapshot(
             equity=float(a.equity),
             cash=float(a.cash),
@@ -71,7 +93,7 @@ class AlpacaBroker(Broker):
 
     def positions(self) -> dict[str, Position]:
         out: dict[str, Position] = {}
-        for p in self._client.get_all_positions():
+        for p in self._read(self._client.get_all_positions):
             kind = getattr(p, "asset_class", None)
             out[p.symbol] = Position(
                 symbol=p.symbol,
@@ -85,7 +107,7 @@ class AlpacaBroker(Broker):
         return self.positions().get(symbol, Position(symbol))
 
     def is_market_open(self) -> bool:
-        return bool(self._client.get_clock().is_open)
+        return bool(self._read(self._client.get_clock).is_open)
 
     # --- orders --------------------------------------------------------------
     @staticmethod
@@ -145,8 +167,8 @@ class AlpacaBroker(Broker):
         (the reconciler logs it)."""
         from alpaca.trading.requests import GetOrderByIdRequest
 
-        return map_order_status(self._client.get_order_by_id(
-            broker_order_id, filter=GetOrderByIdRequest(nested=True)))
+        return map_order_status(self._read(lambda: self._client.get_order_by_id(
+            broker_order_id, filter=GetOrderByIdRequest(nested=True))))
 
     def cancel_all(self) -> None:
         self._client.cancel_orders()
