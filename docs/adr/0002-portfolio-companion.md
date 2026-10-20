@@ -295,3 +295,7 @@ One new core concept, the proposal, feeds three flows.
   push. A what-if plan warms up on the bars before its start, so the plan and
   the benchmark trade from the same first bar; Discover excludes held and
   watched names before its cap and dates a ranking by its newest bar.
+
+## Addendum 2026-10-20: review 14, arena
+
+Under process isolation the arena now imports, builds and runs each contestant in a fresh, hardened interpreter: an allow-listed environment, an empty working directory, Landlock on Linux, and a plain JSON reply the parent validates, so module bodies, the reply channel, the parent's environment and its memory are all outside the contestant's reach. It still does not stop reads of anything the user can read, including other same-user processes' startup environments, nor truncation or deletion of the user's files on macOS, nor a contestant misreporting its own result. Human review of contestant code stays the real gate, and containers stay out of scope.
