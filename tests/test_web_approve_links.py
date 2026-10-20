@@ -9,6 +9,7 @@ faked), then POSTed the way ntfy does: the guard header, no cookie.
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import timedelta
 from urllib.parse import urlsplit
 from unittest.mock import patch
 
@@ -218,8 +219,30 @@ def test_an_old_batch_link_finds_nothing_after_a_changed_proposal(
     fresh = _pending(pilot)
     assert fresh and all(ln["batch_id"] != old for ln in fresh)
     resp = client.post(links["Approve all"], headers=POST_HEADERS)
-    assert resp.status_code == 200 and resp.json()["approved"] == 0
+    # Not a 200: ntfy would clear the push and the owner believe it traded.
+    assert resp.status_code == 409 and "Nothing was submitted" in resp.json()["detail"]
     assert _pending(pilot) == fresh and pilot.engine.broker.positions() == {}
+    assert client.post(links["Skip"], headers=POST_HEADERS).status_code == 409
+    assert _pending(pilot) == fresh                 # Skip of a replaced batch: nothing
+    # The batch is gone: the link stays used, a retry cannot help.
+    assert "already used" in client.post(links["Approve all"],
+                                         headers=POST_HEADERS).json()["detail"]
+
+
+def test_a_stale_or_closed_link_is_a_409_that_says_why(tmp_path, pushes):
+    _, client, pilot, links = _setup(tmp_path, pushes)
+    real = pilot.clock
+    pilot.clock = lambda: real() + timedelta(seconds=pilot.poll_seconds + 1)
+    resp = client.post(links["Approve all"], headers=POST_HEADERS)
+    assert resp.status_code == 409 and "older than one poll" in resp.json()["detail"]
+    assert _pending(pilot) == [] and pilot.engine.broker.positions() == {}
+    pilot.clock = real
+    pilot.tick()                                    # a fresh batch, a fresh push
+    links = _links([p for p in pushes if p.get_header("Actions")][-1])
+    pilot.is_open = lambda now: False
+    resp = client.post(links["Approve all"], headers=POST_HEADERS)
+    assert resp.status_code == 409 and "market is closed" in resp.json()["detail"]
+    assert pilot.engine.broker.positions() == {}
 
 
 def test_a_signed_link_still_acts_after_a_quiet_pass(tmp_path, pushes):
@@ -366,10 +389,9 @@ def test_an_older_push_cannot_buy_the_size_a_refresh_grew_to(tmp_path, pushes, m
     second = _links([p for p in pushes if p.get_header("Actions")][-1])
     assert second["Approve all"] != first["Approve all"]
     resp = client.post(first["Approve all"], headers=POST_HEADERS)
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["approved"] == 0 and body["held"] == 2
-    assert "re-sized" in body["message"] and "open the newest push" in body["message"]
+    assert resp.status_code == 409                  # bought nothing: not a 200
+    detail = resp.json()["detail"]
+    assert "2 re-sized" in detail and "open the newest push" in detail
     assert pilot.engine.broker.positions() == {} and len(_pending(pilot)) == 2
     resp = client.post(second["Approve all"], headers=POST_HEADERS)
     assert resp.status_code == 200 and resp.json()["approved"] == 2

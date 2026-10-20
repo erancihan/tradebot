@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 from ....autopilot.links import verify
 from ...schemas import AutopilotCommand, AutopilotView
 from ...services import autopilot_service
-from ...services.autopilot_notice import link_failure, link_reply
+from ...services.autopilot_notice import link_failure, link_noop, link_reply
 
 log = logging.getLogger("tradebot.web.autopilot")
 
@@ -44,8 +44,9 @@ def batch_link(batch_id: int, verb: str, exp: int, sig: str, request: Request):
     """The phone push's Approve all / Skip buttons (signed links, see
     ``tradebot.autopilot.links``). The signature is the only credential, so
     these paths skip the cookie gate. Each link acts once: a replay is a 409.
-    A broker that refused lines (still pending) is a 502, and the link is
-    given back so the same button can retry."""
+    A link that did nothing (stale, closed, re-sized or replaced batch) is a
+    409 too, and stays used. A broker that refused lines (still pending) is a
+    502, and the link is given back so the same button can retry."""
     state = request.app.state
     if verb not in ("approve", "reject") or not verify(
             state.link_secret, autopilot_service.link_account(request.app),
@@ -67,4 +68,7 @@ def batch_link(batch_id: int, verb: str, exp: int, sig: str, request: Request):
     if result.failed:
         state.used_links.release(batch_id, verb, sig)
         raise HTTPException(status_code=502, detail=link_failure(result))
+    noop = link_noop(verb, result)
+    if noop is not None:
+        raise HTTPException(status_code=409, detail=noop)
     return link_reply(batch_id, verb, result)
