@@ -41,7 +41,7 @@ and bar size, a strategy, and optionally a selector (hold the best N) and an
 allocator (how to split money). Parameters show as typed fields. Risk limits
 are typed as percentages. The **No-trade band** skips drift trades smaller
 than that share of equity (1% unless you change it, 0 turns it off; full
-exits always run), so a pass does not trim one share each time equity moves.
+exits and long/short flips always run), so a pass does not trim one share each time equity moves.
 The same page sets the autopilot cadence, the
 morning brief, **Sell names that leave the list** (`manage_unlisted`, on by
 default), alert destinations and the exchange calendar.
@@ -548,6 +548,12 @@ Most take `allow_short`. To add one, subclass `Strategy`, implement
 `target_positions(bars)` returning values in `{-1, 0, +1}`, and register it in
 `tradebot/strategies/registry.py`. The `add-strategy` skill walks through it.
 
+A live pass and the Today refresh give the strategy the whole stored or cached
+history (the newest 5000 bars), not a short window. `supertrend`,
+`rsi_reversion` and every EMA carry state from the first bar, so this is what
+makes a live verdict equal the backtest's. The two meta strategies compute on a
+tail of twice their warmup by design, to keep the arena fast.
+
 ### Bracket exits
 
 Two optional risk keys attach exit legs to every order that **adds** exposure.
@@ -558,6 +564,9 @@ risk:
   stop_loss_pct: 0.05        # exit 5% below the entry price
   take_profit_pct: 0.15      # exit 15% above it (either one alone works)
 ```
+
+Each must be above 0 and below 1 (100%): a 100% stop on a long, or a 100%
+target on a short, would be a price of 0.
 
 On Alpaca (paper or live) these become a bracket order (`oto` with one leg), so the broker
 holds the legs while the bot is offline. A dry-run simulates them from each

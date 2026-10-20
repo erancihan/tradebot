@@ -60,6 +60,9 @@ backtest, live, and the arena.
 - For a *stateful regime* (hold until exit), compute signals then `ffill` (see
   `rsi_reversion.py`, `donchian_breakout.py`). If the exit depends on which side
   the position is on, use a causal walk instead (see `bollinger_reversion.py`).
+- State may run over the whole frame: live passes hand the strategy the full
+  stored history (`advisor/history.py`), and `tests/test_engine_history.py`
+  checks every registered strategy's live verdict equals the backtest's.
 - Strategies are also valid arena contestants — add `@register` to enter one
   (see the `add-arena-algo` skill).
 - Add the name to `CLAUDE.md`'s layout, the README strategy table and the

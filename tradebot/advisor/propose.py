@@ -52,8 +52,9 @@ def propose(*, symbols, frames, equity, positions, strategy, risk, selector=None
                  "selected": None if members is None else bool(members.get(sym)),
                  "rank": ranks.get(sym), "weight": None if weights is None
                  else weights.get(sym), "capped": capped.get(sym, False)}
-        lines.append(_line(sym, targets[sym], current, desired[sym], prices[sym],
-                           equity, risk, parts))
+        # Absent when the equity is not finite: hold, never a NaN-driven exit.
+        lines.append(_line(sym, targets[sym], current, desired.get(sym, current),
+                           prices[sym], equity, risk, parts))
     lines.extend(unlisted_lines(unlisted, symbols))
     return Proposal(created_at=now or utcnow(), equity=float(equity), cash=float(cash),
                     lines=lines, provenance=dict(provenance or {}), weights=weights)

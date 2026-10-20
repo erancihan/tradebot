@@ -40,7 +40,8 @@ class BarsMixin:
         )
         self._conn.commit()
 
-    def load_bars(self, symbol: str, timeframe: str, mode: str | None = None):
+    def load_bars(self, symbol: str, timeframe: str, mode: str | None = None,
+                  limit: int | None = None):
         """Full stored history for one symbol, oldest first, in BAR_COLUMNS shape.
 
         The live engine feeds this to the selector. A `RankedSelector` walk is
@@ -50,6 +51,7 @@ class BarsMixin:
         holdings depend on when the process happened to start; the accumulated
         bars are the source of truth, exactly as in `season.py`.
 
+        ``limit`` keeps only the newest ``limit`` bars (still oldest first).
         pandas is imported lazily to keep this module stdlib-only on import.
         """
         import pandas as pd
@@ -60,8 +62,14 @@ class BarsMixin:
         if mode is not None:
             sql += " AND mode = ?"
             params.append(mode)
-        sql += " ORDER BY ts"
+        if limit is None:
+            sql += " ORDER BY ts"
+        else:
+            sql += " ORDER BY ts DESC LIMIT ?"
+            params.append(int(limit))
         rows = self._conn.execute(sql, params).fetchall()
+        if limit is not None:
+            rows.reverse()
         if not rows:
             return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
         idx = pd.to_datetime([r[0] for r in rows], utc=True)

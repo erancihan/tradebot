@@ -62,10 +62,10 @@ class _TailBounded:
     The arena's growing-window replay calls ``latest_target`` once per bar,
     so recomputing a whole roster over full history is O(bars²·subs) — a meta
     strategy can blow a tournament time budget on nothing but rework. The
-    live engine already computes on ~2× ``required_history`` of fetched bars,
-    so the bounded tail *is* live semantics; only EMA-based subs differ
-    negligibly from the full-history backtest path (a known live-vs-backtest
-    reality for every EMA strategy).
+    engine and the arena both call ``latest_target``, so they agree on the
+    tail; only stateful subs (EMA, held state) can differ from the Backtester's
+    full-frame ``target_positions``, the one live-vs-backtest gap left for
+    metas (every other strategy sees the full stored history live).
     """
 
     def latest_target(self, bars: pd.DataFrame) -> int:

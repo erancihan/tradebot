@@ -14,53 +14,10 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from .risk_config import PRODUCT_BAND_PCT, RiskConfig, product_risk
 
-@dataclass(frozen=True)
-class RiskConfig:
-    #: Max fraction of equity to allocate to a single symbol's position.
-    max_position_pct: float = 0.10
-    #: Max fraction of equity deployed across *all* positions at once.
-    max_gross_exposure: float = 1.0
-    #: Daily-loss breaker: once equity falls this fraction below the session's
-    #: starting equity (e.g. 0.03 == a 3% drawdown today), flatten every equity
-    #: position and stay out for the rest of that session day (engine/session.py).
-    max_daily_loss_pct: float = 0.03
-    #: Trade whole shares only (Alpaca supports fractional, but integers are the
-    #: safer default and make sizing math obvious).
-    allow_fractional: bool = False
-    #: No-trade band: skip rebalancing trades smaller than this fraction of
-    #: equity (full exits always execute). 0 disables the band. Cuts the drip
-    #: of tiny drift trades that eat returns via slippage.
-    rebalance_band_pct: float = 0.0
-    #: Bracket exits attached to *entries*, as fractions of the entry price
-    #: (0.05 == 5% away). None disables that leg. These live here — not on a
-    #: strategy — because they are risk limits: strategies still emit only
-    #: {-1, 0, +1}. Live-execution concern; the backtester does not model them
-    #: (see the bracket note in CLAUDE.md's invariants).
-    stop_loss_pct: float | None = None
-    take_profit_pct: float | None = None
-
-    def __post_init__(self) -> None:
-        for name in ("max_position_pct", "max_gross_exposure", "max_daily_loss_pct",
-                     "rebalance_band_pct"):
-            v = getattr(self, name)
-            if not 0 <= v <= 1:
-                raise ValueError(f"{name} must be in [0, 1], got {v}")
-        for name in ("stop_loss_pct", "take_profit_pct"):
-            v = getattr(self, name)
-            if v is not None and not 0 < v <= 1:
-                raise ValueError(f"{name} must be in (0, 1] when set, got {v}")
-
-
-#: The product's no-trade band (1% of equity). ``RiskConfig`` itself keeps 0 so
-#: backtests, the arena and the research record keep their numbers; the
-#: ``Settings`` a person runs default to this, as config.example.yaml says.
-PRODUCT_BAND_PCT = 0.01
-
-
-def product_risk(**overrides) -> RiskConfig:
-    """A ``RiskConfig`` with the product's band unless ``overrides`` sets one."""
-    return RiskConfig(**{"rebalance_band_pct": PRODUCT_BAND_PCT, **overrides})
+__all__ = ["PRODUCT_BAND_PCT", "DailyLossLimitError", "RiskConfig", "RiskManager",
+           "product_risk"]
 
 
 class DailyLossLimitError(RuntimeError):
@@ -80,7 +37,8 @@ class RiskManager:
         equity at ``price`` — capped at ``max_position_pct``, which is also
         the default when no weight is given.
         """
-        if target == 0 or not math.isfinite(price) or price <= 0 or equity <= 0:
+        if (target == 0 or not math.isfinite(price) or price <= 0
+                or not math.isfinite(equity) or equity <= 0):
             return 0.0
         if weight is None:
             weight = self.config.max_position_pct
@@ -105,7 +63,13 @@ class RiskManager:
         per-name first, then the whole book is scaled down proportionally if
         the active total exceeds ``max_gross_exposure``. Symbols missing from
         ``weights`` get nothing, so allocators fund by inclusion.
+
+        A non-finite ``equity`` sizes nothing (``{}``: the pass trades no
+        symbol) rather than zero, since a desired 0 is a full exit and a NaN
+        mark must never liquidate the book.
         """
+        if not math.isfinite(equity):
+            return {}
         effective: dict[str, float] = {}
         for sym, target in targets.items():
             if target == 0:
@@ -151,12 +115,13 @@ class RiskManager:
         """The delta worth trading once the no-trade band is applied.
 
         Drift trades smaller than ``rebalance_band_pct`` of equity are skipped
-        (returning 0), but full exits (``desired == 0``) always execute so the
-        band can never strand a position that should be flat.
+        (returning 0), but full exits (``desired == 0``) and sign flips (long to
+        short or back) always execute, so the band can never strand a position
+        on the side the strategy left.
         """
         delta = desired - current
         band = self.config.rebalance_band_pct
-        if band <= 0 or desired == 0 or equity <= 0:
+        if band <= 0 or desired == 0 or desired * current < 0 or equity <= 0:
             return delta
         if abs(delta) * price < band * equity:
             return 0.0
@@ -180,6 +145,9 @@ class RiskManager:
             stop = entry_price * (1 - cfg.stop_loss_pct) if long else entry_price * (1 + cfg.stop_loss_pct)
         if cfg.take_profit_pct is not None:
             target = entry_price * (1 + cfg.take_profit_pct) if long else entry_price * (1 - cfg.take_profit_pct)
+        for leg, level in (("stop_loss", stop), ("take_profit", target)):
+            if level is not None and not level > 0:     # RiskConfig bounds the pct too
+                raise ValueError(f"{leg} level {level} for entry {entry_price} is not positive")
         return (stop, target)
 
     def daily_loss_tripped(self, start_equity: float, current_equity: float) -> bool:

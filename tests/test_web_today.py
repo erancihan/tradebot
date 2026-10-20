@@ -155,7 +155,10 @@ def test_refresh_job_uses_cached_bars_without_credentials(tmp_path, offline):
         assert line["reason"].startswith("sma_crossover signals")
     prov = p["provenance"]
     assert prov["source"] == "cache"
-    assert prov["bars"] == {"SPY": LOOKBACK, "QQQ": LOOKBACK}
+    # The strategy sees the whole cached history, as the engine does
+    # (``advisor.history``): a stateful signal depends on where its frame starts.
+    assert prov["bars"] == {"SPY": 120, "QQQ": 120}
+    assert prov["lookback"] == LOOKBACK
     assert prov["end"].startswith("2023-05-01")              # the cached window
     assert prov["computed_at"] and prov["timeframe"] == "1day"
     assert p["account_label"] == "paper (starting cash)"

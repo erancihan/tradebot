@@ -66,7 +66,7 @@
         ("max_gross_exposure", "Max invested, % of equity", ""),
         ("max_daily_loss_pct", "Daily loss halt, %", "Flatten and halt after this drop in one day."),
         ("rebalance_band_pct", "No-trade band, %", "Skip drift trades smaller than this (default 1, 0 = off); exits always run."),
-        ("stop_loss_pct", "Stop loss, % below entry", "Empty = none. Paper, live and dry-run only: backtests do not model it."),
+        ("stop_loss_pct", "Stop loss, % below entry", "Empty = none. Below 100. Paper, live and dry-run only: backtests do not model it."),
         ("take_profit_pct", "Take profit, % above entry", "Empty = none."),
       ] %}
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2" data-field-grid>

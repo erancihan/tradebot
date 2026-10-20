@@ -158,10 +158,10 @@ class Engine(EngineHooksMixin, EngineExecutionMixin):
         frames = signals.fetch_frames(self)
         positions = orders.current_positions(self, frames)
         return advisor.propose(
-            symbols=list(self.settings.symbols), frames=frames, equity=equity,
+            symbols=list(self.settings.symbols), equity=equity,
+            # Full stored history for every component (see `_history_frames`).
+            frames=self._history_frames(frames),
             cash=cash, positions=positions, strategy=self.strategy, risk=self.risk,
             selector=self.selector, allocator=self.allocator, overlays=self.overlays,
-            # Full stored history for a ranked selector (see `_selector_frames`).
-            selector_frames=self._selector_frames(frames) if self.selector else None,
             now=now, unlisted=unlisted.read_unlisted(self),
         )

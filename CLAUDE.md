@@ -29,7 +29,7 @@ tradebot/
   strategies/    Strategy ABC + registry: sma_crossover, rsi_reversion, buy_and_hold,
                  donchian_breakout, macd_trend, bollinger_reversion, momentum,
                  supertrend, meta.py (follow_leader, ensemble_vote)
-  indicators.py  risk.py (RiskManager + RiskConfig)  allocation.py  overlays.py
+  indicators.py  risk.py (RiskManager) + risk_config.py  allocation.py  overlays.py
                  walkforward.py  portfolio.py  portfolio_pnl.py (round trips from fills)  models.py
   selection/     base, ranked (momentum, low_vol), regime (regime_switch), __init__ (SELECTORS)
   universe/      screen (LiquidityScreen), alpaca, discover    consortium/  voice, consensus, panel
@@ -42,7 +42,7 @@ tradebot/
   broker/        base (ABC), alpaca_broker (lazy SDK), dryrun + brackets (BracketsMixin)
   data/          synthetic (+ load_csv) + factor_panel, cache + coverage, replay, alpaca_data, stream
   market/        base (MarketCalendar, TableCalendar), us, bist, registry (CALENDARS)
-  advisor/       propose (bars + account -> Proposal), explain, types, unlisted (off-list holdings)
+  advisor/       propose (bars + account -> Proposal), explain, types, unlisted (off-list holdings), history
   engine/        core (Engine.step -> PassOutcome) + hooks, active (list per pass), execution (submit, run_forever), signals, orders, pending,
                  session (daily-loss anchor), fills (reconcile: Broker.order_status -> the order log's fills), unlisted
   autopilot/     state, schedule, runner (Autopilot, injected clock/sleep/calendar) + wake (tick), loop (run_forever),
@@ -83,8 +83,8 @@ config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])  deploy
   fallback), never the close of the bar being filled. Both loops import the one `_sizing_marks` helper.
   This choice was pre-registered: open over previous close, because the open is the actual fill price.
 - **Every shift has an absolute guard.** A lockstep test cannot catch an error
-  made the same way in both loops. Each shift also has a single-engine test,
-  for example `test_sizing_never_sees_the_fill_bars_close` and
+  made the same way in both loops. Each shift also has a single-engine test: `test_sizing_never_sees_the_fill_bars_close`,
+  `test_strategy_signal_cannot_capture_the_bar_it_is_formed_on`,
   `test_selector_verdict_cannot_be_acted_on_the_bar_it_is_formed`. Each one
   fails with the shift deleted from both loops. A new shift gets a new guard.
 - **Risk is centralised.** Strategies emit only `{-1, 0, +1}` and never size.
@@ -92,8 +92,8 @@ config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])  deploy
   and never size or weight. `RiskManager.allocate` caps per name, scales the
   book to the gross cap order-independently, and is the only place weights
   become share quantities. The no-trade band is `RiskManager.material_delta`
-  (full exits always execute). `RiskManager.bracket_prices` sets bracket
-  levels. `models.opens_exposure` decides what counts as an entry, for both the engine and `DryRunBroker`.
+  (full exits and long/short flips always execute). `RiskManager.bracket_prices` sets bracket
+  levels (pcts in the open (0, 1), a level <= 0 raises). `models.opens_exposure` decides what counts as an entry, for both the engine and `DryRunBroker`.
 - **Backtest == live.** `Backtester`, arena `simulate` and live `Engine` share
   `Strategy` and `RiskManager` and size the whole book in one `allocate` pass.
   `tests/test_arena_simulation.py` keeps the backtester and arena in lockstep.
@@ -145,11 +145,11 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
 **Execution and data**
 - **Change `advisor.propose`, not `Engine.rebalance`.** The engine calls `propose` and submits its lines, so a Today
   suggestion is exactly what a pass would trade (`test_propose_matches_engine_rebalance_deltas`).
-- **Bad prices are flat.** NaN, inf or non-positive prices never reach sizing. All three loops skip the symbol (`math.floor(NaN)` raises).
+- **Bad prices are flat.** NaN, inf or non-positive prices never reach sizing. All three loops skip the symbol (`math.floor(NaN)` raises). A mark falls back past a bad close to the last finite one (`steps.close_prices_at`); a non-finite equity sizes nothing (`allocate` -> `{}`), never a liquidation.
 - **Allocator history:** `aligned.iloc[:i]` at fill bar `i`. **ReplayData** advances once per step.
 - **Selectors are prefix-stable** (verdict at `t` from bars `<= t` and earlier verdicts). A ranked
   walk starts from an empty set, so a truncated frame changes the verdict: the engine recomputes from
-  full stored history (`Engine._selector_frames`), and `record_bars` upserts forming bars.
+  full stored history (`Engine._history_frames`), and `record_bars` upserts forming bars.
 - **Composite selectors mask their own warmup** (`required_history - 1` rows).
   `exit_rank`: a held name stays droppable in any pool larger than `top_k`.
 - **Cache coverage is a manifest** (`*.coverage.json`, gaps included) of the requested bounds:
@@ -174,7 +174,7 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   source `cache+recorded`), bought at the last close completed before the first snapshot (`services/benchmark.py`; `benchmark_card.py`:
   alpha from the snapshot at the benchmark's last close), no fetch; absent (noted) without bars or mixed accounts.
   **Trades** are round trips by average cost (`portfolio_pnl.book`) from filled orders only (`filled_orders`: `filled_qty > 0`, any status); hand trades never count, open ones show no P&L. `orders.intent` (entry | exit, NULL on old rows = opens as before): an exit with no trip to close is an `UnmatchedExit` ("Sold without a recorded buy"), never a short, never in the summary.
-- **The Today refresh** gives the selector the whole cached history and the strategy the last `required_history + 30` bars, so engine and web can differ when their histories start on different days.
+- **Strategy, allocator and selector see the whole history** (`advisor/history.py`, newest 5000 bars): the engine its stored bars, the Today refresh its cache; supertrend, RSI hold and EMAs are stateful (`test_engine_history.py`). Metas tail-bound by design.
 - **One list everywhere:** the watchlist when not empty, else `settings.symbols` (`storage/watchlist.resolve_active`;
   web `with_active_symbols`, a copy). The engine re-reads it at every pass (`engine/active.py`, the engine's build list as the
   fallback; logs `symbols=watchlist(N)` on a change), so a `tradebot run` loop sees a phone edit; the web pilot is also reset

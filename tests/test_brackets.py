@@ -280,3 +280,26 @@ def test_alpaca_maps_both_legs_to_a_bracket_and_one_leg_to_an_oto():
     assert "take_profit" not in one
 
     assert AlpacaBroker._bracket_kwargs(Order("SPY", 1, Side.BUY)) == {}
+
+
+@pytest.mark.parametrize("key", ["stop_loss_pct", "take_profit_pct"])
+def test_a_bracket_pct_of_one_is_refused(key):
+    """1.0 puts a long's stop or a short's target at 0.0: the open interval (0, 1)."""
+    with pytest.raises(ValueError):
+        RiskConfig(**{key: 1.0})
+
+
+def test_bracket_prices_refuses_a_non_positive_level():
+    """Defence in depth past the config check: never a bracket at or below 0."""
+    risk = RiskManager(RiskConfig(stop_loss_pct=0.5, take_profit_pct=0.5))
+    object.__setattr__(risk.config, "take_profit_pct", 1.0)    # past validation
+    assert risk.bracket_prices(+1, 100.0) == (50.0, 200.0)
+    with pytest.raises(ValueError):
+        risk.bracket_prices(-1, 100.0)
+
+
+def test_settings_save_refuses_a_bracket_pct_of_one():
+    from tradebot.config import Settings
+
+    with pytest.raises(ValueError):
+        Settings.from_dict({"risk": {"take_profit_pct": 1.0}})

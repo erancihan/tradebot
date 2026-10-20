@@ -148,13 +148,13 @@ risk:
   max_daily_loss_pct: 0.03    # flatten + halt after a 3% daily drawdown
   allow_fractional: false     # whole shares only
   rebalance_band_pct: 0.01    # skip drift trades smaller than 1% of equity
-                              # (full exits always execute). The default when
+                              # (full exits and long/short flips always execute). The default when
                               # unset; 0 disables the band.
   # Bracket exits attached to entries, as fractions of the entry price. Both are
   # optional; either can be set alone. PAPER/LIVE (and dry-run) ONLY — the
   # backtester does not model them, so a backtest will not show their effect. A bracket protects
   # BETWEEN rebalance passes: if the signal is still long after a stop fires,
-  # the next pass re-enters.
+  # the next pass re-enters. Each must be above 0 and below 1.
   # stop_loss_pct: 0.05       # exit 5% below the entry price
   # take_profit_pct: 0.15     # exit 15% above it
 
