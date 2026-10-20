@@ -95,6 +95,16 @@ def drop_stale(frames: dict[str, pd.DataFrame],
     return kept, len(frames) - len(kept)
 
 
+def sessions_behind(newest: date, now) -> int:
+    """US sessions completed after ``newest`` up to ``now``: how far a pool's
+    newest bar trails what a fresh pull would have."""
+    from ..market.us import is_trading_day, last_completed_close
+
+    done = last_completed_close(now).date()
+    days = pd.date_range(newest + timedelta(days=1), done, freq="D")
+    return sum(1 for d in days if is_trading_day(d.date()))
+
+
 def momentum_score(df: pd.DataFrame, lookback: int = LOOKBACK, skip: int = SKIP) -> float:
     """The newest ``MomentumSelector`` score for one frame (NaN when too short)."""
     selector = MomentumSelector(lookback=lookback, skip=skip, top_k=1)

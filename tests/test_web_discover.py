@@ -110,7 +110,7 @@ def _window_fetcher(calls):
 
 
 class _FakeUniverse:
-    def resolve_details(self):
+    def resolve_details(self, exclude=()):
         return [{"symbol": s, "price": 100.0, "adv": 5e8}
                 for s in ("AAA", "BBB", "SPY", "VTI")]
 
@@ -290,3 +290,29 @@ def test_a_bar_dated_after_now_is_never_read(tmp_path, offline):
     prices = {r["symbol"]: r["price"] for r in rows}
     for sym, price in prices.items():
         assert price == pytest.approx(float(cache.load(sym, "1day")["close"].iloc[-11]))
+
+
+def test_a_stale_cache_gives_its_own_date_and_says_it_is_stale(tmp_path, offline):
+    """Discover's as_of is the newest bar it used, not today, and the card
+    flags a cache that trails the last completed session."""
+    from datetime import datetime, timezone
+
+    from tradebot.config import Settings
+
+    _seed_pool(tmp_path)
+    last = BarCache(tmp_path / "cache").load("AAA", "1day").index[-1]
+    now = (last + pd.DateOffset(months=6)).to_pydatetime().astimezone(timezone.utc)
+    job = discover_job._run_discover({
+        "settings": Settings(symbols=["SPY", "QQQ"]), "trading_db": str(tmp_path / "t.db"),
+        "cache_dir": str(tmp_path / "cache"), "now": now})
+    prov = job["provenance"]
+    assert prov["as_of"] == last.date().isoformat() != now.date().isoformat()
+    assert prov["as_of_stale"] is True and prov["sessions_behind"] > 100
+    body = _client(tmp_path, _config(tmp_path)).get("/partials/discover").text
+    assert f"as of {last.date().isoformat()}" in body and "data-discover-stale" in body
+    fresh = discover_job._run_discover({
+        "settings": Settings(symbols=["SPY", "QQQ"]), "trading_db": str(tmp_path / "t.db"),
+        "cache_dir": str(tmp_path / "cache"),
+        "now": datetime.combine(last.date(), datetime.min.time(), timezone.utc)
+        + pd.Timedelta(hours=23)})
+    assert fresh["provenance"]["as_of_stale"] is False

@@ -28,11 +28,12 @@ def _universe():
     return AlpacaLiquidityUniverse()
 
 
-def _alpaca_pool(cache, fetcher, now: datetime, failures: dict):
+def _alpaca_pool(cache, fetcher, now: datetime, failures: dict, exclude: list[str]):
     """The pool and its frame loader; ``failures`` collects every failed fetch
     (``{"tried": n, "failed": n, "first_error": "ClassName"}``) so the run can
-    say so, or refuse to store a ranking built from nothing."""
-    pool = [str(r["symbol"]) for r in _universe().resolve_details()]
+    say so, or refuse to store a ranking built from nothing. ``exclude`` leaves
+    the shortlist before the screen's cap, so held names never take a slot."""
+    pool = [str(r["symbol"]) for r in _universe().resolve_details(exclude=exclude)]
     start = now - timedelta(days=math.ceil(FETCH_BARS * 1.5) + 10)
 
     def frames_for(symbols: list[str]) -> dict:
@@ -91,10 +92,12 @@ def _run_discover(params: dict) -> dict:
     settings, trading_db = params["settings"], params["trading_db"]
     now = params.get("now") or datetime.now(timezone.utc)
     cache, failures = BarCache(params["cache_dir"]), {}
+    with Storage(trading_db) as store:
+        exclude = _excluded(settings, store, trading_db)
     if advisor_service._credentials() is not None:
         source = "alpaca"
         pool, frames_for = _alpaca_pool(cache, advisor_service.build_default_fetcher(),
-                                        now, failures)
+                                        now, failures, exclude)
     else:
         source = "cache"
         pool, frames_for = _cache_pool(cache, params["cache_dir"])
@@ -104,13 +107,26 @@ def _run_discover(params: dict) -> dict:
                                "--symbols SPY QQQ IWM --timeframe 1day")
     # Only names the watchlist can hold: a cache file like SYN_A is not a ticker.
     pool = [s for s in pool if symbols_service.SYMBOL_RE.match(s)]
+    # Cut at today; ``as_of`` then names the newest bar used (``staleness``).
+    result = discover(frames_for, pool, exclude=exclude, as_of=now.date(), source=source)
+    provenance = {**result.provenance, **_check_failures(failures),
+                  **staleness(result.provenance, now), "computed_at": now.isoformat()}
     with Storage(trading_db) as store:
-        exclude = _excluded(settings, store, trading_db)
-        result = discover(frames_for, pool, exclude=exclude, as_of=now.date(),
-                          source=source)
-        provenance = {**result.provenance, **_check_failures(failures),
-                      "computed_at": now.isoformat()}
         run_id = store.record_discover_run(source=source, as_of=provenance["as_of"],
                                            provenance=provenance, rows=result.row_dicts())
     return {"summary": {"run_id": run_id, "rows": len(result.rows), "source": source},
             "provenance": provenance}
+
+
+def staleness(provenance: dict, now: datetime) -> dict:
+    """``as_of`` as the newest bar used (not today: a stale cache must not read
+    as fresh), and ``as_of_stale`` when it trails the last completed session
+    by more than ``MAX_STALE_SESSIONS``."""
+    from ....universe.discover import MAX_STALE_SESSIONS, sessions_behind
+
+    if not provenance.get("end"):
+        return {}
+    newest = datetime.fromisoformat(provenance["end"]).date()
+    behind = sessions_behind(newest, now)
+    return {"as_of": newest.isoformat(), "sessions_behind": behind,
+            "as_of_stale": behind > MAX_STALE_SESSIONS}

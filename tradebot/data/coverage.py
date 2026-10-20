@@ -27,7 +27,7 @@ def _ts(value) -> pd.Timestamp | None:
 
 
 #: A symbol or timeframe as a cache file name: no separator, so never a path.
-_NAME = re.compile(r"^[A-Za-z0-9.\-]{1,32}$")
+_NAME = re.compile(r"^[A-Za-z0-9_.\-]{1,32}$")
 
 
 def check_cache_name(symbol: str, timeframe: str) -> None:

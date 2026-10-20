@@ -44,10 +44,15 @@ class AlpacaLiquidityUniverse:
     def resolve(self) -> list[str]:
         return [str(r["symbol"]) for r in self.resolve_details()]
 
-    def resolve_details(self) -> list[dict[str, float | str]]:
-        """Run the full pipeline and return survivors with price/ADV metrics."""
+    def resolve_details(self, exclude=()) -> list[dict[str, float | str]]:
+        """Run the full pipeline and return survivors with price/ADV metrics.
+
+        ``exclude`` (Discover's held and watched names) leaves the shortlist
+        before the bars fetch and the ``max_symbols`` cap, so the cap counts
+        only names the caller can use."""
         actives, tradable, bars = self._fetchers()
-        shortlist = actives(self.candidates)
+        skip = {str(s).upper() for s in exclude}
+        shortlist = [s for s in actives(self.candidates) if str(s).upper() not in skip]
         allowed = tradable()
         if allowed is not None:
             shortlist = [s for s in shortlist if s in allowed]
