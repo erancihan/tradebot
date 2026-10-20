@@ -235,7 +235,7 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   batch it parked (`parked_batch`) refreshes it in place (sizing, prices, holds, `created_at`, so History and Today show its
   latest refresh; same batch id, so the push's link still works). A rejection, even Skip of every line, holds until the proposal
   changes (an all-holds pass is a change; a repeated one refreshes its batch, no new row) or the session day ends.
-  A changed proposal, an approval older than one `poll_seconds` (a failed pass keeps the batch: the stale gate guards it until the next good pass refreshes it), the wake after the close (`schedule.next_pass` grants a pass inside hours one more; `tick` expires with no pass; a broker-closed pass too), a halt, and switching off expire it. One push per batch; a restart pushes again
+  A changed proposal, an approval older than one `poll_seconds` (a failed pass keeps the batch: the stale gate guards it until the next good pass refreshes it; an Alpaca read retries once after `RETRY_SECONDS` on a connection error, a submit never), the wake after the close (`schedule.next_pass` grants a pass inside hours one more; `tick` expires with no pass; a broker-closed pass too), a halt, and switching off expire it. One push per batch; a restart pushes again
   only when the link key is per-process (no `TRADEBOT_WEB_TOKEN`; `Autopilot(links_persist=)`), with the token the stored state carries
   over. Then a reminder at `links.ttl_seconds` (max(2 x poll, 30 min), the link TTL) or the push's own `announced_exp` if sooner, or at
   once when a refresh grows a line's notional past `GROWTH_TOLERANCE` (10%) of what the push said (`autopilot/parking.py`).
