@@ -269,3 +269,4 @@ def test_a_synthetic_plan_without_a_start_starts_after_the_warmup(tmp_path):
     assert job["equity"]["index"][0].startswith("2021-01-04")     # SYNTHETIC_START
     assert job["provenance"]["start"].startswith("2021-01-04")
     assert len(job["equity"]["index"]) == job["provenance"]["bars"]
+

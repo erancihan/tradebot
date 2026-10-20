@@ -38,6 +38,15 @@ def clean(symbols: list[str]) -> list[str]:
     return out
 
 
+def clean_timeframe(timeframe: str) -> str:
+    """``timeframe`` when it is one the data layer knows; raises ``ValueError``."""
+    from ...data.alpaca_data import _TIMEFRAME_ALIASES
+
+    if timeframe not in _TIMEFRAME_ALIASES:
+        raise ValueError(f"timeframe: must be one of {', '.join(_TIMEFRAME_ALIASES)}")
+    return timeframe
+
+
 def add_keeping_list(store, settings, symbols: list[str]) -> None:
     """Put cleaned ``symbols`` on the watchlist without dropping the active list.
 

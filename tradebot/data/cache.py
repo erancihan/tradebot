@@ -35,6 +35,7 @@ from .coverage import (  # noqa: F401  (_MIN_TS/_MAX_TS/_merge_windows re-export
     _merge_windows,
     _spans,
     _ts,
+    check_cache_name,
     complete_through,
     read_manifest,
     write_manifest,
@@ -53,10 +54,14 @@ class BarCache:
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def path(self, symbol: str, timeframe: str) -> Path:
-        return self.root / timeframe / f"{symbol.upper()}.csv"
+        return self._file(symbol, timeframe, ".csv")
 
     def coverage_path(self, symbol: str, timeframe: str) -> Path:
-        return self.root / timeframe / f"{symbol.upper()}.coverage.json"
+        return self._file(symbol, timeframe, ".coverage.json")
+
+    def _file(self, symbol: str, timeframe: str, suffix: str) -> Path:
+        check_cache_name(symbol, timeframe)     # a name never leaves the cache
+        return self.root / timeframe / f"{symbol.upper()}{suffix}"
 
     def coverage(self, symbol: str, timeframe: str) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
         """Provider windows already pulled for this symbol, merged and sorted."""

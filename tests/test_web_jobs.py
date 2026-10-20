@@ -236,3 +236,32 @@ def test_synthetic_job_carries_provenance_too(tmp_path):
     assert prov["source"] == "synthetic"
     assert prov["seed"] == 9
     assert "artificial calendar" in prov["note"]
+
+
+# --- a job's symbol and timeframe name a cache file: never a path ------------
+
+@pytest.mark.parametrize("field,value", [
+    ("symbol", "../../x"), ("symbol", "a/b"), ("symbol", "SPY;--"),
+    ("timeframe", "../.."), ("timeframe", "2day"),
+])
+def test_a_job_refuses_a_symbol_or_timeframe_that_is_not_one(tmp_path, field, value):
+    outside = tmp_path / "x.csv"                        # what "../../x" would read
+    outside.write_text("timestamp,open,high,low,close,volume\n")
+    body = {"kind": "backtest", "source": "real", "symbol": "XLTEST", "timeframe": "1day"}
+    body[field] = value
+    r = _client(tmp_path).post("/api/jobs", json=body, headers=POST_HEADERS)
+    assert r.status_code == 422
+    assert field in r.json()["detail"]
+
+
+def test_the_cache_refuses_a_path_that_leaves_its_directory(tmp_path):
+    from tradebot.data.cache import BarCache
+
+    cache = BarCache(tmp_path / "cache")
+    for symbol, timeframe in (("../../x", "1day"), ("SPY", "../.."), ("a/b", "1day"),
+                              ("SPY", "/etc")):
+        with pytest.raises(ValueError, match="cache"):
+            cache.path(symbol, timeframe)
+        with pytest.raises(ValueError, match="cache"):
+            cache.load(symbol, timeframe)
+    assert cache.path("brk.b", "1day").name == "BRK.B.csv"

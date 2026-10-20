@@ -9,6 +9,7 @@ trusting data never downloaded.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -23,6 +24,19 @@ def _ts(value) -> pd.Timestamp | None:
     if value is None:
         return None
     return pd.Timestamp(value, tz="UTC") if pd.Timestamp(value).tzinfo is None else pd.Timestamp(value)
+
+
+#: A symbol or timeframe as a cache file name: no separator, so never a path.
+_NAME = re.compile(r"^[A-Za-z0-9.\-]{1,32}$")
+
+
+def check_cache_name(symbol: str, timeframe: str) -> None:
+    """Raise ``ValueError`` unless both are plain names: whoever calls the
+    cache, a symbol or timeframe never reaches a file outside it."""
+    for name in (str(symbol), str(timeframe)):
+        if not _NAME.match(name) or set(name) <= {"."}:
+            raise ValueError(f"not a cache name: {symbol!r} ({timeframe!r}); symbols "
+                             "and timeframes never leave the cache directory")
 
 
 #: Timeframe names that mean one bar per session.
