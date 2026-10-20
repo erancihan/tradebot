@@ -451,14 +451,25 @@ def test_cli_seed_refuses_when_there_are_no_bars(tmp_path, capsys):
 # --- the live feed must survive downtime ---------------------------------------
 
 class _WindowedData:
-    """A provider whose visible history grows — like real bars over real time."""
+    """A provider whose visible history grows — like real bars over real time.
+
+    ``lookback`` is in calendar days, as ``AlpacaData.history`` reads it: the
+    fake used to treat it as bars, which hid that ``catchup=30`` healed only
+    about 20 sessions.
+    """
 
     def __init__(self, full):
         self.full = full
         self.upto = 0
 
     def history(self, symbol, timeframe=None, lookback=5):
-        return self.full.iloc[max(0, self.upto - lookback):self.upto]
+        import pandas as pd
+
+        visible = self.full.iloc[:self.upto]
+        if not len(visible):
+            return visible
+        start = visible.index[-1] - pd.Timedelta(days=lookback)
+        return visible[visible.index > start]
 
 
 def _daily(periods, seed=1):
@@ -567,3 +578,54 @@ def test_a_caught_up_feed_still_accumulates_correctly(tmp_path):
         stored = store.load_frames(season.id)["DEMO"]
         assert len(stored) == 12
         assert list(stored.index) == list(full.index)
+
+
+def _sessions(periods, seed=1):
+    """Weekday bars, so bars and calendar days differ as they do live."""
+    import pandas as pd
+
+    df = synthetic_ohlcv(periods=periods, seed=seed)
+    df.index = pd.bdate_range("2026-01-02", periods=periods, tz="UTC")
+    return df
+
+
+def _downtime(missed):
+    from tradebot.arena.season import AlpacaSeasonFeed
+
+    full = _sessions(80)
+    data = _WindowedData(full)
+    data.upto = 10
+    feed = AlpacaSeasonFeed(["X"], "1day", "k", "s", data=data,
+                            clock=_settled_clock(), catchup=30)
+    feed.next()
+    data.upto = 10 + missed
+    return full, feed.next()["X"]
+
+
+def test_catchup_counts_bars_not_calendar_days():
+    """`catchup=30` heals 30 missed sessions, not 30 calendar days (~20 sessions)."""
+    full, caught = _downtime(30)
+    assert list(caught.index) == list(full.index[10:40])     # all 30 healed
+
+
+def test_a_gap_one_bar_past_catchup_is_not_fully_healed():
+    full, caught = _downtime(31)
+    assert len(caught) == 30
+    assert full.index[10] not in caught.index                # the oldest is lost
+    assert caught.index[-1] == full.index[40]
+
+
+def test_seeded_through_never_moves_backwards(tmp_path):
+    """Seeding older history after a newer seed must not make backfilled bars
+    look live: the boundary is the max of every seed, not the last one."""
+    from tradebot.arena.season import seed_season
+
+    full = _daily(60)
+    with SeasonStore(tmp_path / "s.db") as store:
+        season = Season.create(store, _config(symbols=["DEMO"]))
+        seed_season(season, {"DEMO": full.iloc[30:]}, recompute=False)
+        newer = store.seeded_through(season.id)
+        seed_season(season, {"DEMO": full.iloc[:20]}, recompute=False)
+        assert store.seeded_through(season.id) == newer
+        store.set_seeded_through(season.id, "2025-01-01T00:00:00+00:00")
+        assert store.seeded_through(season.id) == newer

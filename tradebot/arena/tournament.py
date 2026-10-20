@@ -50,7 +50,9 @@ def run_tournament(
     runner = runner or default_runner(time_budget_s, isolation, cpu_seconds, memory_mb,
                                        harden, seccomp, require_sandbox)
 
-    contestants, load_errors = discover(paths)
+    # A process runner imports each file in a hardened child (module bodies
+    # are contestant code too); the in-process runner trusts what it imports.
+    contestants, load_errors = getattr(runner, "discover", discover)(paths)
     if frames is None:
         frames = scenario.build_frames()
     risk = RiskManager(scenario.risk)
@@ -60,7 +62,9 @@ def run_tournament(
         slippage_bps=scenario.slippage_bps,
     )
 
-    results = [runner.run(c, frames, risk, config, scorer) for c in contestants]
+    run_all = getattr(runner, "run_all", None)
+    results = (run_all(contestants, frames, risk, config, scorer) if run_all else
+               [runner.run(c, frames, risk, config, scorer) for c in contestants])
     return TournamentOutcome(
         leaderboard=Leaderboard.build(metric, results),
         load_errors=load_errors,

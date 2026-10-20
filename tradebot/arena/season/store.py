@@ -41,6 +41,11 @@ class SeasonStore:
         the fact, and everything in it was knowable when the field was written.
         Recording the boundary is what keeps those two claims separable.
         """
+        # The boundary only moves forward: seeding older history after a newer
+        # seed would otherwise relabel the newer backfill as live.
+        current = self.seeded_through(season_id)
+        if current is not None and pd.Timestamp(current) >= pd.Timestamp(ts):
+            return
         self._conn.execute("UPDATE seasons SET seeded_through = ? WHERE id = ?",
                            (ts, season_id))
         self._conn.commit()

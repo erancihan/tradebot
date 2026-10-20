@@ -638,11 +638,24 @@ are `sharpe`, `total_return`, `cagr`, `calmar`, `worst_fold` and `consistency`.
 The last two score the worst fold or the mean minus the dispersion. The
 contestant guide is [`algos/README.md`](algos/README.md).
 
-Contestants run in forked processes with a hard timeout and optional
-`--cpu-seconds` and `--memory-mb` limits. They are sandboxed by default (no
-disk writes, no network). `--no-harden` opts out. `--seccomp` also denies
-`execve` and `ptrace`. `--require-sandbox` fails a contestant, instead of
-warning, when the kernel refuses a mechanism.
+With `--isolation process` (the default for `arena run` and `arena gate`),
+each contestant file is imported, built and run in its own fresh Python
+interpreter, never in the arena's own process. The interpreter gets a short
+allow-listed environment (no broker keys, no `TRADEBOT_*` values) and an empty
+temporary working directory. It has a hard timeout and optional
+`--cpu-seconds` and `--memory-mb` limits, and it sends back plain JSON only.
+It is sandboxed by default: no data writes and no network. On Linux with
+Landlock, the filesystem is also read-only outside the child's directory. On
+macOS a contestant can still truncate or delete files your user owns.
+`--no-harden` opts out. `--seccomp` also denies `execve` and `ptrace`.
+`--require-sandbox` fails a contestant, instead of warning, when the kernel
+refuses a mechanism. A thread runner refuses both flags. It imports
+contestant files into the arena process, so use it only for code you trust.
+
+The sandbox does not stop reads. A contestant can read any file your user can
+read, including the startup environment of your other processes. So keep
+broker keys in `.env`, not exported in the shell that runs the arena. Review
+contestant code before you run it. That review is the real gate.
 
 ### Scenarios
 
@@ -730,8 +743,9 @@ Seeded standings are backfilled, not live-earned. `season standings` and the
 
 Use `--isolation process` for anything long-running. The default `thread`
 runner cannot kill an over-budget contestant, so a slow one leaks a thread
-every tick. A restart heals up to 30 missed bars. Re-run `season seed` for a
-longer gap. To run a season as a service, adapt
+every tick. A restart heals up to 30 missed bars (bars, not calendar days).
+Re-run `season seed` for a longer gap. A seed of older history never moves
+the seed boundary back. To run a season as a service, adapt
 `deploy/systemd/tradebot-web.service`: swap its `ExecStart` for
 `tradebot arena season run 1 --db /var/lib/tradebot/season.db`.
 

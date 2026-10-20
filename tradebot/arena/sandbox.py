@@ -1,10 +1,16 @@
-"""Best-effort hardening applied *inside* a subprocess-isolated contestant.
+"""Best-effort hardening applied *inside* a process-isolated contestant.
 
-Layered on top of the CPU/memory ``rlimit``s the ``SubprocessRunner`` already
-sets, this removes two big capabilities a hostile algorithm would want:
+The child is a fresh interpreter (``tradebot.arena.child``) started with an
+allow-listed environment, in an empty temporary working directory. Layered on
+the CPU/memory ``rlimit``s, this removes what a hostile algorithm would want:
 
-- **No disk writes** — ``RLIMIT_FSIZE = 0`` so any attempt to write data fails
-  (empty-file creation may still succeed; the *contents* can't be written).
+- **No data writes** — ``RLIMIT_FSIZE = 0``, so writing bytes to any file
+  fails. It does *not* stop truncating (``open(path, "w")``) or unlinking a
+  file the user owns; that is the next tier.
+- **Read-only filesystem** — on Linux with Landlock (5.13+), write, create,
+  remove and truncate rights exist only beneath the child's own directory
+  (:mod:`tradebot.arena.landlock`). macOS has no unprivileged equivalent, so
+  there a hardened child can still truncate or unlink the user's files.
 - **No network** — ``unshare(CLONE_NEWNET)`` drops the process into a fresh,
   empty network namespace (only a down loopback), so it can't connect out.
 
@@ -12,24 +18,24 @@ Plus ``PR_SET_NO_NEW_PRIVS`` (block setuid escalation) and an open-fd cap. Each
 mechanism is best-effort and guarded; ``apply_hardening`` returns a report of
 what it could enforce.
 
-For truly adversarial code that tries to *spawn other programs* or trace
-processes, ``seccomp`` is the next layer: ``apply_hardening(seccomp=True)`` loads
-a ``libseccomp`` filter that denies ``execve``/``execveat``/``ptrace`` with
-``EPERM`` while allowing everything else. This is opt-in (``--seccomp``) because
-it is the "fully adversarial" tier; the default ``--harden`` path stays
-syscall-complete so ordinary numeric contestants are never surprised.
+For code that tries to *spawn other programs* or trace processes, ``seccomp``
+is the next layer: ``apply_hardening(seccomp=True)`` loads a ``libseccomp``
+filter that denies ``execve``/``execveat``/``ptrace`` with ``EPERM`` while
+allowing everything else. This is opt-in (``--seccomp``).
 
-Limits (be honest): even with seccomp this does not stop a contestant from
-*reading* files it already has access to or from burning CPU within its limit.
-For untrusted third-party code, OS-level containment (containers / gVisor) is the
-right tool; that tier is deliberately not built (see the Deferred section
-of CLAUDE.md). Opt in via ``--harden`` / ``--seccomp``.
+Limits (be honest): nothing here stops a contestant from *reading* files its
+user can read, including another same-user process's initial environment
+(``/proc/<pid>/environ``, ``KERN_PROCARGS2``) — so never export broker keys in
+the shell that runs the arena; keep them in ``.env``. Its own reply is
+untrusted data (``wire.py``), and it can misreport its own result. Contestant
+code is human reviewed; containers are deliberately not built (ADR 0002).
 """
 
 from __future__ import annotations
 
 import ctypes
 import ctypes.util
+import os
 import resource
 
 _PR_SET_NO_NEW_PRIVS = 38
@@ -121,15 +127,17 @@ def _apply_seccomp(blocked: tuple[str, ...] = _DEFAULT_BLOCKED) -> bool:
 
 def apply_hardening(no_write: bool = True, isolate_network: bool = True,
                     no_new_privs: bool = True, max_open_files: int = 256,
-                    seccomp: bool = False) -> dict:
+                    seccomp: bool = False, writable_dir: str | None = None) -> dict:
     """Apply best-effort containment to the *current* process. Returns a report
     mapping each mechanism to whether it was enforced.
 
+    With ``no_write`` the filesystem also goes read-only outside
+    ``writable_dir`` (default: the working directory) where Landlock exists.
     When ``seccomp`` is set it is applied *last* (a seccomp load needs
     ``no_new_privs`` first) and forces ``no_new_privs`` on so the filter can load
     in an unprivileged process."""
-    if seccomp:
-        no_new_privs = True
+    if seccomp or no_write:
+        no_new_privs = True   # Landlock and seccomp both need it first
     report: dict[str, bool] = {}
     libc = _libc()
 
@@ -139,9 +147,13 @@ def apply_hardening(no_write: bool = True, isolate_network: bool = True,
     if no_write:
         try:
             resource.setrlimit(resource.RLIMIT_FSIZE, (0, 0))
-            report["no_write"] = True
+            report["no_data_writes"] = True
         except (ValueError, OSError):
-            report["no_write"] = False
+            report["no_data_writes"] = False
+        from .landlock import restrict_writes_to
+
+        report["read_only_fs"] = bool(report.get("no_new_privs")) and \
+            restrict_writes_to(writable_dir or os.getcwd())
 
     if max_open_files:
         try:
@@ -163,16 +175,18 @@ def apply_hardening(no_write: bool = True, isolate_network: bool = True,
     return report
 
 
-#: Environment variables a contestant must never see. The forked child
-#: inherits the parent's whole environment, and a tournament is often run from
-#: a shell that also holds the broker keys. Sandboxing stops writes and
-#: network, not reads of ``os.environ``.
-SECRET_PREFIXES = ("ALPACA_", "TRADEBOT_LIVE_CONFIRM")
+#: Environment variables a contestant must never see: every key a ``.env``
+#: may set (broker keys, the batch-link signing key, the live latch, paths),
+#: and anything else under the two prefixes. The child's environment is an
+#: allow-list already (``spawn.child_env``); this is the second lock.
+SECRET_PREFIXES = ("ALPACA_", "TRADEBOT_")
 
 
 def scrub_secrets(env) -> list[str]:
-    """Delete broker credentials and the live latch from ``env``; return names."""
-    names = sorted(k for k in env if k.startswith(SECRET_PREFIXES))
+    """Delete credentials, the link key and the live latch from ``env``; return names."""
+    from ..credentials import DOTENV_KEYS
+
+    names = sorted(k for k in env if k.startswith(SECRET_PREFIXES) or k in DOTENV_KEYS)
     for name in names:
         del env[name]
     return names

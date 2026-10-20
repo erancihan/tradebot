@@ -2,14 +2,15 @@
 
 Two implementations behind one ``Runner`` protocol:
 
-- ``SubprocessRunner`` — runs each contestant in its own forked process with a
-  **hard** wall-clock timeout (the process is killed on expiry) plus optional
-  CPU/memory ``rlimit``s. Real isolation: a runaway or hostile algorithm cannot
-  stall the tournament or exhaust the host. POSIX/fork only.
+- ``SubprocessRunner`` — imports, builds and runs each contestant in its own
+  fresh interpreter (``spawn.py``, not a fork) with a **hard** wall-clock
+  timeout (the session is killed on expiry), CPU/memory ``rlimit``s and the
+  sandbox. A runaway or hostile algorithm cannot stall the tournament, exhaust
+  the host, or reach the parent's environment or memory. POSIX only.
 - ``InProcessRunner`` — runs on a daemon thread with a **soft** ``join(timeout)``.
   Portable and fast, but Python threads can't be force-killed, so a runaway
   algo's thread keeps consuming CPU in the background (it's a daemon, so it never
-  blocks process exit). Use for trusted code, or where fork isn't available.
+  blocks process exit). It imports contestant files in-process: trusted code only.
 
 ``default_runner`` selects between them by ``isolation``:
 
@@ -57,8 +58,8 @@ class Runner(Protocol):
 
 
 def _simulate_contestant(contestant, frames, risk_config, config):
-    """The child's work: resolved through this module's ``simulate`` binding so
-    a test that wraps ``runner.simulate`` sees subprocess runs too."""
+    """The process-isolated child's work (``child.py``), one call site with the
+    in-process runner's ``simulate``."""
     policy, extra = simulation_args(contestant)
     return simulate(policy, frames, RiskManager(risk_config), config, **extra)
 
@@ -69,6 +70,13 @@ def _simulate_contestant(contestant, frames, risk_config, config):
 class InProcessRunner:
     def __init__(self, time_budget_s: float = 10.0) -> None:
         self.time_budget_s = time_budget_s
+
+    @staticmethod
+    def discover(paths):
+        """In-process import: module bodies run here, unsandboxed."""
+        from .loader import discover
+
+        return discover(paths)
 
     def run(self, contestant, frames, risk, config, scorer) -> ContestantResult:
         start = time.perf_counter()
@@ -94,6 +102,24 @@ class InProcessRunner:
         return _ok(contestant, box["result"], scorer, duration)
 
 
+def _in_process(time_budget_s, harden, seccomp, require_sandbox) -> InProcessRunner:
+    """An in-process runner, refusing guarantees it cannot give.
+
+    ``seccomp`` and ``require_sandbox`` are explicit asks for containment; a
+    thread cannot have either, and dropping them behind a debug log made the
+    run look sandboxed. Default-on ``harden`` stays quiet: it is not an ask.
+    """
+    asked = [flag for flag, on in (("--seccomp", seccomp),
+                                   ("--require-sandbox", require_sandbox)) if on]
+    if asked:
+        raise ValueError(
+            f"{' and '.join(asked)} need process isolation; an in-process (thread) "
+            "runner cannot sandbox contestant code. Use --isolation process.")
+    if harden:
+        log.debug("hardening skipped: thread isolation can't sandbox in-process code")
+    return InProcessRunner(time_budget_s)
+
+
 def default_runner(time_budget_s: float = 10.0, isolation: str = "process",
                    cpu_seconds: int | None = None, memory_mb: int | None = None,
                    harden: bool = True, seccomp: bool = False,
@@ -117,11 +143,7 @@ def default_runner(time_budget_s: float = 10.0, isolation: str = "process",
             f"Unknown isolation {isolation!r}; expected one of {_ISOLATION_MODES}."
         )
     if isolation == "thread":
-        if harden or seccomp:
-            # Default-on hardening simply doesn't apply to in-process execution;
-            # keep this quiet (debug) so the common thread path isn't noisy.
-            log.debug("hardening skipped: thread isolation can't sandbox in-process code")
-        return InProcessRunner(time_budget_s)
+        return _in_process(time_budget_s, harden, seccomp, require_sandbox)
     if not fork_available():
         if isolation == "auto":
             log.warning(
@@ -129,7 +151,7 @@ def default_runner(time_budget_s: float = 10.0, isolation: str = "process",
                 "back to soft in-process isolation — contestants are NOT killable and "
                 "have no CPU/memory limits."
             )
-            return InProcessRunner(time_budget_s)
+            return _in_process(time_budget_s, harden, seccomp, require_sandbox)
         # isolation == "process": refuse to silently weaken the guarantee.
         raise RuntimeError(
             "Hard process isolation requires the 'fork' start method, which is "

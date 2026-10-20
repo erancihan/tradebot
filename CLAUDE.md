@@ -50,7 +50,7 @@ tradebot/
   storage/       tradebot.db mixins: orders, bars, weights, proposals, autopilot, watchlist, discover, accounts
   cli/           build_parser/main + one module per command
   arena/         api, loader, interfaces, adapters, simulation, scenario, runner +
-                 isolation, sandbox, scoring, gate/, result, tournament, league,
+                 isolation (+ spawn, child, wire, landlock, isolated_discovery), sandbox, scoring, gate/, result, tournament, league,
                  season/, panel, market, contestant, store + journal
   web/           app (create_app, load_settings), server, startup, guard, access, repository/,
                  schemas/, services/ account, advisor, autopilot (+ reset, _notice), autopilot_build, cache,
@@ -199,13 +199,13 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
 
 **Arena and season**
 - **Isolation:** `process` is the default for `arena run`/`gate`; `season create` defaults to `thread`.
-  `process` forks with a hard kill and never downgrades. `thread` is soft (marks `TIMEOUT`, cannot kill). `auto` warns before falling back.
+  `process` spawns a fresh interpreter per contestant with a hard session kill and never downgrades. `thread` is soft (marks `TIMEOUT`, cannot kill). `auto` warns before falling back.
   Never wrap a worker in a `ThreadPoolExecutor` context manager: its exit waits for the task.
-- **Sandbox:** process isolation hardens by default (no writes, empty network
-  namespace) unless `--no-harden`. `--seccomp` denies `execve`/`ptrace`
-  last, after `no_new_privs`. An unenforceable tier (CI, macOS) logs one warning
-  per mechanism. `--require-sandbox` makes it fatal. `sandbox.scrub_secrets`
-  removes `ALPACA_*` and `TRADEBOT_LIVE_CONFIRM` from the child's environment.
+- **Sandbox:** `process` imports, builds and runs each contestant in a fresh interpreter (`spawn.py`, never a fork; allow-listed env, empty
+  temp cwd; discovery too, `isolated_discovery`) that replies plain JSON only (`wire.py`, never pickle). Hardened unless `--no-harden`: no data
+  writes, Landlock read-only fs (Linux), empty network namespace; `--seccomp` last, after `no_new_privs`. An unenforceable tier (CI, macOS) warns
+  once per mechanism; `--require-sandbox` makes it fatal; `thread` refuses both flags and imports in-process. `scrub_secrets`: `DOTENV_KEYS`,
+  `ALPACA_*`, `TRADEBOT_*`. Reads are never blocked (same-user `/proc/<pid>/environ`): keys live in `.env`; human review is the gate.
 - **`arena run` journals** into `--db` (default `./arena.db`). Tests pass `--db <tmp_path>` or `--no-journal`. `run_tournament` has no side effects.
 - **The `algos/` head-count (12) is in tests** (`test_web.py`,
   `test_arena_season.py`, `test_arena_tournament.py`, `test_arena_journal.py`).
@@ -219,9 +219,9 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   verdict. One draw is a coin flip: use `arena gate --seeds N`, and fix the evaluation,
   never the data. The factor pool is fixed, joint, and the haven costs money to hold.
 - **Season bars are the source of truth.** The `(season_id, symbol, ts)` key
-  makes re-delivery idempotent. The feed backfills up to `catchup` (30) missed
-  bars. Seed a new season (`arena season seed`). Backfilled standings are not a
-  live-forward claim (`seeded_through`). Expensive fields need `--isolation
+  makes re-delivery idempotent. The feed backfills up to `catchup` (30) missed bars, counted in bars
+  (`catchup_days` sizes the calendar fetch). Seed a new season (`arena season seed`). Backfilled standings are not a
+  live-forward claim (`seeded_through`, which only moves forward). Expensive fields need `--isolation
   process --time-budget N`. Hardening derives from isolation.
 - **Consortium:** obeys every decision-rule invariant (guarded by `test_the_consortium_cannot_see_the_future`,
   `test_the_consensus_is_prefix_stable`). Convex blend, voice floor. Opt-in, run with `--time-budget 200`.

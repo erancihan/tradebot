@@ -10,7 +10,7 @@ shows its dollars:
         UP    10,000.00 -> 20,876.91  (+108.8%, 3 trades)  2023-01-02 -> 2024-05-15
 
 Recording is automatic (the entry points are wrapped for the session); tests
-need no changes. Subprocess-isolated arena runs execute in forked children,
+need no changes. Subprocess-isolated arena runs execute in separate interpreters,
 so only thread-isolation tournaments appear. Tests that run many simulations
 (leagues, seasons) are summarised as a range instead of listed row by row.
 """

@@ -6,9 +6,11 @@ attributed back to that file. A file that fails to import (syntax error, bad
 import, …) is recorded as a :class:`LoadError` and skipped — one broken
 submission never sinks the whole field.
 
-Security note: importing a module runs its top-level code. This is the *trusted*
-runner — only point it at algorithms you trust. The runner boundary is designed
-so a sandboxed loader can replace this later for untrusted submissions.
+Security note: importing a module runs its top-level code, in this process.
+Process isolation never calls this in the parent: it discovers through
+``isolated_discovery`` (each file imported in a hardened child), and the child
+that runs a contestant calls this after hardening. The thread runner and
+``arena list`` call it in-process, so they are for code you trust.
 """
 
 from __future__ import annotations
