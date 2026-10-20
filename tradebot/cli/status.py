@@ -10,6 +10,9 @@ def register(sub: argparse._SubParsersAction) -> None:
     s = sub.add_parser("status", help="print broker account snapshot")
     s.add_argument("--config", default=None,
                    help="settings file (defaults to ./config.yaml when present)")
+    from .common import add_trading_db
+
+    add_trading_db(s)
     s.set_defaults(func=cmd_status)
 
 

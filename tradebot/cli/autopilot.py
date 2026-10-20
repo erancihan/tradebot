@@ -73,7 +73,7 @@ def run_autopilot(settings, args: argparse.Namespace) -> int:
     if replay:
         clock.pilot = pilot
     pilot.set_mode(args.mode, expire_pending=False)
-    print(f"[AUTOPILOT] mode={args.mode} account={engine.mode} on {settings.symbols} "
+    print(f"[AUTOPILOT] mode={args.mode} account={engine.mode} on {engine.settings.symbols} "
           f"with {engine.strategy.name}; every {settings.poll_seconds}s in {settings.market} hours.")
     if pilot.brief is not None:
         print(f"[AUTOPILOT] morning brief {settings.brief_minutes_before_open} min "

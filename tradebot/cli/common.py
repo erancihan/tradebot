@@ -76,13 +76,20 @@ def _load_settings(args, command: str, *, active_list: bool = False):
 
 
 def _load_settings_from(args, command: str, *, active_list: bool = False):
-    """``(settings, source)``, and one line on stderr naming the file and,
-    for a trading command, the list (stdout stays the command's own output,
-    so ``tradebot universe`` pipes cleanly)."""
-    from ..config import resolve_settings
+    """``(settings, source)``, and one line on stderr naming the file, the
+    trading db when the command takes ``--trading-db`` and, for a trading
+    command, the list (stdout stays the command's own output, so ``tradebot
+    universe`` pipes cleanly). ``db_path`` is resolved as the web resolves it."""
+    from dataclasses import replace
+
+    from ..config import resolve_settings, trading_db_path
 
     settings, source = resolve_settings(getattr(args, "config", None))
+    settings = replace(settings, db_path=trading_db_path(
+        settings, getattr(args, "trading_db", None)))
     line = f"tradebot {command}: config={source or 'defaults'}"
+    if hasattr(args, "trading_db"):
+        line += f" db={settings.db_path}"
     if active_list:
         settings, label = _active_list(settings)
         line += f" symbols={label}"
@@ -91,9 +98,10 @@ def _load_settings_from(args, command: str, *, active_list: bool = False):
 
 
 def _active_list(settings):
-    """``(settings, label)``: the same list the web trades. A non-empty
-    watchlist in the trading db replaces the config symbols and any universe
-    screen, so a CLI pass never sells what the web list buys."""
+    """``(settings, label)``: the list the web trades, as of now. The engine
+    re-reads it every pass (``engine.active``), so only the universe screen is
+    settled here: a non-empty watchlist replaces it, and the config symbols
+    stay the fallback for when the watchlist is emptied."""
     from dataclasses import replace
     from pathlib import Path
 
@@ -104,6 +112,13 @@ def _active_list(settings):
         with Storage(settings.db_path) as store:
             active = resolve_active(settings, store)
         if active["source"] == "watchlist":
-            settings = replace(settings, symbols=active["symbols"], universe_name=None)
-            return settings, f"watchlist({len(settings.symbols)})"
+            settings = replace(settings, universe_name=None)
+            return settings, f"watchlist({len(active['symbols'])})"
     return settings, f"config({len(settings.symbols)})"
+
+
+def add_trading_db(parser) -> None:
+    """``--trading-db``, as ``tradebot-web`` has it."""
+    parser.add_argument("--trading-db", dest="trading_db", default=None,
+                        help="trading database (default: $TRADEBOT_DB, else the "
+                             "config's db_path; the file tradebot-web uses)")

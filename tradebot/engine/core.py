@@ -29,7 +29,7 @@ from ..notify import LogNotifier
 from ..risk import RiskManager
 from ..storage import Storage
 from ..strategies.base import Strategy
-from . import fills, orders, pending, session, signals, unlisted
+from . import active, fills, orders, pending, session, signals, unlisted
 from .execution import EngineExecutionMixin
 from .hooks import EngineHooksMixin
 from .orders import RebalanceAction
@@ -77,6 +77,11 @@ class Engine(EngineHooksMixin, EngineExecutionMixin):
         # Approved lines the broker accepted whose `submitted` mark has not
         # been written yet (e.g. the database was locked): never sent again.
         self._sent_line_ids: set[int] = set()
+        # The fallback when the watchlist is empty; the list itself is re-read
+        # from storage every pass (``engine.active``), starting here.
+        self._config_symbols = list(settings.symbols)
+        self._config_universe = settings.universe_name
+        active.refresh(self)
 
     @property
     def mode(self) -> str:
@@ -148,7 +153,8 @@ class Engine(EngineHooksMixin, EngineExecutionMixin):
                 now: datetime | None = None) -> Proposal:
         """What this pass would trade: fetch bars and positions (held names off
         the list too, to close them, unless live or ``manage_unlisted`` is off),
-        then ask the advisor. Submits nothing."""
+        then ask the advisor. Submits nothing. The list is re-read first."""
+        active.refresh(self)
         frames = signals.fetch_frames(self)
         positions = orders.current_positions(self, frames)
         return advisor.propose(

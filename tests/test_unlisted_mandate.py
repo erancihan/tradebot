@@ -106,6 +106,58 @@ def test_cli_run_says_config_without_a_watchlist(tmp_path, monkeypatch, capsys):
     assert "symbols=config(2)" in _run_replay(tmp_path, monkeypatch, capsys).err
 
 
+def test_cli_and_web_open_the_same_trading_db(tmp_path, monkeypatch, capsys):
+    """Flag, then ``$TRADEBOT_DB``, then ``db_path``: one rule for both."""
+    from tradebot.config import trading_db_path
+
+    monkeypatch.setenv("TRADEBOT_DB", str(tmp_path / "env.db"))
+    with Storage(tmp_path / "env.db") as store:
+        store.add_to_watchlist(["IWM", "DIA"])           # the web's watchlist
+    out = _run_replay(tmp_path, monkeypatch, capsys)
+    assert "symbols=watchlist(2)" in out.err and f"db={tmp_path / 'env.db'}" in out.err
+    assert not (tmp_path / "t.db").exists()             # db_path lost to the env
+    settings = Settings(db_path=str(tmp_path / "t.db"))
+    assert trading_db_path(settings) == str(tmp_path / "env.db")
+    assert trading_db_path(settings, "flag.db") == "flag.db"
+    pytest.importorskip("fastapi")
+    from tradebot.web.app import create_app
+
+    app = create_app(arena_db=str(tmp_path / "a.db"),
+                     settings_path=str(tmp_path / "config.yaml"))
+    assert app.state.trading_db == str(tmp_path / "env.db")
+    assert main(["run", "--replay", "--replay-periods", "60",
+                 "--trading-db", str(tmp_path / "flag.db")]) == 0
+    assert f"db={tmp_path / 'flag.db'}" in capsys.readouterr().err
+    assert (tmp_path / "flag.db").exists()
+
+
+def test_a_running_engine_sees_a_watchlist_edit_on_its_next_pass(tmp_path, caplog):
+    """The CLI loop is not reset by a web edit: the engine re-reads the list."""
+    engine, broker = _engine(tmp_path, Settings(mode="paper", symbols=["SPY", "QQQ"]),
+                             mode_label="dry_run", enforce_live_ack=False)
+    engine.rebalance()
+    assert broker.position("QQQ").qty > 0 and broker.position("IWM").qty == 0
+    engine.storage.add_to_watchlist(["SPY", "IWM"])      # edited on the phone
+    with caplog.at_level(logging.INFO, logger="tradebot.engine"):
+        lines = {ln.symbol: ln for ln in engine.propose(10_000.0).lines}
+        engine.propose(10_000.0)
+    assert lines["IWM"].action == "buy"                  # added: proposed
+    assert lines["QQQ"].action == "sell" and lines["QQQ"].desired_qty == 0   # removed: flat
+    assert caplog.text.count("symbols=watchlist(2)") == 1                   # once per change
+    engine.storage.remove_from_watchlist(["SPY", "IWM"])
+    assert engine.propose(10_000.0) and engine.settings.symbols == ["SPY", "QQQ"]
+
+
+def test_an_engine_without_storage_trades_the_config_list(tmp_path):
+    frames = {s: synthetic_ohlcv(periods=60, seed=i) for i, s in enumerate(("SPY", "QQQ"))}
+    data = ReplayData(frames, warmup=40)
+    engine = Engine(Settings(mode="paper", symbols=["SPY", "QQQ"]),
+                    DryRunBroker(data, initial_cash=10_000), data,
+                    build_strategy("buy_and_hold"), RiskManager(RiskConfig()),
+                    mode_label="dry_run", enforce_live_ack=False)
+    assert {ln.symbol for ln in engine.propose(10_000.0).lines} == {"SPY", "QQQ"}
+
+
 # --- M1: one unpriceable position never unprices the rest ----------------------
 
 class _PickyData:

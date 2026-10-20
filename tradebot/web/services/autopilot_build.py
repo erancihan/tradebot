@@ -31,11 +31,13 @@ def build(settings, *, trading_db: str, cache_dir: str,
     from ...risk import RiskManager
     from ...strategies import build_strategy
 
-    with Storage(trading_db) as store:   # the Today page's watchlist, when set
-        settings = symbols_service.with_active_symbols(settings, store)
+    # The engine re-reads the watchlist every pass (``engine.active``), with
+    # the config symbols as its fallback; the dry-run's frames need it now.
+    with Storage(trading_db) as store:
+        active = symbols_service.with_active_symbols(settings, store)
     creds = AlpacaCredentials.from_env()
     broker, data, label = (_paper(creds) if creds is not None
-                           else _dry_run(settings, cache_dir))
+                           else _dry_run(active, cache_dir))
     storage = Storage(trading_db, check_same_thread=False)
     if label == "dry_run":               # a fresh virtual account: History starts here
         storage.record_account_start(label)
