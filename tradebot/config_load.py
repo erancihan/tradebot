@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .models import SYMBOL_RE
 from .risk import product_risk
 
 
@@ -18,8 +19,7 @@ def settings_from_dict(cls, raw: dict[str, Any]):
     portfolio = raw.get("portfolio", {}) or {}
     return cls(
         mode=raw.get("mode", "paper"),
-        # Upper-case, as the broker reports them: `spy` must not read as off-list.
-        symbols=[str(s).strip().upper() for s in raw.get("symbols", ["SPY"])],
+        symbols=_symbols(raw.get("symbols", ["SPY"])),
         timeframe=raw.get("timeframe", "1day"),
         initial_cash=float(raw.get("initial_cash", 10_000.0)),
         poll_seconds=int(raw.get("poll_seconds", 300)),
@@ -46,6 +46,17 @@ def settings_from_dict(cls, raw: dict[str, Any]):
             "brief_minutes_before_open") or None,
         manage_unlisted=bool(raw.get("manage_unlisted", True)),
     )
+
+
+def _symbols(raw: Any) -> list[str]:
+    """Upper-case, as the broker reports them (`spy` must not read as off-list),
+    and every one a ``SYMBOL_RE`` match: a bad name refuses the file rather than
+    being dropped somewhere downstream and then sold as off-list."""
+    out = [str(s).strip().upper() for s in (raw or [])]
+    bad = [str(s) for s, up in zip(raw or [], out) if not SYMBOL_RE.match(up)]
+    if bad:
+        raise ValueError(f"symbols: not a symbol: {', '.join(map(repr, bad))}")
+    return out
 
 
 def _public_url(value: Any) -> Any:

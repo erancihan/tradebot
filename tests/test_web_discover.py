@@ -153,7 +153,8 @@ def test_add_to_an_empty_watchlist_keeps_the_config_symbols(tmp_path):
 
 def test_add_to_a_non_empty_watchlist_just_appends(tmp_path):
     client = _client(tmp_path, _config(tmp_path))
-    client.post("/api/watchlist", json={"add": ["VTI"]}, headers=POST_HEADERS)
+    with Storage(tmp_path / "t.db") as store:
+        store.add_to_watchlist(["VTI"])
     assert _add(client, "AAPL").json()["symbols"] == ["VTI", "AAPL"]
     assert _add(client, "AAPL").json()["symbols"] == ["VTI", "AAPL"]   # no duplicate
 

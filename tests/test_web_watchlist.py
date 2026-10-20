@@ -31,11 +31,20 @@ def test_add_uppercases_dedupes_and_keeps_order(tmp_path):
     client = _client(tmp_path, _config(tmp_path))
     r = _post(client, {"add": [" vti ", "brk.b", "VTI", "bf-b"]})
     assert r.status_code == 200
-    assert r.json() == {"symbols": ["VTI", "BRK.B", "BF-B"], "source": "watchlist"}
+    assert r.json() == {"symbols": ["SPY", "QQQ", "VTI", "BRK.B", "BF-B"],
+                        "source": "watchlist"}           # the config list is seeded first
     _post(client, {"add": ["VTI"]})                       # re-adding is a no-op
-    assert len(client.get("/api/watchlist").json()["symbols"]) == 3
+    assert len(client.get("/api/watchlist").json()["symbols"]) == 5
     r = _post(client, {"remove": ["vti"]})
     assert "VTI" not in r.json()["symbols"] and r.json()["source"] == "watchlist"
+
+
+def test_adding_to_an_empty_watchlist_keeps_the_config_symbols(tmp_path):
+    """The chip Add seeds the empty watchlist as Discover's Add does, so the
+    next pass does not sell every held config name as unlisted."""
+    client = _client(tmp_path, _config(tmp_path))
+    r = _post(client, {"add": ["AAPL"]})
+    assert r.json() == {"symbols": ["SPY", "QQQ", "AAPL"], "source": "watchlist"}
 
 
 @pytest.mark.parametrize("bad", ["1X", "", "TOOLONGSYMBOL", "SP Y", "SPY;--"])
@@ -70,7 +79,8 @@ def test_the_today_page_shows_chips_and_names_the_list(tmp_path):
 def test_watchlist_overrides_config_symbols_for_the_advisor_and_autopilot(tmp_path, offline):
     _seed_cache(tmp_path, symbols=("SPY", "QQQ", "XLK"))
     client = _client(tmp_path, _config(tmp_path))         # config: SPY, QQQ
-    _post(client, {"add": ["xlk"]})
+    _post(client, {"add": ["xlk"]})                      # seeds SPY, QQQ first
+    _post(client, {"remove": ["SPY", "QQQ"]})
 
     job = _refresh(client)
     assert job["state"] == "done", job["error"]

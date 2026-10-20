@@ -31,14 +31,10 @@ def view(repo: TradingRepository) -> dict:
 def add_to_watchlist(settings, trading_db: str, symbol: str) -> dict:
     """Put one Discover name on the watchlist without dropping the current list.
 
-    An empty watchlist means the config symbols are active; adding one name
-    as-is would make that name the whole list. So the empty case seeds the
-    watchlist with the active symbols first. Raises ``InvalidSymbols``.
+    The empty case seeds the config symbols first, as the chip Add does
+    (``symbols_service.add_keeping_list``). Raises ``InvalidSymbols``.
     """
     new = symbols_service.clean([symbol])
     with Storage(trading_db) as store:
-        if not store.watchlist():
-            store.add_to_watchlist([s for s in (str(x).upper() for x in settings.symbols)
-                                    if symbols_service.SYMBOL_RE.match(s)])
-        store.add_to_watchlist(new)
+        symbols_service.add_keeping_list(store, settings, new)
         return symbols_service.resolve(settings, store)

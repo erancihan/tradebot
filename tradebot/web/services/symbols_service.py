@@ -38,12 +38,25 @@ def clean(symbols: list[str]) -> list[str]:
     return out
 
 
+def add_keeping_list(store, settings, symbols: list[str]) -> None:
+    """Put cleaned ``symbols`` on the watchlist without dropping the active list.
+
+    An empty watchlist means the config symbols are active; adding names as-is
+    would make them the whole list, and the next pass would sell every held
+    config name as off-list. So the empty case seeds the config symbols first
+    (they are valid: ``config_load`` refuses a bad one).
+    """
+    if not store.watchlist():
+        store.add_to_watchlist(list(settings.symbols))
+    store.add_to_watchlist(symbols)
+
+
 def change(settings, trading_db: str, *, add: list[str] | None = None,
            remove: list[str] | None = None) -> dict:
     """Apply one edit and return the resolved list after it."""
     with Storage(trading_db) as store:
         if add is not None:
-            store.add_to_watchlist(clean(add))
+            add_keeping_list(store, settings, clean(add))
         if remove is not None:
             store.remove_from_watchlist(clean(remove))
         return resolve(settings, store)

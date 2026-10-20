@@ -248,6 +248,14 @@ def test_lower_case_config_symbols_match_the_brokers():
     assert off_list({"SPY": 3.0, "IWM": 1.0}, ["spy"]) == {"IWM": 1.0}
 
 
+def test_a_config_symbol_that_is_not_a_symbol_fails_to_load():
+    """Every path sees a clean list: nothing is dropped and then sold as unlisted."""
+    with pytest.raises(ValueError, match="bad symbol") as err:
+        Settings.from_dict({"symbols": ["spy", "bad symbol", "QQQ"]})
+    assert "SPY" not in str(err.value)
+    assert Settings.from_yaml("config.example.yaml").symbols
+
+
 # --- L1: a swap sells before it buys ----------------------------------------------
 
 class _StrictBroker(DryRunBroker):
