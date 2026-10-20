@@ -54,12 +54,22 @@ class BacktestResult:
             return float(growth.iloc[-1]) - 1.0
         return self.final_equity / self.initial_cash - 1.0
 
-    @property
-    def returns(self) -> pd.Series:
+    def _anchored(self) -> tuple[pd.Series, float]:
+        """(curve, its value before bar one): equity from ``initial_cash``, or
+        growth from 1.0. Since ``run(start=)`` the book can be invested on bar
+        one, so its move is a return like any other, in every metric."""
         growth = self._growth()
         if growth is not None:
-            return growth.pct_change().dropna()
-        return self.equity_curve.pct_change().dropna()
+            return growth, 1.0
+        return self.equity_curve, float(self.initial_cash)
+
+    @property
+    def returns(self) -> pd.Series:
+        curve, base = self._anchored()
+        r = curve.pct_change()
+        if len(r) and base > 0:
+            r.iloc[0] = float(curve.iloc[0]) / base - 1.0
+        return r.dropna()
 
     @property
     def cagr(self) -> float:
@@ -82,9 +92,8 @@ class BacktestResult:
 
     @property
     def max_drawdown(self) -> float:
-        growth = self._growth()
-        curve = self.equity_curve if growth is None else growth
-        peak = curve.cummax()
+        curve, base = self._anchored()
+        peak = curve.cummax().clip(lower=base) if base > 0 else curve.cummax()
         dd = (curve - peak) / peak
         return float(dd.min())
 

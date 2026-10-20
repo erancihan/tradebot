@@ -373,3 +373,23 @@ def test_allocate_sizes_nothing_on_a_non_finite_equity():
     risk = RiskManager(RiskConfig(max_position_pct=0.5, allow_fractional=True))
     for bad in (float("nan"), float("inf")):
         assert risk.allocate({"A": 1, "B": 0}, bad, {"A": 10.0, "B": 20.0}) == {}
+
+
+# --- day one counts in every metric ------------------------------------------
+
+def test_a_first_bar_loss_shows_in_drawdown_and_returns():
+    """Since ``run(start=)`` the book can be invested on bar one, so its move
+    against ``initial_cash`` is a return like any other (``total_return`` has
+    always counted it)."""
+    from tradebot.backtest import BacktestResult
+
+    idx = pd.date_range("2024-01-01", periods=3, freq="1D", tz="UTC")
+    result = BacktestResult(pd.Series([9_000.0, 9_000.0, 9_900.0], index=idx), [],
+                            initial_cash=10_000.0)
+    assert result.max_drawdown == pytest.approx(-0.10)
+    assert result.returns.iloc[0] == pytest.approx(-0.10)
+    assert len(result.returns) == 3
+    flows = pd.Series([0.0, 0.0, 0.0], index=idx)
+    with_flows = BacktestResult(result.equity_curve, [], 10_000.0, cash_flows=flows)
+    assert with_flows.max_drawdown == pytest.approx(-0.10)
+    assert with_flows.returns.iloc[0] == pytest.approx(-0.10)
