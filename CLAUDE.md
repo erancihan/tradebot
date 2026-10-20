@@ -29,7 +29,7 @@ tradebot/
   strategies/    Strategy ABC + registry: sma_crossover, rsi_reversion, buy_and_hold,
                  donchian_breakout, macd_trend, bollinger_reversion, momentum,
                  supertrend, meta.py (follow_leader, ensemble_vote)
-  indicators.py  risk.py (RiskManager + RiskConfig)  allocation.py  overlays.py
+  indicators.py  risk.py (RiskManager) + risk_config.py  allocation.py  overlays.py
                  walkforward.py  portfolio.py  portfolio_pnl.py (round trips from fills)  models.py
   selection/     base, ranked (momentum, low_vol), regime (regime_switch), __init__ (SELECTORS)
   universe/      screen (LiquidityScreen), alpaca, discover    consortium/  voice, consensus, panel
@@ -145,7 +145,7 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
 **Execution and data**
 - **Change `advisor.propose`, not `Engine.rebalance`.** The engine calls `propose` and submits its lines, so a Today
   suggestion is exactly what a pass would trade (`test_propose_matches_engine_rebalance_deltas`).
-- **Bad prices are flat.** NaN, inf or non-positive prices never reach sizing. All three loops skip the symbol (`math.floor(NaN)` raises).
+- **Bad prices are flat.** NaN, inf or non-positive prices never reach sizing. All three loops skip the symbol (`math.floor(NaN)` raises). A mark falls back past a bad close to the last finite one (`steps.close_prices_at`); a non-finite equity sizes nothing (`allocate` -> `{}`), never a liquidation.
 - **Allocator history:** `aligned.iloc[:i]` at fill bar `i`. **ReplayData** advances once per step.
 - **Selectors are prefix-stable** (verdict at `t` from bars `<= t` and earlier verdicts). A ranked
   walk starts from an empty set, so a truncated frame changes the verdict: the engine recomputes from

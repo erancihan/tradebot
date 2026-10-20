@@ -268,3 +268,55 @@ def test_commission_and_slippage_reduce_returns():
         slippage_bps=10.0,
     ).run(df, symbol="X").total_return
     assert costly <= clean
+
+
+# --- a NaN print never reaches sizing ----------------------------------------
+
+def _nan_print_frames():
+    """A with a NaN close on bar 30 and a NaN open on bar 31 (one bad print)."""
+    a, b = synthetic_ohlcv(60, seed=1), synthetic_ohlcv(60, seed=2)
+    a.iloc[30, a.columns.get_loc("close")] = np.nan
+    a.iloc[31, a.columns.get_loc("open")] = np.nan
+    return {"A": a, "B": b}
+
+
+def _spying_risk(fractional: bool):
+    risk = RiskManager(RiskConfig(max_position_pct=0.5, allow_fractional=fractional))
+    seen = []
+    original = risk.allocate
+
+    def spy(targets, equity, prices, weights=None):
+        out = original(targets, equity, prices, weights)
+        seen.append((equity, dict(out)))
+        return out
+
+    risk.allocate = spy
+    return risk, seen
+
+
+@pytest.mark.parametrize("fractional", [False, True])
+@pytest.mark.parametrize("loop", ["backtester", "arena"])
+def test_a_nan_print_neither_raises_nor_liquidates_the_rest_of_the_book(fractional, loop):
+    """The mark falls back past A's NaN close to its last finite one, so the
+    sizing equity stays finite: whole shares do not raise on ``floor(NaN)`` and
+    fractional sizing does not take B to zero (a full exit always executes)."""
+    from tradebot.arena.adapters import VectorizedPolicy
+    from tradebot.arena.simulation import SimConfig, simulate
+    from tradebot.strategies import BuyAndHold
+
+    frames = _nan_print_frames()
+    risk, seen = _spying_risk(fractional)
+    if loop == "backtester":
+        result = Backtester(BuyAndHold(), risk, slippage_bps=0).run(frames)
+    else:
+        result = simulate(VectorizedPolicy(BuyAndHold), frames, risk, SimConfig(slippage_bps=0))
+    assert all(np.isfinite(equity) for equity, _ in seen)
+    assert all(desired["B"] > 0 for _, desired in seen[1:]), "B was sized to zero"
+    assert result.equity_curve.notna().all()
+
+
+def test_allocate_sizes_nothing_on_a_non_finite_equity():
+    """No sizing from a NaN: the pass trades nothing (never a liquidation)."""
+    risk = RiskManager(RiskConfig(max_position_pct=0.5, allow_fractional=True))
+    for bad in (float("nan"), float("inf")):
+        assert risk.allocate({"A": 1, "B": 0}, bad, {"A": 10.0, "B": 20.0}) == {}

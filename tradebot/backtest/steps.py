@@ -175,7 +175,18 @@ def fill_book(
 
 
 def close_prices_at(closes: dict[str, pd.Series], i: int) -> dict[str, float]:
-    return {s: float(c.iloc[i]) for s, c in closes.items()}
+    """Each mark at bar ``i``: its close, past a bad print the last finite one
+    (NaN only before any), so a NaN close never makes the next bar's sizing
+    equity NaN in either loop (``floor(NaN)`` raises, a NaN book exits)."""
+    out = {}
+    for s, c in closes.items():
+        price = float(c.iloc[i])
+        if not np.isfinite(price) or price <= 0:
+            prior = c.iloc[: i + 1]
+            good = prior[np.isfinite(prior) & (prior > 0)]
+            price = float(good.iloc[-1]) if len(good) else float("nan")
+        out[s] = price
+    return out
 
 
 def build_result(points: list[float], common, pf: Portfolio, initial_cash: float,
