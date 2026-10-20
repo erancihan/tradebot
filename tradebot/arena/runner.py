@@ -2,14 +2,15 @@
 
 Two implementations behind one ``Runner`` protocol:
 
-- ``SubprocessRunner`` — runs each contestant in its own forked process with a
-  **hard** wall-clock timeout (the process is killed on expiry) plus optional
-  CPU/memory ``rlimit``s. Real isolation: a runaway or hostile algorithm cannot
-  stall the tournament or exhaust the host. POSIX/fork only.
+- ``SubprocessRunner`` — imports, builds and runs each contestant in its own
+  fresh interpreter (``spawn.py``, not a fork) with a **hard** wall-clock
+  timeout (the session is killed on expiry), CPU/memory ``rlimit``s and the
+  sandbox. A runaway or hostile algorithm cannot stall the tournament, exhaust
+  the host, or reach the parent's environment or memory. POSIX only.
 - ``InProcessRunner`` — runs on a daemon thread with a **soft** ``join(timeout)``.
   Portable and fast, but Python threads can't be force-killed, so a runaway
   algo's thread keeps consuming CPU in the background (it's a daemon, so it never
-  blocks process exit). Use for trusted code, or where fork isn't available.
+  blocks process exit). It imports contestant files in-process: trusted code only.
 
 ``default_runner`` selects between them by ``isolation``:
 
@@ -57,8 +58,8 @@ class Runner(Protocol):
 
 
 def _simulate_contestant(contestant, frames, risk_config, config):
-    """The child's work: resolved through this module's ``simulate`` binding so
-    a test that wraps ``runner.simulate`` sees subprocess runs too."""
+    """The process-isolated child's work (``child.py``), one call site with the
+    in-process runner's ``simulate``."""
     policy, extra = simulation_args(contestant)
     return simulate(policy, frames, RiskManager(risk_config), config, **extra)
 
@@ -69,6 +70,13 @@ def _simulate_contestant(contestant, frames, risk_config, config):
 class InProcessRunner:
     def __init__(self, time_budget_s: float = 10.0) -> None:
         self.time_budget_s = time_budget_s
+
+    @staticmethod
+    def discover(paths):
+        """In-process import: module bodies run here, unsandboxed."""
+        from .loader import discover
+
+        return discover(paths)
 
     def run(self, contestant, frames, risk, config, scorer) -> ContestantResult:
         start = time.perf_counter()
