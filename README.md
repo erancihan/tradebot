@@ -548,6 +548,12 @@ Most take `allow_short`. To add one, subclass `Strategy`, implement
 `target_positions(bars)` returning values in `{-1, 0, +1}`, and register it in
 `tradebot/strategies/registry.py`. The `add-strategy` skill walks through it.
 
+A live pass and the Today refresh give the strategy the whole stored or cached
+history (the newest 5000 bars), not a short window. `supertrend`,
+`rsi_reversion` and every EMA carry state from the first bar, so this is what
+makes a live verdict equal the backtest's. The two meta strategies compute on a
+tail of twice their warmup by design, to keep the arena fast.
+
 ### Bracket exits
 
 Two optional risk keys attach exit legs to every order that **adds** exposure.

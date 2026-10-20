@@ -42,7 +42,7 @@ tradebot/
   broker/        base (ABC), alpaca_broker (lazy SDK), dryrun + brackets (BracketsMixin)
   data/          synthetic (+ load_csv) + factor_panel, cache + coverage, replay, alpaca_data, stream
   market/        base (MarketCalendar, TableCalendar), us, bist, registry (CALENDARS)
-  advisor/       propose (bars + account -> Proposal), explain, types, unlisted (off-list holdings)
+  advisor/       propose (bars + account -> Proposal), explain, types, unlisted (off-list holdings), history
   engine/        core (Engine.step -> PassOutcome) + hooks, active (list per pass), execution (submit, run_forever), signals, orders, pending,
                  session (daily-loss anchor), fills (reconcile: Broker.order_status -> the order log's fills), unlisted
   autopilot/     state, schedule, runner (Autopilot, injected clock/sleep/calendar) + wake (tick), loop (run_forever),
@@ -149,7 +149,7 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
 - **Allocator history:** `aligned.iloc[:i]` at fill bar `i`. **ReplayData** advances once per step.
 - **Selectors are prefix-stable** (verdict at `t` from bars `<= t` and earlier verdicts). A ranked
   walk starts from an empty set, so a truncated frame changes the verdict: the engine recomputes from
-  full stored history (`Engine._selector_frames`), and `record_bars` upserts forming bars.
+  full stored history (`Engine._history_frames`), and `record_bars` upserts forming bars.
 - **Composite selectors mask their own warmup** (`required_history - 1` rows).
   `exit_rank`: a held name stays droppable in any pool larger than `top_k`.
 - **Cache coverage is a manifest** (`*.coverage.json`, gaps included) of the requested bounds:
@@ -174,7 +174,7 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   source `cache+recorded`), bought at the last close completed before the first snapshot (`services/benchmark.py`; `benchmark_card.py`:
   alpha from the snapshot at the benchmark's last close), no fetch; absent (noted) without bars or mixed accounts.
   **Trades** are round trips by average cost (`portfolio_pnl.book`) from filled orders only (`filled_orders`: `filled_qty > 0`, any status); hand trades never count, open ones show no P&L. `orders.intent` (entry | exit, NULL on old rows = opens as before): an exit with no trip to close is an `UnmatchedExit` ("Sold without a recorded buy"), never a short, never in the summary.
-- **The Today refresh** gives the selector the whole cached history and the strategy the last `required_history + 30` bars, so engine and web can differ when their histories start on different days.
+- **Strategy, allocator and selector see the whole history** (`advisor/history.py`, newest 5000 bars): the engine its stored bars, the Today refresh its cache; supertrend, RSI hold and EMAs are stateful (`test_engine_history.py`). Metas tail-bound by design.
 - **One list everywhere:** the watchlist when not empty, else `settings.symbols` (`storage/watchlist.resolve_active`;
   web `with_active_symbols`, a copy). The engine re-reads it at every pass (`engine/active.py`, the engine's build list as the
   fallback; logs `symbols=watchlist(N)` on a change), so a `tradebot run` loop sees a phone edit; the web pilot is also reset
