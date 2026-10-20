@@ -283,3 +283,15 @@ One new core concept, the proposal, feeds three flows.
   `account_starts` row (the tables' newest ids, since a replay's clock is its
   bars'), and History's dry_run reads begin there. The dashboard's fallback
   after a broker error is the paper snapshot, named as a fallback on the page.
+
+## Addendum 2026-10-20: review 13
+
+- The engine re-reads the active list from its storage at every pass, so a
+  `tradebot run` loop follows a phone watchlist edit, and every Add seeds an
+  empty watchlist with the config symbols; the CLI and the web open one trading
+  database (`trading_db_path`), and a config symbol that is not a symbol
+  refuses the file.
+- A signed link that did nothing answers 409 and stays used, so ntfy keeps the
+  push. A what-if plan warms up on the bars before its start, so the plan and
+  the benchmark trade from the same first bar; Discover excludes held and
+  watched names before its cap and dates a ranking by its newest bar.
