@@ -41,7 +41,7 @@ and bar size, a strategy, and optionally a selector (hold the best N) and an
 allocator (how to split money). Parameters show as typed fields. Risk limits
 are typed as percentages. The **No-trade band** skips drift trades smaller
 than that share of equity (1% unless you change it, 0 turns it off; full
-exits always run), so a pass does not trim one share each time equity moves.
+exits and long/short flips always run), so a pass does not trim one share each time equity moves.
 The same page sets the autopilot cadence, the
 morning brief, **Sell names that leave the list** (`manage_unlisted`, on by
 default), alert destinations and the exchange calendar.
@@ -564,6 +564,9 @@ risk:
   stop_loss_pct: 0.05        # exit 5% below the entry price
   take_profit_pct: 0.15      # exit 15% above it (either one alone works)
 ```
+
+Each must be above 0 and below 1 (100%): a 100% stop on a long, or a 100%
+target on a short, would be a price of 0.
 
 On Alpaca (paper or live) these become a bracket order (`oto` with one leg), so the broker
 holds the legs while the bot is offline. A dry-run simulates them from each

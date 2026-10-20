@@ -42,8 +42,9 @@ class RiskConfig:
                 raise ValueError(f"{name} must be in [0, 1], got {v}")
         for name in ("stop_loss_pct", "take_profit_pct"):
             v = getattr(self, name)
-            if v is not None and not 0 < v <= 1:
-                raise ValueError(f"{name} must be in (0, 1] when set, got {v}")
+            # Open at 1: a 100% stop on a long (or target on a short) is a 0.0 price.
+            if v is not None and not 0 < v < 1:
+                raise ValueError(f"{name} must be in (0, 1) when set, got {v}")
 
 
 #: The product's no-trade band (1% of equity). ``RiskConfig`` itself keeps 0 so

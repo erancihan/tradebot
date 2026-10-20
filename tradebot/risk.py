@@ -115,12 +115,13 @@ class RiskManager:
         """The delta worth trading once the no-trade band is applied.
 
         Drift trades smaller than ``rebalance_band_pct`` of equity are skipped
-        (returning 0), but full exits (``desired == 0``) always execute so the
-        band can never strand a position that should be flat.
+        (returning 0), but full exits (``desired == 0``) and sign flips (long to
+        short or back) always execute, so the band can never strand a position
+        on the side the strategy left.
         """
         delta = desired - current
         band = self.config.rebalance_band_pct
-        if band <= 0 or desired == 0 or equity <= 0:
+        if band <= 0 or desired == 0 or desired * current < 0 or equity <= 0:
             return delta
         if abs(delta) * price < band * equity:
             return 0.0
@@ -144,6 +145,9 @@ class RiskManager:
             stop = entry_price * (1 - cfg.stop_loss_pct) if long else entry_price * (1 + cfg.stop_loss_pct)
         if cfg.take_profit_pct is not None:
             target = entry_price * (1 + cfg.take_profit_pct) if long else entry_price * (1 - cfg.take_profit_pct)
+        for leg, level in (("stop_loss", stop), ("take_profit", target)):
+            if level is not None and not level > 0:     # RiskConfig bounds the pct too
+                raise ValueError(f"{leg} level {level} for entry {entry_price} is not positive")
         return (stop, target)
 
     def daily_loss_tripped(self, start_equity: float, current_equity: float) -> bool:

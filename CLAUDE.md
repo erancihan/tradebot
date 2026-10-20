@@ -92,8 +92,8 @@ config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])  deploy
   and never size or weight. `RiskManager.allocate` caps per name, scales the
   book to the gross cap order-independently, and is the only place weights
   become share quantities. The no-trade band is `RiskManager.material_delta`
-  (full exits always execute). `RiskManager.bracket_prices` sets bracket
-  levels. `models.opens_exposure` decides what counts as an entry, for both the engine and `DryRunBroker`.
+  (full exits and long/short flips always execute). `RiskManager.bracket_prices` sets bracket
+  levels (pcts in the open (0, 1), a level <= 0 raises). `models.opens_exposure` decides what counts as an entry, for both the engine and `DryRunBroker`.
 - **Backtest == live.** `Backtester`, arena `simulate` and live `Engine` share
   `Strategy` and `RiskManager` and size the whole book in one `allocate` pass.
   `tests/test_arena_simulation.py` keeps the backtester and arena in lockstep.
