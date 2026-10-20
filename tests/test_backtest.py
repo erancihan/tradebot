@@ -6,7 +6,7 @@ from tradebot.allocation import EqualWeight
 from tradebot.backtest import Backtester, _infer_periods_per_year
 from tradebot.data.synthetic import synthetic_ohlcv
 from tradebot.risk import RiskConfig, RiskManager
-from tradebot.strategies import RsiReversion, SmaCrossover
+from tradebot.strategies import RsiReversion, SmaCrossover, Strategy
 
 
 def _bt(strategy, **risk_kw):
@@ -39,6 +39,59 @@ def test_no_lookahead_targets_are_shifted():
     result = _bt(SmaCrossover(5, 20)).run(df, symbol="X")
     # Equity is flat until the strategy first takes a position.
     assert result.equity_curve.iloc[0] == 10_000
+
+
+def _intrabar_jump_frame(n: int = 60, jump: int = 40) -> pd.DataFrame:
+    """Flat at 100, then one bar that opens at 100 and closes at 130 (the move
+    is *inside* the bar), flat at 130 after."""
+    closes = np.full(n, 100.0)
+    closes[jump:] = 130.0
+    opens = np.full(n, 100.0)
+    opens[jump + 1:] = 130.0
+    idx = pd.date_range("2024-01-01", periods=n, freq="1D", tz="UTC")
+    return pd.DataFrame({"open": opens, "high": np.maximum(opens, closes),
+                         "low": np.minimum(opens, closes), "close": closes,
+                         "volume": 1000.0}, index=idx)
+
+
+class _JumpChaser(Strategy):
+    """Long from the first bar whose close is 20% above its open."""
+
+    name = "jump_chaser"
+
+    @property
+    def required_history(self) -> int:
+        return 1
+
+    def target_positions(self, bars):
+        hit = (bars["close"] > bars["open"] * 1.2).astype("int64")
+        return hit.cummax()
+
+
+@pytest.mark.parametrize("loop", ["backtester", "arena"])
+def test_strategy_signal_cannot_capture_the_bar_it_is_formed_on(loop):
+    """A signal formed by an intrabar move is only tradable at the next open.
+
+    The strategy turns long on the jump bar's close. Acting on the shifted
+    target buys the next open at 130 and captures nothing; acting same-bar
+    buys that bar's open at 100 and books 30%. Verified by mutation: with
+    ``.shift(1)`` deleted from ``Backtester._shifted_targets`` the backtester
+    case fails (final equity 13,000), which the old flat-bar-0 check did not.
+    """
+    from tradebot.arena.adapters import VectorizedPolicy
+    from tradebot.arena.simulation import SimConfig, simulate
+
+    df = _intrabar_jump_frame()
+    risk = RiskManager(RiskConfig(allow_fractional=True, max_position_pct=1.0,
+                                  max_gross_exposure=1.0))
+    if loop == "backtester":
+        result = Backtester(_JumpChaser(), risk, initial_cash=10_000,
+                            slippage_bps=0.0).run(df, symbol="X")
+    else:
+        result = simulate(VectorizedPolicy(_JumpChaser), {"X": df}, risk,
+                          SimConfig(10_000, 0.0, 0.0))
+    assert result.equity_curve.iloc[-1] == pytest.approx(10_000)
+    assert result.equity_curve.max() == pytest.approx(10_000), "captured the signal bar"
 
 
 # --- absolute look-ahead guards ---------------------------------------------

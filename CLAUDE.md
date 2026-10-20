@@ -83,8 +83,8 @@ config.example.yaml  .env.example  pyproject.toml ([dev], [live], [web])  deploy
   fallback), never the close of the bar being filled. Both loops import the one `_sizing_marks` helper.
   This choice was pre-registered: open over previous close, because the open is the actual fill price.
 - **Every shift has an absolute guard.** A lockstep test cannot catch an error
-  made the same way in both loops. Each shift also has a single-engine test,
-  for example `test_sizing_never_sees_the_fill_bars_close` and
+  made the same way in both loops. Each shift also has a single-engine test: `test_sizing_never_sees_the_fill_bars_close`,
+  `test_strategy_signal_cannot_capture_the_bar_it_is_formed_on`,
   `test_selector_verdict_cannot_be_acted_on_the_bar_it_is_formed`. Each one
   fails with the shift deleted from both loops. A new shift gets a new guard.
 - **Risk is centralised.** Strategies emit only `{-1, 0, +1}` and never size.
