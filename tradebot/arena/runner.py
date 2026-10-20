@@ -94,6 +94,24 @@ class InProcessRunner:
         return _ok(contestant, box["result"], scorer, duration)
 
 
+def _in_process(time_budget_s, harden, seccomp, require_sandbox) -> InProcessRunner:
+    """An in-process runner, refusing guarantees it cannot give.
+
+    ``seccomp`` and ``require_sandbox`` are explicit asks for containment; a
+    thread cannot have either, and dropping them behind a debug log made the
+    run look sandboxed. Default-on ``harden`` stays quiet: it is not an ask.
+    """
+    asked = [flag for flag, on in (("--seccomp", seccomp),
+                                   ("--require-sandbox", require_sandbox)) if on]
+    if asked:
+        raise ValueError(
+            f"{' and '.join(asked)} need process isolation; an in-process (thread) "
+            "runner cannot sandbox contestant code. Use --isolation process.")
+    if harden:
+        log.debug("hardening skipped: thread isolation can't sandbox in-process code")
+    return InProcessRunner(time_budget_s)
+
+
 def default_runner(time_budget_s: float = 10.0, isolation: str = "process",
                    cpu_seconds: int | None = None, memory_mb: int | None = None,
                    harden: bool = True, seccomp: bool = False,
@@ -117,11 +135,7 @@ def default_runner(time_budget_s: float = 10.0, isolation: str = "process",
             f"Unknown isolation {isolation!r}; expected one of {_ISOLATION_MODES}."
         )
     if isolation == "thread":
-        if harden or seccomp:
-            # Default-on hardening simply doesn't apply to in-process execution;
-            # keep this quiet (debug) so the common thread path isn't noisy.
-            log.debug("hardening skipped: thread isolation can't sandbox in-process code")
-        return InProcessRunner(time_budget_s)
+        return _in_process(time_budget_s, harden, seccomp, require_sandbox)
     if not fork_available():
         if isolation == "auto":
             log.warning(
@@ -129,7 +143,7 @@ def default_runner(time_budget_s: float = 10.0, isolation: str = "process",
                 "back to soft in-process isolation — contestants are NOT killable and "
                 "have no CPU/memory limits."
             )
-            return InProcessRunner(time_budget_s)
+            return _in_process(time_budget_s, harden, seccomp, require_sandbox)
         # isolation == "process": refuse to silently weaken the guarantee.
         raise RuntimeError(
             "Hard process isolation requires the 'fork' start method, which is "

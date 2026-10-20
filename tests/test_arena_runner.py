@@ -128,3 +128,23 @@ def test_process_isolation_raises_when_fork_unavailable(monkeypatch):
 def test_auto_isolation_falls_back_to_thread_without_fork(monkeypatch):
     monkeypatch.setattr("tradebot.arena.runner.fork_available", lambda: False)
     assert isinstance(default_runner(isolation="auto"), InProcessRunner)
+
+
+@pytest.mark.parametrize("flag", ["seccomp", "require_sandbox"])
+def test_thread_isolation_refuses_sandbox_guarantees_it_cannot_give(flag):
+    """`--seccomp` and `--require-sandbox` used to vanish behind a debug log on an
+    in-process runner, so the run looked sandboxed and was not."""
+    with pytest.raises(ValueError, match="in-process"):
+        default_runner(isolation="thread", **{flag: True})
+
+
+@pytest.mark.parametrize("flag", ["seccomp", "require_sandbox"])
+def test_auto_fallback_refuses_sandbox_guarantees_it_cannot_give(monkeypatch, flag):
+    monkeypatch.setattr("tradebot.arena.runner.fork_available", lambda: False)
+    with pytest.raises(ValueError, match="in-process"):
+        default_runner(isolation="auto", **{flag: True})
+
+
+def test_thread_isolation_still_accepts_the_default_hardening_flag():
+    # `harden` is on by default everywhere; only the explicit guarantees refuse.
+    assert isinstance(default_runner(isolation="thread", harden=True), InProcessRunner)

@@ -6,11 +6,29 @@ stream adapter buffers a push source into the same pull-shaped ``next()``.
 
 from __future__ import annotations
 
+import math
 import threading
 
 import pandas as pd
 
+from ...market.us import _TF_DURATION
 from ...models import utcnow
+
+#: Minutes in a regular US session, to turn intraday bars into sessions.
+_SESSION_MINUTES = 390
+
+
+def catchup_days(bars: int, timeframe: str) -> int:
+    """Calendar days that hold ``bars`` bars of ``timeframe``.
+
+    ``AlpacaData.history`` reads ``lookback`` as calendar days; passing the bar
+    count healed only about two thirds of it (weekends, holidays). Same margin
+    as the web's frame fetch: x1.5 for weekends plus 10 days of holidays.
+    """
+    step = _TF_DURATION.get(timeframe)
+    sessions = bars if step is None else math.ceil(
+        bars * step.total_seconds() / 60 / _SESSION_MINUTES)
+    return math.ceil(sessions * 1.5) + 10
 
 
 class ReplaySeasonFeed:
@@ -78,12 +96,13 @@ class AlpacaSeasonFeed:
         bar: dict[str, pd.DataFrame] = {}
         for symbol in self._symbols:
             df = self._data.history(symbol, timeframe=self._timeframe,
-                                    lookback=self._catchup)
+                                    lookback=catchup_days(self._catchup, self._timeframe))
             if df is None or df.empty:
                 continue
             df = drop_incomplete_bars(df, self._timeframe, now)
             if df is None or len(df) == 0:
                 continue
+            df = df.iloc[-self._catchup:]   # the window is in bars, not days
             seen = self._last_ts.get(symbol)
             fresh = df if seen is None else df[df.index > seen]
             if not len(fresh):
