@@ -7,13 +7,28 @@ the runner's ``run_forever`` and its events.
 from __future__ import annotations
 
 import threading
+from datetime import timedelta
+
+#: The longest single wait on the wake event. ``Event.wait`` counts monotonic
+#: time, which stands still while a laptop sleeps: one 13-hour wait set the
+#: night before the open would overshoot by every minute the lid was closed.
+#: Napping in slices and re-reading the wall clock bounds the overshoot.
+NAP_SLICE_SECONDS = 60.0
 
 
 class BackgroundMixin:
     """Mixed into ``Autopilot``."""
 
     def _nap(self, seconds: float) -> None:
-        self._wake.wait(seconds)
+        """Sleep ``seconds`` by the wall clock (``self.clock``), in slices, so a
+        suspended machine wakes the loop within one slice of its deadline. A
+        set ``_wake`` (mode switch, stop) ends the nap at once."""
+        deadline = self.clock() + timedelta(seconds=seconds)
+        while not self._wake.is_set():
+            remaining = (deadline - self.clock()).total_seconds()
+            if remaining <= 0:
+                break
+            self._wake.wait(min(remaining, NAP_SLICE_SECONDS))
         self._wake.clear()
 
     def start(self) -> bool:

@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from tradebot.autopilot import HALT_ERROR, Autopilot
+from tradebot.autopilot.background import NAP_SLICE_SECONDS
 from tradebot.autopilot.links import ttl_seconds
 from tradebot.broker import DryRunBroker
 from tradebot.cli import main
@@ -166,6 +167,41 @@ def test_a_failing_pass_is_recorded_and_the_loop_keeps_going(tmp_path, monkeypat
     state = pilot.state()
     assert state.last_error == "RuntimeError: broker unreachable"
     assert state.mode == "auto"                        # still on: the next pass may work
+
+
+def test_a_nap_follows_the_wall_clock_through_a_machine_sleep(tmp_path):
+    """``Event.wait`` counts monotonic time, which stands still while a laptop
+    sleeps: a 6-hour nap must end once the wall clock says so, not after six
+    hours of awake time. Each wait here is a slice during which the machine
+    slept three hours."""
+    pilot, _, clock, _ = build(tmp_path)
+    waits: list[float] = []
+
+    def wait(timeout):
+        waits.append(timeout)
+        clock.now += timedelta(hours=3)        # the lid was closed during this slice
+        return False
+
+    pilot._wake.wait = wait
+    pilot._nap(6 * 3600)
+    assert waits == [NAP_SLICE_SECONDS, NAP_SLICE_SECONDS]
+
+
+def test_a_short_nap_is_one_wait_and_a_set_wake_ends_it_at_once(tmp_path):
+    pilot, _, clock, _ = build(tmp_path)
+    waits: list[float] = []
+
+    def wait(timeout):
+        waits.append(timeout)
+        clock.now += timedelta(seconds=timeout)
+        return False
+
+    pilot._wake.wait = wait
+    pilot._nap(30)
+    assert waits == [30.0]
+    pilot._wake.set()
+    pilot._nap(3600)                           # a mode switch: no wait at all
+    assert waits == [30.0] and not pilot._wake.is_set()
 
 
 def test_off_ends_the_loop_at_the_next_wake(tmp_path):

@@ -253,7 +253,7 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
 - **The daily-loss breaker is per session day and flattens** (`engine/session.py`): each pass rolls the anchor when `now`'s exchange
   date changes (a replay's `now` is its newest bar); a breach closes every equity position and stays out that day. The autopilot also turns off; its anchor persists per scope (`autopilot/session.py`).
 - **One lock, one connection:** the loop thread and web taps share the engine and SQLite (`check_same_thread=False`, WAL,
-  `busy_timeout=5000`) under the Autopilot `RLock`. A line is `submitted` once the broker accepts it; later bookkeeping only logs. A mode switch wakes the loop.
+  `busy_timeout=5000`) under the Autopilot `RLock`. A line is `submitted` once the broker accepts it; later bookkeeping only logs. A mode switch wakes the loop, which naps in `NAP_SLICE_SECONDS` slices against the wall clock (a laptop's sleep stalls monotonic waits).
 - **The web autopilot is paper or dry-run, never live** (`autopilot_build`); a dry-run's account dies with a restart. `tradebot run --autopilot`
   builds as `run`, keeps state in scope `cli_<account>` (never the web's), expires no pending lines at start (a closed-market
   wake still does, for the shared account); a replay's clock reads its bars. Orders carry the pass clock, as batches do (approval: the tap's).
