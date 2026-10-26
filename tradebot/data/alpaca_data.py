@@ -8,11 +8,15 @@ for getting started.
 
 from __future__ import annotations
 
+import logging
+import time
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
 from ..models import BAR_COLUMNS
+
+log = logging.getLogger(__name__)
 
 # Map our simple timeframe strings to Alpaca TimeFrame objects at call time.
 _TIMEFRAME_ALIASES = {
@@ -25,11 +29,28 @@ _TIMEFRAME_ALIASES = {
 
 
 class AlpacaData:
+    #: A fetch that failed on the wire is tried once more after this pause, the
+    #: broker's rule (``AlpacaBroker.RETRY_SECONDS``): a DNS blip on a bar
+    #: request must not fail a whole pass. A read has no side effect to double.
+    RETRY_SECONDS = 2.0
+    _sleep = staticmethod(time.sleep)
+
     def __init__(self, api_key: str, api_secret: str, feed: str = "iex") -> None:
         from alpaca.data.historical import StockHistoricalDataClient
 
         self.feed = feed
         self._client = StockHistoricalDataClient(api_key, api_secret)
+
+    def _get_bars(self, req):
+        """``get_stock_bars(req)``, once more after a connection error (requests'
+        errors are ``OSError``s; an Alpaca API error is not and propagates)."""
+        try:
+            return self._client.get_stock_bars(req)
+        except OSError as exc:  # noqa: PERF203 - one retry, then the error is the caller's
+            log.warning("Alpaca bar fetch failed (%s); retrying in %ss",
+                        type(exc).__name__, self.RETRY_SECONDS)
+            self._sleep(self.RETRY_SECONDS)
+            return self._client.get_stock_bars(req)
 
     def _timeframe(self, timeframe: str):
         from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
@@ -93,7 +114,7 @@ class AlpacaData:
             end=end,
             feed=DataFeed(self.feed),
         )
-        df = self._client.get_stock_bars(req).df
+        df = self._get_bars(req).df
         return split_bars_frame(df, list(symbols))
 
     def _fetch(self, symbol: str, timeframe: str, start, end) -> pd.DataFrame:
@@ -107,8 +128,7 @@ class AlpacaData:
             end=end,
             feed=DataFeed(self.feed),
         )
-        bars = self._client.get_stock_bars(req)
-        df = bars.df
+        df = self._get_bars(req).df
         if df.empty:
             return pd.DataFrame(columns=list(BAR_COLUMNS))
         # Multi-index (symbol, timestamp) -> single symbol slice.

@@ -75,3 +75,37 @@ def test_cli_arena_list(capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert "sma_trend" in out and "rsi_dip" in out
+
+
+_WRITING_ALGO = (
+    "import pathlib\n"
+    "pathlib.Path({marker!r}).write_text('parent')\n"
+    "from tradebot.arena import Action, Algo, register\n"
+    "@register(name='side_effect_algo', author='t')\n"
+    "class Spy(Algo):\n"
+    "    def on_bar(self, bar, ctx): return Action.flat()\n"
+)
+
+
+def test_cli_arena_list_imports_in_a_sandbox_not_the_parent(tmp_path, capsys):
+    """``arena list`` runs module bodies: they run in a hardened child, as under
+    ``run``, so a body that writes is refused and reported, never listed."""
+    marker = tmp_path / "touched"
+    algo = tmp_path / "spy.py"
+    algo.write_text(_WRITING_ALGO.format(marker=str(marker)))
+    rc = main(["arena", "list", "--algos", str(algo)])
+    assert rc == 0
+    out, err = capsys.readouterr()
+    assert "side_effect_algo" not in out and "load error" in err
+    # Landlock leaves no file; the size cap (macOS) leaves an empty one. Never
+    # the body's content, and never from this interpreter.
+    assert not marker.exists() or marker.read_text() == ""
+
+
+def test_cli_arena_list_thread_isolation_imports_in_process(tmp_path, capsys):
+    marker = tmp_path / "touched"
+    algo = tmp_path / "plain.py"
+    algo.write_text(_WRITING_ALGO.format(marker=str(marker)))
+    rc = main(["arena", "list", "--algos", str(algo), "--isolation", "thread"])
+    assert rc == 0 and "side_effect_algo" in capsys.readouterr().out
+    assert marker.read_text() == "parent"   # the trusting loader, by request

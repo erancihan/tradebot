@@ -202,7 +202,7 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   `process` spawns a fresh interpreter per contestant with a hard session kill and never downgrades. `thread` is soft (marks `TIMEOUT`, cannot kill). `auto` warns before falling back.
   Never wrap a worker in a `ThreadPoolExecutor` context manager: its exit waits for the task.
 - **Sandbox:** `process` imports, builds and runs each contestant in a fresh interpreter (`spawn.py`, never a fork; allow-listed env, empty
-  temp cwd; discovery too, `isolated_discovery`) that replies plain JSON only (`wire.py`, never pickle). Hardened unless `--no-harden`: no data
+  temp cwd; discovery too, `isolated_discovery`, also under `arena list`) that replies plain JSON only (`wire.py`, never pickle). Hardened unless `--no-harden`: no data
   writes, Landlock read-only fs (Linux), empty network namespace; `--seccomp` last, after `no_new_privs`. An unenforceable tier (CI, macOS) warns
   once per mechanism; `--require-sandbox` makes it fatal; `thread` refuses both flags and imports in-process. `scrub_secrets`: `DOTENV_KEYS`,
   `ALPACA_*`, `TRADEBOT_*`. Reads are never blocked (same-user `/proc/<pid>/environ`): keys live in `.env`; human review is the gate.
@@ -235,7 +235,7 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   batch it parked (`parked_batch`) refreshes it in place (sizing, prices, holds, `created_at`, so History and Today show its
   latest refresh; same batch id, so the push's link still works). A rejection, even Skip of every line, holds until the proposal
   changes (an all-holds pass is a change; a repeated one refreshes its batch, no new row) or the session day ends.
-  A changed proposal, an approval older than one `poll_seconds` (a failed pass keeps the batch: the stale gate guards it until the next good pass refreshes it; an Alpaca read retries once after `RETRY_SECONDS` on a connection error, a submit never), the wake after the close (`schedule.next_pass` grants a pass inside hours one more; `tick` expires with no pass; a broker-closed pass too), a halt, and switching off expire it. One push per batch; a restart pushes again
+  A changed proposal, an approval older than one `poll_seconds` (a failed pass keeps the batch: the stale gate guards it until the next good pass refreshes it; an Alpaca read or bar fetch retries once after `RETRY_SECONDS` on a connection error, a submit never), the wake after the close (`schedule.next_pass` grants a pass inside hours one more; `tick` expires with no pass; a broker-closed pass too), a halt, and switching off expire it. One push per batch; a restart pushes again
   only when the link key is per-process (no `TRADEBOT_WEB_TOKEN`; `Autopilot(links_persist=)`), with the token the stored state carries
   over. Then a reminder at `links.ttl_seconds` (max(2 x poll, 30 min), the link TTL) or the push's own `announced_exp` if sooner, or at
   once when a refresh grows a line's notional past `GROWTH_TOLERANCE` (10%) of what the push said (`autopilot/parking.py`).
