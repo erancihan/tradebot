@@ -600,7 +600,7 @@ Drop a decorated `.py` file in `algos/` (or point `--algos` anywhere) and it
 is discovered, run and scored:
 
 ```bash
-tradebot arena list     --algos ./algos                  # discover contestants
+tradebot arena list     --algos ./algos                  # discover contestants (imports in a sandboxed child)
 tradebot arena validate algos/my_algo.py                 # smoke-test one file
 tradebot arena run      --algos ./algos --score sharpe   # rank them (--save persists the run)
 tradebot arena league   --algos ./algos --snapshots 10   # standings over a replayed season

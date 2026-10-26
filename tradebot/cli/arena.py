@@ -18,6 +18,11 @@ def register(sub: argparse._SubParsersAction) -> None:
 
     al = asub.add_parser("list", help="discover & list contestants (no run)")
     al.add_argument("--algos", required=True, nargs="+", help="algo files and/or folders")
+    al.add_argument("--isolation", choices=["process", "thread", "auto"], default="process",
+                    help="process = import each file in a hardened child (default); "
+                         "thread = import in this process (trusts the files)")
+    al.add_argument("--time-budget", dest="time_budget", type=float, default=10.0,
+                    help="per-file import budget in seconds (default 10)")
     al.set_defaults(func=cmd_arena_list)
 
     av = asub.add_parser("validate", help="smoke-test one algo file")
@@ -70,9 +75,13 @@ def _register_run(asub: argparse._SubParsersAction) -> None:
 
 
 def cmd_arena_list(args: argparse.Namespace) -> int:
+    # A module body is contestant code: `list` imports it where `run` would,
+    # in a hardened child, unless the caller asks for the trusting loader.
     from ..arena.loader import discover
+    from ..arena.runner import default_runner
 
-    contestants, errors = discover(args.algos)
+    runner = default_runner(args.time_budget, args.isolation)
+    contestants, errors = getattr(runner, "discover", discover)(args.algos)
     if not contestants:
         print("No contestants found.", file=sys.stderr)
     else:
