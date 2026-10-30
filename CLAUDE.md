@@ -39,9 +39,8 @@ tradebot/
   config.py      Settings (YAML) + config_build (build_*), config_load (from_dict), credentials.py (env only),
                  config_io.py (EDITABLE_KEYS, settings_to_dict, editable, write_settings: atomic, refuses secrets)
   notify.py      Notifier: Log, Null, Webhook, Ntfy, Multi, build_notifier; notify_actions (ntfy buttons)
-  broker/        base (ABC), alpaca_broker (lazy SDK), dryrun + brackets (BracketsMixin)
-  data/          synthetic (+ load_csv) + factor_panel, cache + coverage, replay, alpaca_data, stream
-  market/        base (MarketCalendar, TableCalendar), us, bist, registry (CALENDARS)
+  broker/        base (ABC), alpaca_broker (lazy SDK), dryrun + brackets (BracketsMixin)  alpaca_http.py (bounded session)
+  data/          synthetic (+ load_csv) + factor_panel, cache + coverage, replay, alpaca_data, stream   market/ base, us, bist, registry (CALENDARS)
   advisor/       propose (bars + account -> Proposal), explain, types, unlisted (off-list holdings), history
   engine/        core (Engine.step -> PassOutcome) + hooks, active (list per pass), execution (submit, run_forever), signals, orders, pending,
                  session (daily-loss anchor), fills (reconcile: Broker.order_status -> the order log's fills), unlisted
@@ -235,7 +234,7 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   batch it parked (`parked_batch`) refreshes it in place (sizing, prices, holds, `created_at`, so History and Today show its
   latest refresh; same batch id, so the push's link still works). A rejection, even Skip of every line, holds until the proposal
   changes (an all-holds pass is a change; a repeated one refreshes its batch, no new row) or the session day ends.
-  A changed proposal, an approval older than one `poll_seconds` (a failed pass keeps the batch: the stale gate guards it until the next good pass refreshes it; an Alpaca read or bar fetch retries once after `RETRY_SECONDS` on a connection error, a submit never), the wake after the close (`schedule.next_pass` grants a pass inside hours one more; `tick` expires with no pass; a broker-closed pass too), a halt, and switching off expire it. One push per batch; a restart pushes again
+  A changed proposal, an approval older than one `poll_seconds` (a failed pass keeps the batch: the stale gate guards it until the next good pass refreshes it; an Alpaca read or bar fetch retries once after `RETRY_SECONDS` on a connection error or timeout, a submit never), the wake after the close (`schedule.next_pass` grants a pass inside hours one more; `tick` expires with no pass; a broker-closed pass too), a halt, and switching off expire it. One push per batch; a restart pushes again
   only when the link key is per-process (no `TRADEBOT_WEB_TOKEN`; `Autopilot(links_persist=)`), with the token the stored state carries
   over. Then a reminder at `links.ttl_seconds` (max(2 x poll, 30 min), the link TTL) or the push's own `announced_exp` if sooner, or at
   once when a refresh grows a line's notional past `GROWTH_TOLERANCE` (10%) of what the push said (`autopilot/parking.py`).
@@ -254,6 +253,7 @@ runs offline pytest, `tsc --noEmit`, `npm test` and a build on every push and PR
   date changes (a replay's `now` is its newest bar); a breach closes every equity position and stays out that day. The autopilot also turns off; its anchor persists per scope (`autopilot/session.py`).
 - **One lock, one connection:** the loop thread and web taps share the engine and SQLite (`check_same_thread=False`, WAL,
   `busy_timeout=5000`) under the Autopilot `RLock`. A line is `submitted` once the broker accepts it; later bookkeeping only logs. A mode switch wakes the loop, which naps in `NAP_SLICE_SECONDS` slices against the wall clock (a laptop's sleep stalls monotonic waits).
+  **Every Alpaca HTTP call is bounded** (`alpaca_http.bound_client`, `HTTP_TIMEOUT`, all three SDK clients): the SDK sets none; a socket that died in a sleep held a pass, and the lock, for days.
 - **The web autopilot is paper or dry-run, never live** (`autopilot_build`); a dry-run's account dies with a restart. `tradebot run --autopilot`
   builds as `run`, keeps state in scope `cli_<account>` (never the web's), expires no pending lines at start (a closed-market
   wake still does, for the shared account); a replay's clock reads its bars. Orders carry the pass clock, as batches do (approval: the tap's).

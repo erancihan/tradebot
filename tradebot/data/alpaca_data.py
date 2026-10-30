@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
+from ..alpaca_http import bound_client
 from ..models import BAR_COLUMNS
 
 log = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ class AlpacaData:
         from alpaca.data.historical import StockHistoricalDataClient
 
         self.feed = feed
-        self._client = StockHistoricalDataClient(api_key, api_secret)
+        self._client = bound_client(StockHistoricalDataClient(api_key, api_secret))
 
     def _get_bars(self, req):
         """``get_stock_bars(req)``, once more after a connection error (requests'
