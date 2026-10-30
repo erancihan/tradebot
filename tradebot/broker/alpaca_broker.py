@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import time
 
+from ..alpaca_http import bound_client
 from ..models import EQUITY, Order, OrderType, Position, Side, TimeInForce
 from .base import (ORDER_STATUSES, TERMINAL_STATUSES, AccountSnapshot, Broker, LegFill,
                    OrderStatus)
@@ -62,7 +63,7 @@ class AlpacaBroker(Broker):
         from alpaca.trading.client import TradingClient
 
         self.paper = paper
-        self._client = TradingClient(api_key, api_secret, paper=paper)
+        self._client = bound_client(TradingClient(api_key, api_secret, paper=paper))
 
     #: A read that failed on the wire is tried once more after this pause: a
     #: DNS blip on the clock call must not fail a whole pass. A submit is never

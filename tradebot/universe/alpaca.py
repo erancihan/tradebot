@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from ..alpaca_http import bound_client
 from .screen import ActivesFetcher, BarsFetcher, LiquidityScreen, TradableFetcher
 
 
@@ -98,7 +99,7 @@ class AlpacaLiquidityUniverse:
             from alpaca.trading.enums import AssetClass, AssetStatus
             from alpaca.trading.requests import GetAssetsRequest
 
-            client = TradingClient(creds.api_key, creds.api_secret, paper=True)
+            client = bound_client(TradingClient(creds.api_key, creds.api_secret, paper=True))
             assets = client.get_all_assets(
                 GetAssetsRequest(status=AssetStatus.ACTIVE, asset_class=AssetClass.US_EQUITY)
             )
